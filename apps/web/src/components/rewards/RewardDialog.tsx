@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { t } from '../../i18n';
 
 const reveal = { duration: 0.32, ease: [0.22, 1, 0.36, 1] as const };
 
@@ -16,11 +17,13 @@ export function RewardDialog({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  wide?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -52,7 +55,7 @@ export function RewardDialog({
           >
             <button
               type="button"
-              aria-label="Закрыть"
+              aria-label={t('components.rewards.RewardDialog.a7a4033657')}
               className="absolute inset-0 bg-figma-ink/60"
               onClick={onClose}
             />
@@ -61,17 +64,19 @@ export function RewardDialog({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduced ? undefined : { opacity: 0, y: 12, scale: 0.98 }}
               transition={reduced ? { duration: 0 } : reveal}
-              className="relative z-[1] max-h-[90dvh] w-[min(94vw,720px)] overflow-auto rounded-3xl bg-figma-canvas shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
+              className={`relative z-[1] max-h-[90dvh] ${wide ? 'w-[min(94vw,1100px)]' : 'w-[min(94vw,720px)]'} overflow-auto rounded-3xl bg-figma-canvas shadow-[0_16px_40px_rgba(15,16,20,0.28)]`}
             >
               <div className="flex items-center justify-between gap-4 px-6 pt-6">
-                <p className="font-murs text-lg">NAVIX</p>
+                <p className="font-murs text-lg">
+                  {t('components.rewards.RewardDialog.d675af9943')}
+                </p>
                 <button
                   type="button"
-                  aria-label="Закрыть итоги"
+                  aria-label={t('components.rewards.RewardDialog.5d9c456e50')}
                   onClick={onClose}
                   className="rounded-full bg-figma-ink/10 px-4 py-2 text-sm font-semibold"
                 >
-                  Закрыть
+                  {t('components.rewards.RewardDialog.a7a4033657')}
                 </button>
               </div>
               <div className="p-6 sm:p-8">

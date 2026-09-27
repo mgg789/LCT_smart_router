@@ -1,4 +1,5 @@
 import type { PolicyId } from '../api/types';
+import { t } from '../i18n';
 
 /**
  * Dispatcher-facing reading of a dry situation prediction.
@@ -46,9 +47,9 @@ export interface PlanQualityAdvice {
 }
 
 const TITLES: Record<QualityBand, string> = {
-  green: 'План надёжный',
-  yellow: 'Можно работать',
-  red: 'Высокий риск',
+  green: t('domain.planQuality.edeb94fe86'),
+  yellow: t('domain.planQuality.4e891d562d'),
+  red: t('domain.planQuality.9a90fc788d'),
 };
 
 /**
@@ -61,18 +62,18 @@ export function unroutedPlanAdvice(input: {
 }): PlanQualityAdvice {
   const uncovered =
     input.unassignedCount === 1
-      ? 'Одна заявка без инженера.'
-      : `${input.unassignedCount} заявок без инженера.`;
+      ? t('domain.planQuality.e7e85e7d2c')
+      : t('domain.planQuality.b7e0a562f8', { value0: input.unassignedCount });
   return {
     band: 'red',
     title: TITLES.red,
-    summary: 'В маршрутах нет заявок, поэтому день ещё не из чего проверять.',
+    summary: t('domain.planQuality.cd9edaff65'),
     lines: [
       textLine(uncovered),
       textLine(
         input.rosterOffline
-          ? 'Инженеры не вышли на линию, поэтому назначать некого. Когда смена начнётся, проверку можно запустить снова.'
-          : 'Проверка запускается, когда в плане появляется хотя бы один визит.',
+          ? t('domain.planQuality.30e395ddc2')
+          : t('domain.planQuality.a0fa3fc616'),
       ),
     ],
   };
@@ -111,32 +112,30 @@ export function planQualityAdvice(input: {
     const share = Math.round((request.breachProb ?? 0) * 100);
     const remedy =
       input.activePolicy === 'fast'
-        ? ' «Бережнее к окнам» оставляет запас до конца окна.'
+        ? t('domain.planQuality.2eabc8c909')
         : input.activePolicy === 'sla'
-          ? ' Окно и так в приоритете: имеет смысл сдвинуть визит раньше.'
-          : ' «Быстрее до клиента» сокращает дорогу до этого визита.';
+          ? t('domain.planQuality.d2405e8f23')
+          : t('domain.planQuality.3925f7569d');
     lines.push({
-      before: 'Заявка ',
+      before: t('domain.planQuality.564feb0f79'),
       requestId: request.requestId,
       shortId: request.shortId,
-      after: ` опаздывает в ${share}% проверок.${remedy}`,
+      after: t('domain.planQuality.b17baca053', { value0: share, value1: remedy }),
     });
   }
   for (const engineer of input.engineers.filter((item) => item.overrunProb >= 0.3).slice(0, 2)) {
     lines.push(
       textLine(
         input.activePolicy === 'balanced'
-          ? `${engineer.name} может не закрыть смену. Загрузка уже выравнивается, хвост лучше снять вручную.`
-          : `${engineer.name} может не закрыть смену. «Ровнее загрузка» разнесёт хвост по свободным.`,
+          ? t('domain.planQuality.79463780ad', { value0: engineer.name })
+          : t('domain.planQuality.5986a59fc3', { value0: engineer.name }),
       ),
     );
   }
   if (lines.length === 0) {
-    lines.push(
-      textLine('Менять политику не нужно: в большинстве проверок день проходит без опозданий.'),
-    );
+    lines.push(textLine(t('domain.planQuality.e11f38ef7c')));
   }
-  const summary = `В типичный день опаздывает ${latePhrase} из ${total}. Проверка прожила день много раз с разным трафиком и длительностью работ.`;
+  const summary = t('domain.planQuality.e57713f5e8', { value0: latePhrase, value1: total });
   return {
     band,
     title: TITLES[band],
@@ -147,23 +146,23 @@ export function planQualityAdvice(input: {
 
 /** "~1 заявка", "~2 заявки", "~8 заявок", "меньше одной заявки". */
 function lateCountPhrase(expectedLate: number): string {
-  if (expectedLate < 0.95) return 'меньше одной заявки';
+  if (expectedLate < 0.95) return t('domain.planQuality.426a2aac0b');
   const count = Math.round(expectedLate);
   const form =
     count % 10 === 1 && count % 100 !== 11
-      ? 'заявка'
+      ? t('domain.planQuality.672e27048b')
       : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)
-        ? 'заявки'
-        : 'заявок';
+        ? t('domain.planQuality.39bcdf6888')
+        : t('domain.planQuality.a2f012e5ff');
   return `~${count} ${form}`;
 }
 
 function unassignedLine(count: number, active: PolicyId): string {
-  const head = count === 1 ? 'Одна заявка без инженера.' : `${count} заявок без инженера.`;
+  const head = t('common.unassigned', { count });
   if (active === 'covering') {
-    return `${head} Полное покрытие уже включено, и этого остатка оно не забрало: не хватает человека на линии, навыка или оборудования.`;
+    return t('domain.planQuality.1198b6b8ab', { value0: head });
   }
-  return `${head} «Полное покрытие» добирает такой остаток отдельной сменой, если навык и оборудование есть.`;
+  return t('domain.planQuality.fc8981d100', { value0: head });
 }
 
 function textLine(text: string): AdviceLine {

@@ -25,6 +25,8 @@ const genericAlertActionSchema = z.enum([
   'message',
   'remove_shift',
   'message_remove',
+  'make_passive',
+  'prioritize',
   'extend',
 ]);
 
@@ -198,6 +200,11 @@ const prepareCloseShiftSchema = z.object({
 });
 type PrepareCloseShiftArgs = z.infer<typeof prepareCloseShiftSchema>;
 
+const prepareRestorePreviousPlanSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+});
+type PrepareRestorePreviousPlanArgs = z.infer<typeof prepareRestorePreviousPlanSchema>;
+
 /**
  * The `fix`-mode preparer catalogue.
  *
@@ -207,17 +214,9 @@ type PrepareCloseShiftArgs = z.infer<typeof prepareCloseShiftSchema>;
  * orchestrator method the matching `DispatchController` HTTP handler calls -- there is
  * still exactly one vocabulary of writable actions.
  *
- * Three deliberately excluded from every AI profile, per this change's task boundary:
- * `POST /dispatch/mode` (switching emergency manual control), `plan/reassign` and
- * `plan/reorder` (editing the manual plan directly) -- `context/32` section 6.4 states the
- * AI's authority to do either is not approved yet. `data/reset`, `data/import`,
- * `data/upload`, `PUT router/technical-settings`, engineer creation/linking/unlinking,
- * `auth/tokens` and `debug/router-result` are excluded outright (see the denylist test in
- * `test/unit/ai-tools.test.ts`): destructive, credential-bearing or structural actions no
- * assistant catalogue offers in any mode. A reset in particular may be *prepared* by
- * `data.dto.ts`'s own contract, but its human confirmation phrase is never supplied by an
- * AI on the dispatcher's behalf, so it has no tool here at all rather than a tool that
- * could never actually be confirmed.
+ * Manual intentions live in manual.tools.ts and require dispatcher-enabled Manual.
+ * Mode activation itself remains human-only in the builtin assistant. Destructive,
+ * credential-bearing and structural administration tools remain excluded.
  *
  * `move_window`/`reschedule` on an alert and a direct `update_request` edit both end up as
  * a `request.update` (or, for the two alert-bound ones, `alert.resolve`) card, but are
@@ -495,7 +494,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
     description:
       'Resolve an alert with one of its allowed actions (add_engineer, keep_manual, ' +
       'restore_auto, skip_lunch, keep_lunch, message, remove_shift, message_remove, ' +
-      "extend). The server rejects any action not in that specific alert's own catalogue " +
+      "extend, make_passive, prioritize). Use prioritize only when the user explicitly says this request is definitely more important than other ordinary requests; emergencies always remain first. Replacing an existing request priority requires the dispatcher UI confirmation. The server rejects any action not in that specific alert's own catalogue " +
       '-- always read actions[] from list_alerts or get_situation first rather than ' +
       "assuming a code's usual set. For move_window or reschedule use their own tools.",
     schema: prepareResolveAlertSchema,
@@ -556,6 +555,26 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
     },
   };
 
+  const prepareRestorePreviousPlan: ToolSpec<PrepareRestorePreviousPlanArgs> = {
+    name: 'prepare_restore_previous_plan',
+    description:
+      'Prepare a human-confirmed restore of the immediate predecessor. Call get_previous_plan ' +
+      'first and use its current revision; the server checks the plan and Router context again.',
+    schema: prepareRestorePreviousPlanSchema,
+    async run(ctx: ToolContext, args: PrepareRestorePreviousPlanArgs): Promise<ToolResult> {
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'plan.restore',
+        targetRef: String(args.expectedRevision),
+        payload: args,
+      });
+      return prepared(op);
+    },
+  };
+
   return (
     [
       prepareMoveWindow,
@@ -570,6 +589,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
       prepareResolveAlert,
       prepareMarkAlertSeen,
       prepareCloseShift,
+      prepareRestorePreviousPlan,
     ] as AnyToolSpec[]
   ).map(performsNow);
 }

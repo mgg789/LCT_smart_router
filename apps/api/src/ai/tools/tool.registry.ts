@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { AppConfigService } from '../../common/config';
+import { Clock } from '../../common/time';
 import type { AiRoleProfile } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
+import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { PrismaService } from '../../persistence';
@@ -11,6 +13,7 @@ import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
@@ -21,6 +24,9 @@ import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
+import { buildManualTools, MANUAL_TOOL_NAMES } from './manual.tools';
+import { buildOperationVerificationTool } from './operation-verification.tool';
+import { buildPersonalPolicyTools } from './personal-policy.tools';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -41,41 +47,54 @@ export class ToolRegistry {
 
   constructor(
     aiOperations: AiOperationService,
+    clock: Clock,
     knowledge: KnowledgeSearchPort,
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
-    prisma: PrismaService,
+    private readonly prisma: PrismaService,
     plans: AppliedPlanService,
+    restore: PlanRestoreService,
     control: ControlStateService,
     alerts: AlertsService,
     policy: PolicyService,
     router: RouterClient,
     builder: SnapshotBuilder,
+    passports: PassportsService,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
-    const engineerTools = buildEngineerTools({ aiOperations, live, config });
+    const engineerTools = buildEngineerTools({ aiOperations, live, config, passports });
     const dispatcherReadTools = buildDispatcherReadTools({
       prisma,
       live,
       plans,
+      restore,
       control,
       requests,
       alerts,
       policy,
       router,
       builder,
+      now: () => clock.nowSeconds(),
+      timeZone: config.get('APP_TIME_ZONE'),
     });
     const dispatcherWriteTools = buildDispatcherWriteTools({ aiOperations, config });
 
-    const dispatcherReadonlyTools = [...dispatcherReadTools, searchDocumentation];
-    const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
+    const dispatcherReadonlyTools = [
+      ...dispatcherReadTools,
+      ...buildPersonalPolicyTools({ policy, prisma, aiOperations }),
+      buildOperationVerificationTool(prisma),
+      searchDocumentation,
+    ];
+    const dispatcherFixTools = [
+      ...dispatcherReadonlyTools,
+      ...dispatcherWriteTools,
+      ...buildManualTools({ prisma, aiOperations, config }),
+    ];
 
     this.catalogues = {
-      // Handoff to a human dispatcher is switched off for this release: the client
-      // support screen and the dispatcher chats tab are locked, so the model must not
-      // be able to open that queue.
+      // The dispatcher queue is locked; never offer a handoff with no reachable recipient.
       client: [...clientTools, searchDocumentation],
       engineer: [...engineerTools, searchDocumentation],
       dispatcher_readonly: dispatcherReadonlyTools,
@@ -103,6 +122,14 @@ export class ToolRegistry {
       description: tool.description,
       parametersJsonSchema: z.toJSONSchema(tool.schema) as Record<string, unknown>,
     }));
+  }
+
+  /** Refresh mode-sensitive tools at every model step, including external mode switches. */
+  async liveSpecsFor(profile: AiRoleProfile): Promise<LlmToolSpec[]> {
+    const specs = this.llmSpecsFor(profile);
+    if (profile !== 'dispatcher_fix') return specs;
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    return specs.filter((tool) => control?.mode === 'manual' || !MANUAL_TOOL_NAMES.has(tool.name));
   }
 
   /** Every tool this registry can ever hand to a model, for the schema-invariant walk

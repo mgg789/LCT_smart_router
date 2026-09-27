@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { PolicyComparisonRow } from '../api/types';
+import { locale, t } from '../i18n';
 import {
   type ComparisonMeasure,
   comparisonValue,
@@ -9,30 +10,68 @@ import {
   usesReserve,
 } from '../lib/policyComparison';
 
-const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 });
+const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
 const COST_MEASURES = {
   kmPerJob: {
-    title: 'Дорога на назначение',
-    unit: 'км',
-    description: 'Пробег / назначенные заявки. Меньше — лучше.',
+    title: t('figma-dashboard.PolicyComparisonOverview.f3e54f1960'),
+    unit: t('figma-dashboard.PolicyComparisonOverview.9260e2abae'),
+    description: t('figma-dashboard.PolicyComparisonOverview.1c434aa797'),
   },
   travelPerJob: {
-    title: 'Время дороги на назначение',
-    unit: 'мин',
-    description: 'Время в пути / назначенные заявки. Меньше — лучше.',
+    title: t('figma-dashboard.PolicyComparisonOverview.a95f50fd31'),
+    unit: t('figma-dashboard.PolicyComparisonOverview.62dcfe2d4d'),
+    description: t('figma-dashboard.PolicyComparisonOverview.a3d76fe885'),
   },
-  lateShare: {
-    title: 'Доля опозданий',
-    unit: '%',
-    description: 'Опоздания среди назначенных заявок. Меньше — лучше.',
+  waitingPerJob: {
+    title: t('figma-dashboard.PolicyComparisonOverview.a3b61060dc'),
+    unit: t('figma-dashboard.PolicyComparisonOverview.62dcfe2d4d'),
+    description: t('figma-dashboard.PolicyComparisonOverview.0fed68e70b'),
   },
+  latenessPerJob: {
+    title: t('figma-dashboard.PolicyComparisonOverview.5fe3b6c118'),
+    unit: t('figma-dashboard.PolicyComparisonOverview.62dcfe2d4d'),
+    description: t('figma-dashboard.PolicyComparisonOverview.908a33608e'),
+  },
+} as const;
+const LATE_SHARE_MEASURE = {
+  title: t('figma-dashboard.PolicyComparisonOverview.30a56ccd78'),
+  unit: '%',
+  description: t('figma-dashboard.PolicyComparisonOverview.973fb89f11'),
 } as const;
 type CostMeasure = keyof typeof COST_MEASURES;
 
-/** Two small-multiple comparisons with direct labels and the same FIFO reference. */
+/** Coverage, travel, lateness and staffing comparisons with the same FIFO reference. */
 export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyComparisonRow[] }) {
   const [measure, setMeasure] = useState<CostMeasure>('kmPerJob');
   const [includeReserve, setIncludeReserve] = useState(false);
+  const reserveToggle = useRef<HTMLLabelElement>(null);
+  const scrollAnchor = useRef<{ container: HTMLElement; top: number; scale: number } | null>(null);
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    scrollAnchor.current = null;
+    if (!anchor || !reserveToggle.current) return;
+    // Artboard transforms scale viewport pixels, while scrollTop uses layout pixels.
+    anchor.container.scrollTop +=
+      (reserveToggle.current.getBoundingClientRect().top - anchor.top) / anchor.scale;
+  });
+  const toggleReserve = (checked: boolean) => {
+    const label = reserveToggle.current;
+    let container = label?.parentElement ?? null;
+    while (container && !/(auto|scroll)/.test(getComputedStyle(container).overflowY)) {
+      container = container.parentElement;
+    }
+    if (label && container) {
+      scrollAnchor.current = {
+        container,
+        top: label.getBoundingClientRect().top,
+        scale:
+          container.offsetHeight > 0
+            ? container.getBoundingClientRect().height / container.offsetHeight || 1
+            : 1,
+      };
+    }
+    setIncludeReserve(checked);
+  };
   const fixed = rows.filter((row) => row.isUsable && !usesReserve(row));
   const visible = rows.filter((row) => includeReserve || !usesReserve(row));
   const fifo = rows.find((row) => row.strategyId === 'baseline' && row.isUsable);
@@ -54,65 +93,93 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
     <div className="space-y-[24px]">
       <div className="grid grid-cols-1 gap-[16px] md:grid-cols-3">
         <Insight
-          title="Больше назначений"
+          title={t('figma-dashboard.PolicyComparisonOverview.0d520b0337')}
           value={
             bestCount === null
               ? '—'
-              : `${bestCount} из ${fifo?.metrics.requestsTotal ?? rows[0]?.metrics.requestsTotal ?? 0}`
+              : t('figma-dashboard.PolicyComparisonOverview.1521c1e474', {
+                  value0: bestCount,
+                  value1: fifo?.metrics.requestsTotal ?? rows[0]?.metrics.requestsTotal ?? 0,
+                })
           }
           note={
             bestCount !== null && fifo
-              ? `${signed(bestCount - fifo.metrics.assignedCount)} к FIFO · тот же состав`
-              : 'Нужен пригодный расчёт'
+              ? t('figma-dashboard.PolicyComparisonOverview.d50f1665b8', {
+                  value0: signed(bestCount - fifo.metrics.assignedCount),
+                })
+              : t('figma-dashboard.PolicyComparisonOverview.4acca0e764')
           }
         />
         <Insight
-          title="Больше заявок в срок"
+          title={t('figma-dashboard.PolicyComparisonOverview.c3f381ba3e')}
           value={bestOnTime === null ? '—' : String(bestOnTime)}
           note={
             bestOnTime !== null && fifo
-              ? `${signed(bestOnTime - (comparisonValue(fifo, 'onTime') ?? 0))} к FIFO`
-              : 'Назначено с завершением в исходном окне'
+              ? t('figma-dashboard.PolicyComparisonOverview.b48213a706', {
+                  value0: signed(bestOnTime - (comparisonValue(fifo, 'onTime') ?? 0)),
+                })
+              : t('figma-dashboard.PolicyComparisonOverview.d241ce383e')
           }
         />
         <Insight
-          title="Минимум дороги на заявку"
-          value={bestCost === null ? '—' : `${number.format(bestCost)} км`}
-          note={`${percentVsFifo(bestCost, fifo ? comparisonValue(fifo, 'kmPerJob') : null) ?? '—'} к FIFO · на назначение`}
+          title={t('figma-dashboard.PolicyComparisonOverview.434c7863be')}
+          value={
+            bestCost === null
+              ? '—'
+              : t('figma-dashboard.PolicyComparisonOverview.06f7f314d2', {
+                  value0: number.format(bestCost),
+                })
+          }
+          note={t('figma-dashboard.PolicyComparisonOverview.ec1eb520cd', {
+            value0: percentVsFifo(bestCost, fifo ? comparisonValue(fifo, 'kmPerJob') : null) ?? '—',
+          })}
         />
       </div>
       <p className="text-[15px] leading-[22px] text-figma-muted">
-        Показан лучший результат по каждому показателю среди основных политик; это могут быть разные
-        планы.
+        {t('figma-dashboard.PolicyComparisonOverview.3ca6e830ad')}
         {fingerprints.size === 1 && policies.length > 1
-          ? ' На этом наборе основные политики дали одинаковые показатели.'
+          ? t('figma-dashboard.PolicyComparisonOverview.42a0a48819')
           : ''}
       </p>
       <div className="grid grid-cols-1 gap-[20px] lg:grid-cols-2">
         <ComparisonBars
           rows={visible}
           measure="assigned"
-          title="Сколько заявок удаётся назначить"
-          unit="заявок"
-          description="Жёлтый — политики, тёмный — FIFO. Больше — лучше."
+          title={t('figma-dashboard.PolicyComparisonOverview.e6aec5423d')}
+          unit={t('figma-dashboard.PolicyComparisonOverview.a2f012e5ff')}
+          description={t('figma-dashboard.PolicyComparisonOverview.bcb32d2cc5')}
           better="max"
         />
         <section className="rounded-[20px] bg-figma-soft p-[24px]">
           <label className="mb-[20px] flex flex-wrap items-center justify-between gap-[12px] text-[16px] font-semibold text-figma-ink">
-            Сравнить расходы
+            {t('figma-dashboard.PolicyComparisonOverview.0d89a756e7')}
             <select
-              aria-label="Показатель расходов"
+              aria-label={t('figma-dashboard.PolicyComparisonOverview.77d92ec767')}
               className="rounded-[12px] border border-figma-muted/25 bg-white px-[12px] py-[8px] text-[14px]"
               value={measure}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value === 'kmPerJob' || value === 'travelPerJob' || value === 'lateShare')
+                if (
+                  value === 'kmPerJob' ||
+                  value === 'travelPerJob' ||
+                  value === 'waitingPerJob' ||
+                  value === 'latenessPerJob'
+                )
                   setMeasure(value);
               }}
             >
-              <option value="kmPerJob">Километры на заявку</option>
-              <option value="travelPerJob">Минуты дороги на заявку</option>
-              <option value="lateShare">Доля опозданий</option>
+              <option value="kmPerJob">
+                {t('figma-dashboard.PolicyComparisonOverview.15fa5c93d1')}
+              </option>
+              <option value="travelPerJob">
+                {t('figma-dashboard.PolicyComparisonOverview.b6410ff46e')}
+              </option>
+              <option value="waitingPerJob">
+                {t('figma-dashboard.PolicyComparisonOverview.4aaa8bfb65')}
+              </option>
+              <option value="latenessPerJob">
+                {t('figma-dashboard.PolicyComparisonOverview.15f6401442')}
+              </option>
             </select>
           </label>
           <ComparisonBars
@@ -123,18 +190,41 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
             nested
           />
         </section>
+        <ComparisonBars rows={visible} measure="lateShare" {...LATE_SHARE_MEASURE} better="min" />
+        <ComparisonBars
+          rows={visible}
+          measure="engineers"
+          title={t('figma-dashboard.PolicyComparisonOverview.030f23496b')}
+          unit={t('figma-dashboard.PolicyComparisonOverview.05a74c80c0')}
+          description={t('figma-dashboard.PolicyComparisonOverview.e1f1918822')}
+          better="min"
+        />
       </div>
       {reserve ? (
-        <label className="flex cursor-pointer items-center gap-[12px] rounded-[16px] border border-figma-muted/20 p-[18px] text-[15px] text-figma-ink">
+        <label
+          ref={reserveToggle}
+          className="flex cursor-pointer items-center gap-[12px] rounded-[16px] border border-figma-muted/20 p-[18px] text-[15px] text-figma-ink"
+        >
           <input
             type="checkbox"
             checked={includeReserve}
-            onChange={(event) => setIncludeReserve(event.target.checked)}
-            className="size-[20px] accent-figma-ink"
+            onChange={(event) => toggleReserve(event.target.checked)}
+            className="peer sr-only"
           />
+          <span
+            aria-hidden="true"
+            className={`flex size-[28px] shrink-0 items-center justify-center rounded-[10px] peer-focus-visible:ring-2 peer-focus-visible:ring-figma-ink peer-focus-visible:ring-offset-2 ${
+              includeReserve ? 'bg-figma-ink' : 'border-2 border-[#d4d5d8] bg-white'
+            }`}
+          >
+            {includeReserve ? (
+              <img src="/figma/check-mark.svg" alt="" className="size-[18px] brightness-0 invert" />
+            ) : null}
+          </span>
           <span>
-            Показать «Полное покрытие»: +{reserve.additionalEngineers} резервных инженеров. Этот
-            результат использует больше ресурсов и сравнивается отдельно.
+            {t('figma-dashboard.PolicyComparisonOverview.8c4b2e06c5')}
+            {reserve.additionalEngineers}
+            {t('figma-dashboard.PolicyComparisonOverview.76a0834199')}
           </span>
         </label>
       ) : null}
@@ -203,7 +293,9 @@ function ComparisonBars({
             <li key={row.strategyId}>
               <div className="mb-[6px] flex flex-wrap items-baseline justify-between gap-x-[12px] gap-y-[4px] text-[14px]">
                 <span className="font-semibold text-figma-ink">
-                  {row.strategyId === 'baseline' ? 'FIFO · базовое' : strategyLabel(row.strategyId)}
+                  {row.strategyId === 'baseline'
+                    ? t('figma-dashboard.PolicyComparisonOverview.badc218718')
+                    : strategyLabel(row.strategyId)}
                   {usesReserve(row) ? ` (+${row.additionalEngineers})` : ''}
                 </span>
                 <span
@@ -211,8 +303,12 @@ function ComparisonBars({
                     best.has(row.strategyId) ? 'font-semibold text-figma-work' : 'text-figma-ink'
                   }
                 >
-                  {value === null ? 'нет сопоставимой оценки' : `${number.format(value)} ${unit}`}
-                  {delta === null ? '' : ` · ${delta} к FIFO`}
+                  {value === null
+                    ? t('figma-dashboard.PolicyComparisonOverview.3afae954a4')
+                    : `${number.format(value)} ${unit}`}
+                  {delta === null
+                    ? ''
+                    : t('figma-dashboard.PolicyComparisonOverview.dc2e5dbe5c', { value0: delta })}
                 </span>
               </div>
               <div className="h-[9px] overflow-hidden rounded-full bg-white" aria-hidden="true">

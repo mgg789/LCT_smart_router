@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { ActionGuardService } from '../../ai/operations';
+import { agentEngineerAttendance, toAgentDayView } from '../../api/agent-engineer-view';
 import { toDayView, toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { type RequestView, toRequestView } from '../../api/request-view';
@@ -11,16 +12,27 @@ import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { AuditService, OperationsService } from '../../operations';
+import { assertManualConflictResolved } from '../../operations/manual-conflict-guard';
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
+import {
+  manualDecisionSchema,
+  manualStateView,
+  readManualState,
+} from '../../routing/router-gateway/manual-state';
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
+import { parsePersonalObjectiveOrder, personalPolicyToolSchema } from '../policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../policy/personal-policy-preset';
+import { resolveRequestReference } from '../requests/request-reference';
 import { DispatcherSettingsService } from '../settings';
 import {
   rememberSimulation,
@@ -204,12 +216,117 @@ export class McpToolsService {
     private readonly policyService: PolicyService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly plans: AppliedPlanService,
+    private readonly restore: PlanRestoreService,
     private readonly control: ControlStateService,
     private readonly router: RouterClient,
     private readonly publisher: SnapshotPublisher,
     private readonly mcp: McpService,
     private readonly guard: ActionGuardService,
+    private readonly manualDecisions: ManualDecisionsService,
   ) {}
+
+  /** External agents use the same intent validation, CAS and operation journal as HTTP. */
+  private manualTools(): McpToolEntry[] {
+    const edit = manualDecisionSchema.omit({ id: true, priority: true }).extend({
+      expectedVersion: z.number().int().nonnegative(),
+      windowChangeConfirmation: z.string().optional(),
+    });
+    const remove = z.object({
+      expectedVersion: z.number().int().nonnegative(),
+      decisionId: z.string().min(1),
+    });
+    const order = z.object({
+      expectedVersion: z.number().int().nonnegative(),
+      decisionIds: z.array(z.string().min(1)),
+    });
+    return [
+      defineTool(
+        {
+          name: 'get_manual_state',
+          title: 'Ручные решения',
+          description:
+            'Read Manual session version, decisions and conflicts. Check mode using get_situation. New decisions tie at highest priority; smaller priority numbers win.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async () => manualStateView(await readManualState(this.prisma)),
+      ),
+      defineTool(
+        {
+          name: 'edit_manual_decision',
+          title: 'Сохранить ручное решение',
+          description:
+            'Only enabled Manual: assignment, window, lunch or shift. Read current version first. Requires explicit user consent. For a changed window first receive the exact-bounds confirmation challenge, ask the user to approve those bounds, then retry with windowChangeConfirmation from that challenge. Epoch seconds use business date/time. Started work cannot be reassigned. Conflicting decisions may be rejected by planning.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(edit).properties ?? {},
+            required: z.toJSONSchema(edit).required,
+            additionalProperties: false,
+          },
+        },
+        edit,
+        async (args, actor) => {
+          const { expectedVersion, windowChangeConfirmation, ...input } = args;
+          const outcome = await this.operations.execute(
+            {
+              operationId: randomUUID(),
+              actor: { ...actor, windowChangeConfirmation },
+              action: 'manual.decision.put',
+              payload: { expectedVersion, ...input },
+            },
+            (context) => this.manualDecisions.put(context, expectedVersion, input),
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
+          name: 'remove_manual_decision',
+          title: 'Удалить ручное решение',
+          description:
+            'Only enabled Manual. Remove an explicitly chosen intention using current version; actual execution is retained. Obtain user consent first.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(remove).properties ?? {},
+            required: z.toJSONSchema(remove).required,
+            additionalProperties: false,
+          },
+        },
+        remove,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'manual.decision.remove', payload: args },
+            (context) =>
+              this.manualDecisions.remove(context, args.expectedVersion, args.decisionId),
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
+          name: 'reorder_manual_priorities',
+          title: 'Приоритеты ручных решений',
+          description:
+            'Only enabled Manual. Submit every decision ID exactly once, highest priority first, with current version. Obtain explicit user choice of priorities; rejected decisions may remain unfulfilled.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(order).properties ?? {},
+            required: z.toJSONSchema(order).required,
+            additionalProperties: false,
+          },
+        },
+        order,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'manual.priorities', payload: args },
+            (context) =>
+              this.manualDecisions.reorder(context, args.expectedVersion, args.decisionIds),
+          );
+          return outcome.result;
+        },
+      ),
+    ];
+  }
 
   /** Tool catalogue for `tools/list`, in registration order. */
   listTools(): readonly McpToolDefinition[] {
@@ -320,6 +437,7 @@ export class McpToolsService {
               name: engineer.name,
               lineStatus: engineer.lineStatus,
               availability: engineer.availability,
+              attendance: agentEngineerAttendance(engineer),
               routeState: engineer.routeState,
               activeRequestId: engineer.activeRequestId,
               canFinishDay: engineer.canFinishDay,
@@ -378,6 +496,80 @@ export class McpToolsService {
                   })),
                 };
           return { mode: control.mode, modeVersion: control.modeVersion, plan: planView };
+        },
+      ),
+      defineTool(
+        {
+          name: 'get_previous_plan',
+          title: 'Предыдущий план',
+          description:
+            'Current plan, its immediate predecessor and the precise server-calculated restore ' +
+            'eligibility. Read this before restore_previous_plan.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async () => {
+          const pair = await this.restore.previous(
+            { tx: this.prisma, now: now() },
+            await this.router.getActiveContextVersion(),
+          );
+          return {
+            current: pair.current ? toPlanView(pair.current) : null,
+            previous: pair.previous ? toPlanView(pair.previous) : null,
+            eligibility: pair.eligibility,
+          };
+        },
+      ),
+      defineTool(
+        {
+          name: 'restore_previous_plan',
+          title: 'Восстановить предыдущий план',
+          description:
+            'Restore the immediate predecessor as a new revision. expectedRevision is a CAS ' +
+            'fence from get_previous_plan. Reuse operationId after an uncertain response; omit ' +
+            'it only for a new intent.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              expectedRevision: { type: 'integer', minimum: 1 },
+              operationId: {
+                type: 'string',
+                format: 'uuid',
+                description: 'Optional caller idempotency key. Reuse for retries.',
+              },
+            },
+            required: ['expectedRevision'],
+            additionalProperties: false,
+          },
+        },
+        z.object({
+          expectedRevision: z.number().int().positive(),
+          operationId: z.uuid().optional(),
+        }),
+        async (args, actor) => {
+          const operationId = args.operationId ?? randomUUID();
+          // Same ordering as DispatchPlanHistoryController: external Router I/O happens
+          // before OperationsService starts its transaction; restore re-checks its durable
+          // mutation fence and revision CAS inside that transaction.
+          const contextFence = await this.restore.contextMutationFence(this.prisma);
+          const activeContextVersion = await this.router.getActiveContextVersion();
+          const outcome = await this.operations.execute(
+            {
+              operationId,
+              actor,
+              action: 'plan.restore',
+              targetRef: String(args.expectedRevision),
+              payload: { operationId, expectedRevision: args.expectedRevision },
+            },
+            (context) =>
+              this.restore.restore(
+                context,
+                args.expectedRevision,
+                activeContextVersion,
+                contextFence,
+              ),
+          );
+          return outcome.result;
         },
       ),
       defineTool(
@@ -462,9 +654,55 @@ export class McpToolsService {
       ),
       defineTool(
         {
+          name: 'get_personal_policy',
+          title: 'Личная политика',
+          description:
+            'Read authenticated dispatcher personal preferences, defaults and all nine supported objectives. No selection or mutation.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async (_args, actor) => this.policyService.personal(this.prisma, actor.accountId),
+      ),
+      defineTool(
+        {
+          name: 'save_personal_policy',
+          title: 'Сохранить личную политику',
+          description:
+            'Show numbered nine objectives and six numbered yes/no switches. Accept contiguous or separated digit permutations; ask only missing answers, agree order and switch preset, then save. Switch presets apply only on explicit selection, never on save or after independent edits. Saving never selects the policy; changing an already-active owned profile triggers replanning. Safety and emergency/coverage priorities remain mandatory. Requires dispatcher account.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(personalPolicyToolSchema).properties ?? {},
+            required: ['expectedVersion', 'title', 'objectiveOrder', 'preset'],
+            additionalProperties: false,
+          },
+        },
+        personalPolicyToolSchema,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'policy.personal.save', payload: args },
+            async (context) => {
+              const result = await this.policyService.savePersonal(context, {
+                ...args,
+                objectiveOrder: parsePersonalObjectiveOrder(args.objectiveOrder),
+              });
+              if (result.activeUpdated)
+                await this.publisher.publishIfChanged(
+                  context.tx,
+                  context.now,
+                  PUBLICATION_TRIGGERS.POLICY_CHANGED,
+                );
+              return result;
+            },
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
           name: 'get_request',
           title: 'Детали заявки',
-          description: 'One request with its details and the history of previous conditions.',
+          description:
+            'One request by full ID or unique visible 8-character prefix, with details and history. Use the returned full ID in mutations.',
           inputSchema: {
             type: 'object',
             properties: { requestId: { type: 'string' } },
@@ -474,16 +712,13 @@ export class McpToolsService {
         },
         z.object({ requestId: z.string().min(1) }),
         async (args) => {
-          const request = await this.prisma.request.findUnique({ where: { id: args.requestId } });
-          if (!request) {
-            throw SysError.notFound('Request', { requestId: args.requestId });
-          }
+          const request = await resolveRequestReference(this.prisma, args.requestId);
           const live = await this.prisma.liveRequestState.findFirst({
-            where: { requestId: args.requestId, workday: { status: 'running' } },
+            where: { requestId: request.id, workday: { status: 'running' } },
             select: { assumedStartedAt: true, assumedCompletedAt: true },
           });
           const history = await this.prisma.requestConditionHistory.findMany({
-            where: { requestId: args.requestId },
+            where: { requestId: request.id },
             orderBy: { changedAt: 'desc' },
           });
           const actors = await this.audit.actorsFor(
@@ -621,24 +856,30 @@ export class McpToolsService {
           name: 'list_engineers',
           title: 'Список инженеров',
           description:
-            'Engineers with skills, transport, login state and their latest working day ' +
-            '(shift, availability, lunch, equipment).',
+            'Engineers with the current LIVE working day, skills, shift and equipment. ' +
+            'Planning availability=online does NOT mean checked in. Use attendance.isOnLine/label.',
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         },
         z.object({}),
         async () => {
+          const live = await this.live.dispatchView();
           const engineers = await this.prisma.engineer.findMany({
             where: { archivedAt: null },
             orderBy: { inputOrder: 'asc' },
             include: {
               account: { select: { email: true } },
-              days: { orderBy: { workDate: 'desc' }, take: 1 },
+              days: { where: { workDate: live.workday.workDate }, take: 1 },
             },
           });
           return {
             engineers: engineers.map((engineer) => ({
               ...toEngineerView(engineer),
-              day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
+              day: engineer.days[0]
+                ? toAgentDayView(engineer.days[0], this.config.get('APP_TIME_ZONE'))
+                : null,
+              attendance: agentEngineerAttendance(
+                live.engineers.find((state) => state.id === engineer.id),
+              ),
             })),
           };
         },
@@ -697,8 +938,8 @@ export class McpToolsService {
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         },
         z.object({}),
-        async () => ({
-          policies: this.policyService.list(),
+        async (_args, actor) => ({
+          policies: await this.policyService.listFor(this.prisma, actor.accountId),
           active: await this.policyService.active(this.prisma),
         }),
       ),
@@ -719,6 +960,17 @@ export class McpToolsService {
         z.object({ policyId: z.string().min(1).max(64) }),
         async (args, actor) => {
           const operationId = randomUUID();
+          if (args.policyId === 'personal') {
+            await assertManualConflictResolved(this.prisma, {
+              operationId,
+              actor,
+              action: 'policy.select',
+              payload: args,
+            });
+            const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
+            if (!profile) throw SysError.validationFailed('Личная политика не создана');
+            await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+          }
           const outcome = await this.operations.execute(
             {
               operationId,
@@ -912,21 +1164,28 @@ export class McpToolsService {
           return outcome.result;
         },
       ),
+      ...this.manualTools(),
       defineTool(
         {
           name: 'set_control_mode',
           title: 'Ручной или автоматический план',
           description:
-            'manual freezes automatic replanning (emergency). auto returns the plan to the solver. ' +
+            'Atypical LAST RESORT mode. Before switching, explain that constraints can reduce efficiency and conflict; obtain explicit user consent. Never switch implicitly. manual enables dispatcher constraints while live routing continues; reason is mandatory. auto clears ALL manual decisions, restores original conditions and retains actual execution. ' +
             'Call review_action first. If the verdict is risk, wait for the dispatcher.',
           inputSchema: {
             type: 'object',
-            properties: { mode: { type: 'string', enum: ['auto', 'manual'] } },
+            properties: {
+              mode: { type: 'string', enum: ['auto', 'manual'] },
+              reason: { type: 'string', description: 'Dispatcher reason, required for manual' },
+            },
             required: ['mode'],
             additionalProperties: false,
           },
         },
-        z.object({ mode: z.enum(['auto', 'manual']) }),
+        z.object({
+          mode: z.enum(['auto', 'manual']),
+          reason: z.string().trim().min(1).max(2000).optional(),
+        }),
         async (args, actor) => {
           const operationId = randomUUID();
           const outcome = await this.operations.execute(
@@ -934,11 +1193,11 @@ export class McpToolsService {
               operationId,
               actor,
               action: `control.${args.mode}`,
-              payload: { operationId, mode: args.mode },
+              payload: { operationId, mode: args.mode, reason: args.reason },
             },
             async (context) =>
               args.mode === 'manual'
-                ? this.control.enterManual(context)
+                ? this.control.enterManual(context, args.reason)
                 : this.control.returnToAuto(context),
           );
           return { control: outcome.result };

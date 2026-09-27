@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ToolRegistry } from '../../src/ai/tools/tool.registry';
 import { AppModule } from '../../src/app.module';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
@@ -934,5 +935,8 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const full = await readChat(chat.conversation.id, secondClientMessage.seq);
     const fullBody = (await full.json()) as { chat: DispatchChatBody | null };
     assert.equal(fullBody.chat?.unreadCount, 0);
+  });
+  it('does not offer client handoff while the dispatcher queue is locked', () => {
+    assert.equal(app.get(ToolRegistry).find('client', 'call_dispatch_helper'), undefined);
   });
 });

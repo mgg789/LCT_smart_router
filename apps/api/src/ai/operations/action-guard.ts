@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { AiConnectionsService } from '../../orchestrator/ai/ai-connections.service';
 import { storedGuardLine } from '../../orchestrator/simulator';
 import { PrismaService } from '../../persistence';
 import { RouterClient } from '../../routing/router-gateway';
@@ -28,6 +29,7 @@ export class ActionGuardService {
   constructor(
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly router?: RouterClient,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   async allows(action: string, preview: readonly AiPreviewRow[]): Promise<boolean> {
@@ -48,7 +50,12 @@ export class ActionGuardService {
 
   /** True only when System one scores the write as an ordinary change. */
   private async noul(state: string): Promise<boolean> {
-    const raw = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+    const connection = (await this.connections?.read())?.jev;
+    const raw = (
+      connection?.url ??
+      process.env.JEV_API_URL ??
+      'http://host.docker.internal:12444'
+    ).replace(/\/$/, '');
     // Operator-configured local service; the only check that makes sense is the
     // scheme one -- a private-network address is exactly what this endpoint is.
     try {
@@ -61,8 +68,13 @@ export class ActionGuardService {
     try {
       const response = await fetch(`${base}/v1/noul`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          ...(connection?.key ? { authorization: `Bearer ${connection.key}` } : {}),
+        },
         body: JSON.stringify({
+          ...(connection?.model ? { model: connection.model } : {}),
           state,
           question:
             'Is this dispatcher write safe to apply immediately, without asking a person first?',

@@ -11,6 +11,7 @@ import {
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { engineerCodeHint } from '../figma-engineer/loginHint';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -32,7 +33,7 @@ export function ClientEmailGate({
   onConfirm,
   onClose,
 }: {
-  purpose: 'submit' | 'list' | 'detail';
+  purpose: 'submit' | 'list' | 'detail' | 'support';
   email: string;
   codeStep: boolean;
   devCode?: string;
@@ -46,11 +47,17 @@ export function ClientEmailGate({
   const [cells, setCells] = useState(emptyOtpCells);
   const code = otpValue(cells);
   const title =
-    purpose === 'submit' ? 'Подтвердите почту' : purpose === 'list' ? 'Вход' : 'Откройте заявку';
+    purpose === 'submit'
+      ? t('figma-client.ClientEmailGate.e3461535c8')
+      : purpose === 'list' || purpose === 'support'
+        ? t('figma-client.ClientEmailGate.63f5c2c2f9')
+        : t('figma-client.ClientEmailGate.25896c6921');
   const lead =
     purpose === 'submit'
-      ? 'Заявка создастся после кода из письма. До этого она не отправлена.'
-      : 'Чтобы увидеть заявки этого адреса, войдите кодом из письма.';
+      ? t('figma-client.ClientEmailGate.6838369713')
+      : purpose === 'support'
+        ? t('figma-client.ClientEmailGate.4db77f8e68')
+        : t('figma-client.ClientEmailGate.516894d478');
   const hint = engineerCodeHint({
     devCode,
     remainingSec: 0,
@@ -65,7 +72,7 @@ export function ClientEmailGate({
     <section className="relative flex h-full flex-col overflow-y-auto bg-figma-canvas">
       <button
         type="button"
-        aria-label="Назад"
+        aria-label={t('figma-client.ClientEmailGate.1a9fb1f3cf')}
         onClick={onClose}
         className="absolute"
         style={{ top: eu(28), left: eu(28), width: eu(86), height: eu(86) }}
@@ -91,7 +98,7 @@ export function ClientEmailGate({
             style={{ width: eu(170), height: eu(170) }}
           />
           <p className="font-murs tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(64) }}>
-            NAVIX
+            {t('figma-client.ClientEmailGate.d675af9943')}
           </p>
         </div>
 
@@ -118,13 +125,13 @@ export function ClientEmailGate({
             htmlFor="client-gate-email"
             style={{ marginTop: eu(32), fontSize: eu(32) }}
           >
-            Email
+            {t('figma-client.ClientEmailGate.969ccbd3cf')}
           </label>
           <input
             id="client-gate-email"
             type="email"
             autoComplete="email"
-            placeholder="example@gmail.com"
+            placeholder={t('figma-client.ClientEmailGate.264e53d937')}
             value={email}
             readOnly={purpose === 'submit' || codeStep}
             disabled={busy}
@@ -153,7 +160,7 @@ export function ClientEmailGate({
                   className="font-murs text-figma-ink"
                   style={{ marginTop: eu(40), fontSize: eu(32) }}
                 >
-                  Код из письма
+                  {t('figma-client.ClientEmailGate.d137bee310')}
                 </p>
                 <OtpRow
                   cells={cells}
@@ -186,7 +193,7 @@ export function ClientEmailGate({
                         fontSize: eu(28),
                       }}
                     >
-                      Новый код
+                      {t('figma-client.ClientEmailGate.1a0517bfd5')}
                     </motion.button>
                   )}
                 </div>
@@ -222,11 +229,11 @@ export function ClientEmailGate({
           >
             {busy
               ? codeStep
-                ? 'Входим…'
-                : 'Отправляем…'
+                ? t('figma-client.ClientEmailGate.0d71e00507')
+                : t('figma-client.ClientEmailGate.899dce11fb')
               : codeStep
-                ? 'Подтвердить'
-                : 'Получить код'}
+                ? t('figma-client.ClientEmailGate.27bca309f5')
+                : t('figma-client.ClientEmailGate.94b683c81c')}
           </motion.button>
         </form>
       </div>
@@ -265,7 +272,10 @@ function OtpRow({
           }}
           inputMode="numeric"
           autoComplete={index === 0 ? 'one-time-code' : 'off'}
-          aria-label={`Цифра ${index + 1} из ${OTP_LENGTH}`}
+          aria-label={t('figma-client.ClientEmailGate.1e69b3fe8f', {
+            value0: index + 1,
+            value1: OTP_LENGTH,
+          })}
           maxLength={OTP_LENGTH}
           disabled={disabled}
           value={cells[index]}

@@ -13,7 +13,9 @@ export type AlertAction =
   | 'message'
   | 'remove_shift'
   | 'message_remove'
-  | 'extend';
+  | 'extend'
+  | 'make_passive'
+  | 'prioritize';
 
 /** Returns the finite dispatcher action catalogue for one alert code. */
 export function alertActionsFor(code: string): AlertAction[] {
@@ -24,14 +26,14 @@ export function alertActionsFor(code: string): AlertAction[] {
     case 'LIVE_TECHNICAL_BREAK_OVERRUN':
       return ['message', 'extend', 'keep_as_is'];
     case 'unassigned':
-      return ['reschedule', 'move_window', 'add_engineer'];
+      return ['reschedule', 'move_window', 'add_engineer', 'prioritize'];
     case 'plan_degraded':
     case 'plan_review_required':
       return ['keep_manual', 'restore_auto'];
     case 'lunch_conflict':
       return ['skip_lunch', 'keep_lunch'];
     case 'engineer_overdue':
-      return ['message', 'remove_shift', 'extend'];
+      return ['message', 'remove_shift', 'extend', 'make_passive'];
     case 'shift_no_show':
       return ['message_remove', 'remove_shift', 'extend'];
     default:

@@ -18,6 +18,8 @@ import { AppliedPlanService } from '../../routing/router-gateway';
 import { DemoStandService } from '../demo-stand';
 import { EngineersService } from '../engineers';
 import { assertNoPendingHandoff, confirmHandoff, handoffView } from '../equipment/handoffs';
+import { confirmLogistics, logisticsView } from '../equipment/logistics';
+import { EquipmentLogisticsService } from '../equipment/logistics.service';
 import { FactsService } from '../facts';
 import {
   ExecutionTimingPolicy,
@@ -67,6 +69,7 @@ export class LiveService {
     private readonly readProjection: LiveReadProjection,
     private readonly dayState: LiveDayState,
     private readonly routeQuery: LiveRouteQuery,
+    private readonly logistics: EquipmentLogisticsService,
   ) {}
 
   /**
@@ -267,6 +270,7 @@ export class LiveService {
     context: OperationContext,
     engineerId: string,
     input: LiveActionDto,
+    equipmentTransfersEnabled = false,
   ): Promise<EngineerLiveView> {
     const day = await this.dayState.ensureDay(context.tx, context.now);
     if (day.status !== 'running') {
@@ -301,6 +305,23 @@ export class LiveService {
             { businessTime: true },
           );
         }
+        break;
+      case 'equipment_delivery_confirm':
+      case 'office_pickup_confirm':
+        await confirmLogistics(
+          context.tx,
+          input.logisticsId,
+          engineerId,
+          day.workDate,
+          liveNow,
+          input.kind === 'equipment_delivery_confirm' ? 'donor_delivery' : 'office_pickup',
+        );
+        await this.publisher.publishIfChanged(
+          context.tx,
+          liveNow,
+          PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED,
+          { businessTime: true },
+        );
         break;
       case 'online':
         if (state.lineStartedAt !== null) {
@@ -443,12 +464,45 @@ export class LiveService {
       }
 
       case 'start': {
+        const pendingPickup = await context.tx.equipmentLogistics.findFirst({
+          where: {
+            requestId: input.requestId,
+            workDate: day.workDate,
+            status: 'assigned',
+            kind: 'office_pickup',
+          },
+        });
+        if (pendingPickup)
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Confirm equipment collection at the office first',
+          );
         await assertNoPendingHandoff(context.tx, engineerId, input.requestId, liveNow);
         const current = await this.routeQuery.currentFor(context.tx, day, engineerId, liveNow);
         this.assertCurrentRequest(current, input.requestId);
         if (current.phase !== 'ready_to_start') {
           throw new SysError('VALIDATION_FAILED', 'This visit is not ready to start yet');
         }
+        const priorDelivery = await context.tx.equipmentLogistics.findFirst({
+          where: {
+            workDate: day.workDate,
+            status: 'assigned',
+            donorEngineerId: engineerId,
+            expectedAt: {
+              lt: BigInt(
+                Math.max(
+                  Number(current.stop?.startAt ?? liveNow),
+                  liveNow + (current.current?.request.serviceDurationSec ?? 0),
+                ),
+              ),
+            },
+          },
+        });
+        if (priorDelivery)
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Complete the scheduled equipment delivery before this visit',
+          );
         const acceptedPromise = await context.tx.liveRequestState.findUnique({
           where: { workdayId_requestId: { workdayId: day.id, requestId: input.requestId } },
           select: {
@@ -519,6 +573,18 @@ export class LiveService {
       }
 
       case 'finish': {
+        const waiting = await context.tx.equipmentLogistics.findFirst({
+          where: {
+            requestId: input.requestId,
+            workDate: day.workDate,
+            status: { in: ['searching', 'assigned', 'error'] },
+          },
+        });
+        if (waiting)
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Equipment logistics must be resolved before finishing this visit',
+          );
         const activeRequest = await context.tx.request.findUniqueOrThrow({
           where: { id: input.requestId },
           select: { serviceDurationSec: true, startedAt: true },
@@ -584,7 +650,15 @@ export class LiveService {
       }
 
       case 'problem':
-        await this.problem(businessContext, day, state, engineerId, input, liveNow);
+        await this.problem(
+          businessContext,
+          day,
+          state,
+          engineerId,
+          input,
+          liveNow,
+          equipmentTransfersEnabled,
+        );
         break;
 
       case 'break_start':
@@ -609,6 +683,7 @@ export class LiveService {
   }
 
   private async advanceShared(): Promise<void> {
+    await this.logistics.runOnce();
     const wallNow = this.clock.nowSeconds();
     const timing = await this.timing.read();
     await this.uow.run(async (tx) => {
@@ -644,6 +719,12 @@ export class LiveService {
           orderBy: { meetingAt: 'asc' },
         })
       ).map(handoffView),
+      logistics: await this.logisticsViews(
+        tx,
+        full.workDate,
+        null,
+        this.dayState.liveNow(full, wallNow),
+      ),
     };
   }
 
@@ -696,9 +777,46 @@ export class LiveService {
           orderBy: { meetingAt: 'asc' },
         })
       ).map(handoffView),
+      logistics: await this.logisticsViews(
+        tx,
+        full.workDate,
+        engineerId,
+        this.dayState.liveNow(full, wallNow),
+      ),
       current: current.current,
       lunch,
     };
+  }
+
+  private async logisticsViews(tx: Tx, workDate: string, viewerId: string | null, now: number) {
+    const rows = await tx.equipmentLogistics.findMany({
+      where: {
+        workDate,
+        ...(viewerId
+          ? { OR: [{ donorEngineerId: viewerId }, { receiverEngineerId: viewerId }] }
+          : {}),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const donorIds = [
+      ...new Set(rows.flatMap((row) => (row.donorEngineerId ? [row.donorEngineerId] : []))),
+    ];
+    const donors = new Map(
+      (
+        await tx.engineer.findMany({
+          where: { id: { in: donorIds } },
+          select: { id: true, displayName: true },
+        })
+      ).map((row) => [row.id, row.displayName]),
+    );
+    return rows.map((row) =>
+      logisticsView(
+        row,
+        viewerId,
+        row.donorEngineerId ? (donors.get(row.donorEngineerId) ?? null) : null,
+        now,
+      ),
+    );
   }
 
   /** Archived and synthetic leftovers are not a roster the coordinator can mutate. */
@@ -835,6 +953,16 @@ export class LiveService {
     state: LiveEngineerState,
     liveNow: number,
   ): Promise<boolean> {
+    if (
+      await tx.equipmentLogistics.count({
+        where: {
+          workDate: day.workDate,
+          status: { in: ['searching', 'assigned', 'error'] },
+          OR: [{ donorEngineerId: state.engineerId }, { receiverEngineerId: state.engineerId }],
+        },
+      })
+    )
+      return false;
     const dayStart = Date.parse(`${day.workDate}T00:00:00+03:00`) / 1000;
     if (
       liveNow < dayStart + 17 * 3600 ||
@@ -1024,6 +1152,7 @@ export class LiveService {
     engineerId: string,
     input: Extract<LiveActionDto, { kind: 'problem' }>,
     logicalNow: number,
+    equipmentTransfersEnabled = false,
   ) {
     const current = await this.routeQuery.currentFor(context.tx, day, engineerId, context.now);
     this.assertCurrentRequest(current, input.requestId);
@@ -1063,6 +1192,65 @@ export class LiveService {
     }
     if (input.problemKind === 'missing_equipment' && input.missingEquipment === undefined) {
       throw new SysError('VALIDATION_FAILED', 'Choose the missing equipment');
+    }
+    if (
+      input.problemKind === 'missing_equipment' &&
+      input.missingEquipment !== undefined &&
+      equipmentTransfersEnabled &&
+      current.phase === 'in_progress'
+    ) {
+      const request = await context.tx.request.findUniqueOrThrow({
+        where: { id: input.requestId },
+      });
+      if (request.lat === null || request.lon === null)
+        throw new SysError('VALIDATION_FAILED', 'The delivery address needs coordinates');
+      const existing = await context.tx.equipmentLogistics.findUnique({
+        where: { workDate_requestId: { workDate: day.workDate, requestId: input.requestId } },
+      });
+      if (existing) {
+        if (existing.equipmentType !== input.missingEquipment)
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Another equipment search already exists for this visit',
+          );
+        return;
+      }
+      await context.tx.equipmentLogistics.create({
+        data: {
+          id: context.operationId,
+          workDate: day.workDate,
+          kind: 'donor_delivery',
+          status: 'searching',
+          requestId: input.requestId,
+          receiverEngineerId: engineerId,
+          equipmentType: input.missingEquipment,
+          lat: request.lat,
+          lon: request.lon,
+          waitStartedAt: BigInt(logicalNow),
+          baselineCompletionAt:
+            request.expectedCompletionAt ??
+            BigInt(Number(request.startedAt) + request.serviceDurationSec),
+          createdAt: BigInt(context.now),
+          updatedAt: BigInt(context.now),
+        },
+      });
+      await context.tx.requestFact.create({
+        data: {
+          requestId: input.requestId,
+          engineerId,
+          kind: 'problem',
+          occurredAt: BigInt(logicalNow),
+          recordedAt: BigInt(context.now),
+          operationId: context.operationId,
+          note: `[missing_equipment:${input.missingEquipment}] ${input.note}`,
+        },
+      });
+      await this.upsertRequestState(context.tx, day.id, input.requestId, context.now, {
+        reservedEngineerId: engineerId,
+        problemKind: 'missing_equipment',
+        problemNote: input.note,
+      });
+      return;
     }
     const note =
       input.problemKind === 'missing_equipment'
@@ -1451,11 +1639,11 @@ export class LiveService {
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });
       if (liveState?.lineStatus !== 'online') continue;
-      if (appActiveEngineers.has(route.engineerId)) continue;
       const dayState = await tx.engineerDay.findUnique({
         where: { engineerId_workDate: { engineerId: route.engineerId, workDate: day.workDate } },
-        select: { lunchDurationSec: true },
+        select: { lunchDurationSec: true, attendanceOptOut: true },
       });
+      if (appActiveEngineers.has(route.engineerId) && !dayState?.attendanceOptOut) continue;
       const lunchDurationSec = dayState?.lunchDurationSec ?? null;
       const lunchEndsAt =
         liveState.activeLunchStartedAt !== null && lunchDurationSec !== null

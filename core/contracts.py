@@ -68,10 +68,34 @@ class Request(Record):
     window_start_at: Seconds
     window_end_at: Seconds
     priority: Literal["normal", "urgent"]
+    source_window_start_at: Seconds | None = None
+    source_window_end_at: Seconds | None = None
+    work_category: Literal["emergency", "connection", "service"] | None = None
+    received_at: Seconds | None = None
+    dispatcher_priority: bool = False
+    manual_engineer_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    manual_unassigned: bool = Field(default=False, exclude_if=lambda value: not value)
+    manual_window: bool = Field(default=False, exclude_if=lambda value: not value)
     required_skill: Skill
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
     region: Annotated[str, Field(min_length=1)] | None = None
+
+    @property
+    def category(self) -> str:
+        """Explicit business tier; binary legacy tasks retain their urgent semantics."""
+        return self.work_category or ("emergency" if self.priority == "urgent" else "service")
+
+    @property
+    def priority_tier(self) -> int:
+        """A dispatcher override sits below emergencies and above ordinary categories."""
+        return 0 if self.category == "emergency" else 1 if self.dispatcher_priority else 2 if self.category == "connection" else 3
+
+    @property
+    def ready_at(self) -> int:
+        """An emergency starts from receipt, other visits also respect the booked window."""
+        receipt = self.window_start_at if self.received_at is None else self.received_at
+        return receipt if self.category == "emergency" else max(receipt, self.window_start_at)
 
     @model_validator(mode="after")
     def check_window(self) -> Self:
@@ -91,6 +115,8 @@ class Engineer(Record):
     # Legacy walking profiles historically used the metro composite. New source data
     # can explicitly prohibit that without changing the physical transport identity.
     transit_eligible: bool = True
+    manual_shift: bool = Field(default=False, exclude_if=lambda value: not value)
+    manual_lunch: bool = Field(default=False, exclude_if=lambda value: not value)
     shift_start_at: Seconds
     shift_end_at: Seconds
     start_location: GeoPoint
@@ -138,13 +164,21 @@ class Engineer(Record):
 class Policy(Record):
     """Supported catalog choice; preferences cannot disable hard constraints."""
 
-    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering", "personal"]
     parameters: dict[str, str | int | float | bool | None]
 
     @model_validator(mode="after")
     def check_parameters(self) -> Self:
         """Reject unsupported preferences instead of pretending they were applied."""
-        if self.parameters:
+        if self.policy_id == "personal":
+            allowed = {"travel_time", "distance", "engineers_used", "window_start_delay", "total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread", "max_jobs_per_engineer"}
+            order = self.parameters.get("objective_order")
+            if set(self.parameters) != {"objective_order"} or not isinstance(order, str):
+                raise ValueError("personal requires objective_order")
+            parts = order.split(",")
+            if len(parts) != len(allowed) or set(parts) != allowed:
+                raise ValueError("personal objective_order must include each supported criterion exactly once")
+        elif self.parameters:
             raise ValueError(f"{self.policy_id} accepts only empty parameters")
         return self
 
@@ -189,6 +223,9 @@ class RouterTaskSnapshot(Record):
     engineers: list[Engineer]
     policy: Policy
     pending_equipment_handoffs: list["PendingEquipmentHandoff"] = Field(default_factory=list)
+    depots: list["Depot"] = Field(default_factory=list, exclude_if=lambda value: not value)
+    pending_equipment_logistics: list["PendingEquipmentLogistics"] = Field(default_factory=list, exclude_if=lambda value: not value)
+    manual_decisions: list["ManualDecision"] = Field(default_factory=list, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def check_identity(self) -> Self:
@@ -207,6 +244,10 @@ class RouterTaskSnapshot(Record):
         handoff_ids = [handoff.handoff_id for handoff in self.pending_equipment_handoffs]
         if len(handoff_ids) != len(set(handoff_ids)):
             raise ValueError("duplicate pending handoff")
+        depot_ids = [depot.depot_id for depot in self.depots]
+        logistics_ids = [item.logistics.logistics_id for item in self.pending_equipment_logistics]
+        if len(depot_ids) != len(set(depot_ids)) or len(logistics_ids) != len(set(logistics_ids)):
+            raise ValueError("duplicate depot or pending logistics")
         if any(
             handoff.donor_engineer_id not in engineer_ids
             or handoff.receiver_engineer_id not in engineer_ids
@@ -215,6 +256,34 @@ class RouterTaskSnapshot(Record):
         ):
             raise ValueError("invalid pending handoff")
         return self
+
+
+class ManualDecision(Record):
+    """Dispatcher constraint, resolved jointly by Router without mutating source input."""
+
+    id: str = Field(min_length=1)
+    kind: Literal["assignment", "window", "lunch", "shift"]
+    target_id: str = Field(min_length=1)
+    priority: int = Field(ge=0)
+    engineer_id: str | None = None
+    start_at: Seconds | None = None
+    end_at: Seconds | None = None
+
+
+class ManualResolution(Record):
+    """Audit outcome for the current main plan; absent when no active directives exist."""
+
+    accepted_ids: list[str]
+    rejected_ids: list[str]
+    conflict_ids: list[str]
+
+
+class Depot(Record):
+    """Verified regional office location used only for physical replenishment."""
+
+    depot_id: str = Field(min_length=1)
+    region: str | None = None
+    location: GeoPoint
 
 
 class Reason(Record):
@@ -265,6 +334,41 @@ class PendingEquipmentHandoff(EquipmentHandoff):
     meeting_at: Seconds
 
 
+class EquipmentLogistics(Record):
+    """One-sided equipment movement attached to the job it unblocks.
+
+    Unlike ``EquipmentHandoff``, a delivery is a stop only for its donor and an
+    office pickup is a stop only for its recipient.  The System Layer owns the
+    authenticated stock fact; Router only schedules this immutable intention.
+    """
+
+    logistics_id: str = Field(min_length=1)
+    kind: Literal["donor_delivery", "office_pickup"]
+    request_id: str = Field(min_length=1)
+    equipment_type: EquipmentType
+    donor_engineer_id: str | None = None
+    receiver_engineer_id: str = Field(min_length=1)
+    depot_id: str | None = None
+
+    @model_validator(mode="after")
+    def check_owner(self) -> Self:
+        """Keep the two one-sided flows distinguishable in every persisted plan."""
+        if self.kind == "donor_delivery":
+            if self.donor_engineer_id is None or self.depot_id is not None:
+                raise ValueError("delivery requires donor and no depot")
+        elif self.depot_id is None or self.donor_engineer_id is not None:
+            raise ValueError("office pickup requires depot and no donor")
+        return self
+
+
+class PendingEquipmentLogistics(Record):
+    """Accepted one-sided movement replayed at its frozen time on later replans."""
+
+    logistics: EquipmentLogistics
+    location: GeoPoint
+    at: Seconds
+
+
 class RouteSegment(Record):
     """One ordered portion of a composite leg with its own route provenance."""
 
@@ -279,13 +383,14 @@ class RouteStop(Record):
 
     stop_id: str
     sequence: int
-    kind: Literal["job", "lunch", "wait", "handoff"]
+    kind: Literal["job", "lunch", "wait", "handoff", "delivery", "office_pickup"]
     request_id: str | None
     location: GeoPoint
     arrival_at: Seconds
     start_at: Seconds
     end_at: Seconds
     handoff: EquipmentHandoff | None = None
+    logistics: EquipmentLogistics | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:
@@ -296,6 +401,12 @@ class RouteStop(Record):
             raise ValueError("only job stops must reference a request")
         if (self.kind == "handoff") != (self.handoff is not None):
             raise ValueError("only handoff stops must carry handoff metadata")
+        if (self.kind in ("delivery", "office_pickup")) != (self.logistics is not None):
+            raise ValueError("only logistics stops must carry logistics metadata")
+        if self.logistics is not None and self.kind != (
+            "delivery" if self.logistics.kind == "donor_delivery" else "office_pickup"
+        ):
+            raise ValueError("logistics stop kind differs from metadata")
         return self
 
 
@@ -312,6 +423,7 @@ class RouteLeg(Record):
     geometry: Geometry | None
     travel_source: TravelProvenance
     traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
+    weather_multiplier_used: Annotated[float, Field(gt=0.0, le=3.0)] | None = None
     segments: list[RouteSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -414,6 +526,7 @@ class Plan(Record):
     assignments: list[Assignment]
     summary: PlanMetrics
     alerts: list[PlanningAlert]
+    manual_resolution: ManualResolution | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class CandidateEvidence(Record):

@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AiAssistMode } from '../../api/ai';
 import type { AssistantSurface } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 import { AssistantChat } from './AssistantChat';
 
 export interface DockedAssistantProps {
@@ -55,7 +56,7 @@ export function DockedAssistant({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Закрыть ассистента"
+          aria-label={t('components.ai.DockedAssistant.065ba2a163')}
           className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-canvas"
         >
           <X className="h-4 w-4" />

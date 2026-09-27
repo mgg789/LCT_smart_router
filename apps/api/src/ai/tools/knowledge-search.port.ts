@@ -11,6 +11,10 @@ export interface KnowledgeSearchResult {
   readonly body: string;
   readonly segment: AiKnowledgeSegment;
   readonly actions: string[];
+  /** Source metadata for citations; legacy ports may omit it rather than invent a version. */
+  readonly sourcePath?: string;
+  readonly updatedAt?: number;
+  readonly checksum?: string;
 }
 
 /**

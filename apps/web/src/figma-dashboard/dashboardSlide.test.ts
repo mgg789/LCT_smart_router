@@ -42,7 +42,7 @@ describe('dashboardSlide', () => {
     expect(stackSlideEnter(0)).toEqual({ y: '0%' });
   });
 
-  it('skips locked chats and steps from policy straight into AI', () => {
+  it('keeps dispatcher chats locked in sidebar navigation', () => {
     expect(isNavLocked('chats')).toBe(true);
     expect(isNavLocked('ai')).toBe(false);
     expect(isNavLocked('engineers')).toBe(false);

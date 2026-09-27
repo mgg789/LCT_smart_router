@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { PerformanceService } from '../orchestrator/performance';
@@ -20,6 +20,7 @@ export class DispatchPerformanceController {
   constructor(private readonly performance: PerformanceService) {}
 
   @Get('day')
+  @ApiQuery({ name: 'workdayId', required: true, schema: { type: 'string' } })
   @ApiOperation({ summary: 'Dispatcher performance for one LIVE workday' })
   async day(@Query('workdayId') workdayId?: string) {
     return this.performance.day(requiredWorkdayId(workdayId));
@@ -37,6 +38,7 @@ export class EngineerPerformanceController {
   ) {}
 
   @Get('day')
+  @ApiQuery({ name: 'workdayId', required: true, schema: { type: 'string' } })
   @ApiOperation({ summary: 'Own engineer performance for one LIVE workday' })
   async day(
     @CurrentActor() actor: Actor,

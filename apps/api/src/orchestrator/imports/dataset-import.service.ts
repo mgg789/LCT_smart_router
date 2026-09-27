@@ -56,6 +56,17 @@ interface PreparedRegion {
   readonly engineerLimit: number | null;
 }
 
+/** JSON-safe, fully normalized official region retained by an import preparation. */
+export interface PreparedOfficialRegion {
+  readonly region: DatasetRegion;
+  readonly source: string;
+  readonly checksum: string;
+  readonly parsed: ParsedRegion;
+  readonly brigades: readonly ParsedBrigade[];
+  readonly geocoded: Readonly<Record<string, { readonly lat: number; readonly lon: number }>>;
+  readonly engineerLimit: number | null;
+}
+
 const geocodePackageSchema = z
   .object({
     schema_version: z.string().min(1).optional(),
@@ -116,15 +127,46 @@ export class DatasetImportService {
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
   ): Promise<ImportBatchSummary> {
-    const prepared = regions.map((region) =>
-      this.prepareRegion(
-        context,
-        region,
-        datasetRoot,
-        timeZoneOffsetSec,
-        engineerCountPerRegion[region] ?? null,
+    const prepared = this.prepareRegions(
+      context,
+      regions,
+      datasetRoot,
+      timeZoneOffsetSec,
+      engineerCountPerRegion,
+    );
+    return this.importPreparedRegions(context, prepared, timeZoneOffsetSec);
+  }
+
+  /** Materializes and versions official rows and geocodes without changing business data. */
+  prepareRegions(
+    context: OperationContext,
+    regions: readonly DatasetRegion[],
+    datasetRoot: string,
+    timeZoneOffsetSec: number,
+    engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
+  ): PreparedOfficialRegion[] {
+    return regions.map((region) =>
+      serializePreparedRegion(
+        this.prepareRegion(
+          context,
+          region,
+          datasetRoot,
+          timeZoneOffsetSec,
+          engineerCountPerRegion[region] ?? null,
+        ),
       ),
     );
+  }
+
+  /** Applies only the immutable JSON-safe batch captured during prepare. */
+  async importPreparedRegions(
+    context: OperationContext,
+    batch: readonly PreparedOfficialRegion[],
+    timeZoneOffsetSec: number,
+    equipmentSettings?: DispatcherSettings,
+  ): Promise<ImportBatchSummary> {
+    const prepared = batch.map(deserializePreparedRegion);
+    const regions = prepared.map((item) => item.region);
     if (prepared.some((item) => item.parsed.errors.length > 0)) {
       return aggregate(
         prepared.map((item) => ({
@@ -147,13 +189,18 @@ export class DatasetImportService {
         }
         results.push({
           region: item.region,
-          ...(await this.refreshImportedRegion(context, item, timeZoneOffsetSec)),
+          ...(await this.refreshImportedRegion(
+            context,
+            item,
+            timeZoneOffsetSec,
+            equipmentSettings,
+          )),
         });
         continue;
       }
       results.push({
         region: item.region,
-        ...(await this.apply(context, item, timeZoneOffsetSec)),
+        ...(await this.apply(context, item, timeZoneOffsetSec, equipmentSettings)),
       });
     }
 
@@ -185,6 +232,7 @@ export class DatasetImportService {
     context: OperationContext,
     prepared: PreparedRegion,
     timeZoneOffsetSec: number,
+    equipmentSettings?: DispatcherSettings,
   ): Promise<ImportSummary> {
     const now = BigInt(context.now);
     const { source, parsed } = prepared;
@@ -214,7 +262,12 @@ export class DatasetImportService {
       windowsUpdated += updated.count;
     }
 
-    const daysUpserted = await this.upsertImportedDays(context, prepared, timeZoneOffsetSec);
+    const daysUpserted = await this.upsertImportedDays(
+      context,
+      prepared,
+      timeZoneOffsetSec,
+      equipmentSettings,
+    );
     const lunchRowsUpdated = await this.ensureImportedLunchSettings(
       context,
       prepared.region,
@@ -241,6 +294,7 @@ export class DatasetImportService {
     context: OperationContext,
     prepared: PreparedRegion,
     timeZoneOffsetSec: number,
+    equipmentSettings?: DispatcherSettings,
   ): Promise<number> {
     const now = BigInt(context.now);
     const workDate = localDate(context.now, timeZoneOffsetSec);
@@ -252,7 +306,7 @@ export class DatasetImportService {
     const equipmentByBrigade = allocateMorningEquipment(
       prepared.parsed.requests,
       prepared.brigades,
-      await readEquipmentSettings(context.tx),
+      equipmentSettings ?? (await readEquipmentSettings(context.tx)),
     );
     let upserted = 0;
     for (const brigade of prepared.brigades) {
@@ -403,6 +457,7 @@ export class DatasetImportService {
     context: OperationContext,
     prepared: PreparedRegion,
     timeZoneOffsetSec: number,
+    equipmentSettings?: DispatcherSettings,
   ): Promise<ImportSummary> {
     const { source, checksum, parsed, brigades, geocoded } = prepared;
     const now = BigInt(context.now);
@@ -412,7 +467,7 @@ export class DatasetImportService {
     const equipmentByBrigade = allocateMorningEquipment(
       parsed.requests,
       brigades,
-      await readEquipmentSettings(context.tx),
+      equipmentSettings ?? (await readEquipmentSettings(context.tx)),
     );
 
     if (parsed.depot) {
@@ -565,6 +620,7 @@ export class DatasetImportService {
           requiredTransport: null,
           requiredEquipment: importedEquipment(request),
           workTypeHd: request.workTypeCode,
+          workCategory: request.workCategory,
           lifecycle: 'submitted',
           assignmentState: 'pending',
           origin: 'import',
@@ -674,6 +730,26 @@ export class DatasetImportService {
     }
     return { bytes, points };
   }
+}
+
+function serializePreparedRegion(item: PreparedRegion): PreparedOfficialRegion {
+  return {
+    region: item.region,
+    source: item.source,
+    checksum: item.checksum,
+    parsed: item.parsed,
+    brigades: item.brigades,
+    geocoded: Object.fromEntries(item.geocoded),
+    engineerLimit: item.engineerLimit,
+  };
+}
+
+function deserializePreparedRegion(item: PreparedOfficialRegion): PreparedRegion {
+  return {
+    ...item,
+    brigades: [...item.brigades],
+    geocoded: new Map(Object.entries(item.geocoded)),
+  };
 }
 
 /** Moves a historical benchmark to a future horizon without changing relative windows. */
@@ -864,6 +940,7 @@ function allocateMorningEquipment(
             .transportType,
           settings,
         ),
+        synthesizeCrew(brigades.find((item) => item.name === name)?.inputOrder ?? 0).transportType,
       ),
     ]),
   );

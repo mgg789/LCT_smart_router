@@ -2,10 +2,14 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
+import { t } from '../i18n';
 import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
+import { useArtboardStretch } from './artboardStretch';
 import { Copyable } from './Copyable';
 import { requestUrgency } from './fromSnapshot';
+import { ManualRequestControls } from './ManualPlanning';
 import { FigmaText } from './primitives';
 import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
@@ -15,6 +19,8 @@ import { useAiExplanation } from './useAiExplanation';
 const HEADER_LIFT = 16;
 const PANEL_TOP = 154 - HEADER_LIFT;
 const PANEL_HEIGHT = 893 + HEADER_LIFT;
+/** Holds the board's right edge, which a wide window puts past the drawing. */
+const DETAIL_PANEL_LEFT = 1406;
 const CLOSE_PANEL_SIZE = 43;
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const FACT_ICON = {
@@ -53,25 +59,27 @@ export function RequestDetails({
   onClose: () => void;
   onOpenEngineer?: () => void;
 }) {
+  const offline = isNavixOffline();
+  const { dx, dy } = useArtboardStretch();
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
   const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
       ? requestEquipmentLabel(request.requiredEquipment)
-      : 'Без оборудования'
+      : t('figma-dashboard.RequestDetails.4f0e8481b7')
     : null;
   const assignment =
     request == null
       ? null
       : request.assignmentState === 'unassigned' || request.assignmentState === 'pending'
-        ? 'Не назначена'
-        : 'Назначена';
+        ? t('figma-dashboard.RequestDetails.ae6bef78e3')
+        : t('figma-dashboard.RequestDetails.c5497186c4');
 
   return (
     <motion.aside
-      className="absolute left-[1406px] w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
-      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      className="absolute w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
+      style={{ left: DETAIL_PANEL_LEFT + dx, top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
       initial={motionOn ? { opacity: 0, x: 28 } : false}
       animate={{ opacity: 1, x: 0 }}
       exit={motionOn ? { opacity: 0, x: 36 } : undefined}
@@ -79,7 +87,7 @@ export function RequestDetails({
     >
       <motion.button
         type="button"
-        aria-label="Закрыть панель"
+        aria-label={t('figma-dashboard.RequestDetails.bf427bdba8')}
         onClick={onClose}
         className="absolute right-[16px] top-[16px] z-20 flex items-center justify-center rounded-full bg-white"
         style={{ width: CLOSE_PANEL_SIZE, height: CLOSE_PANEL_SIZE }}
@@ -97,11 +105,15 @@ export function RequestDetails({
         {mode === 'request' && request ? (
           <div className="pr-[52px]">
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
-              {request.workTypeTitle || 'Заявка'}
+              <span
+                className={request.workCategory === 'emergency' ? 'text-figma-danger' : undefined}
+              >
+                {request.workTypeTitle || t('figma-dashboard.RequestDetails.77b3e0166b')}
+              </span>
             </FigmaText>
             <Copyable
               value={shortRequestId(request.id)}
-              label="Скопировать номер заявки"
+              label={t('figma-dashboard.RequestDetails.fd3834086e')}
               className="mt-[8px] text-left"
             >
               <p
@@ -118,7 +130,7 @@ export function RequestDetails({
             </div>
             <Copyable
               value={request.addressText}
-              label="Скопировать адрес"
+              label={t('figma-dashboard.RequestDetails.72a7549bb1')}
               className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px] text-left transition-colors hover:bg-white/10"
             >
               <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
@@ -143,6 +155,7 @@ export function RequestDetails({
         ) : (
           <div className="h-[36px]" />
         )}
+        {mode === 'request' && request ? <ManualRequestControls requestId={request.id} /> : null}
         {mode === 'request' ? (
           <RequestReasons
             aiOn={aiOn}
@@ -173,10 +186,14 @@ export function RequestDetails({
             explanation={explanation}
             durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
             onToggleAi={() => setAiOn((value) => !value)}
+            disabled={offline}
             onToggleLarge={() => setLargeOn((value) => !value)}
           />
         ) : (
-          <IconFactCard title="Факты" facts={explanation?.iconFacts ?? []} />
+          <IconFactCard
+            title={t('figma-dashboard.RequestDetails.79cc865da4')}
+            facts={explanation?.iconFacts ?? []}
+          />
         )}
       </div>
       {mode === 'plan' && engineer ? (
@@ -186,15 +203,15 @@ export function RequestDetails({
             onClick={onOpenEngineer}
             className="h-[52px] flex-1 rounded-[16px] bg-white font-semibold text-[16px] text-figma-ink"
           >
-            К инженеру
+            {t('figma-dashboard.RequestDetails.f07be04268')}
           </button>
           <button
             type="button"
             disabled
-            title="Скоро"
+            title={t('figma-dashboard.RequestDetails.72c299e0d6')}
             className="h-[52px] flex-1 cursor-not-allowed rounded-[16px] bg-white/15 font-semibold text-[16px] text-white/45"
           >
-            Написать
+            {t('figma-dashboard.RequestDetails.3214e286d7')}
           </button>
         </div>
       ) : null}
@@ -212,6 +229,7 @@ function RequestReasons({
   durationLabel,
   onToggleAi,
   onToggleLarge,
+  disabled = false,
 }: {
   aiOn: boolean;
   largeOn: boolean;
@@ -222,6 +240,7 @@ function RequestReasons({
   durationLabel: string;
   onToggleAi: () => void;
   onToggleLarge: () => void;
+  disabled?: boolean;
 }) {
   const { text: aiText, ready: aiReady } = useAiExplanation({
     enabled: aiOn,
@@ -238,14 +257,21 @@ function RequestReasons({
               aiOn ? 'panel-ai-fill client-ai-text figma-text-uncropped' : 'text-white'
             }`}
           >
-            {aiOn ? 'Причины AI' : 'Причины'}
+            {aiOn
+              ? t('figma-dashboard.RequestDetails.50d9ea142a')
+              : t('figma-dashboard.RequestDetails.93096e67cb')}
           </FigmaText>
           <LayoutGroup>
             <div className="flex items-center">
               <motion.div layout={motionOn} transition={{ duration: 0.32, ease: slideEase }}>
                 <ReasonIconButton
-                  label={aiOn ? 'Обычные причины' : 'Объяснить с AI'}
+                  label={
+                    aiOn
+                      ? t('figma-dashboard.RequestDetails.a2270af56f')
+                      : t('figma-dashboard.RequestDetails.f50242f50b')
+                  }
                   motionOn={motionOn}
+                  disabled={disabled}
                   onClick={onToggleAi}
                 >
                   {aiOn ? (
@@ -266,7 +292,11 @@ function RequestReasons({
                     transition={{ duration: 0.32, ease: slideEase }}
                   >
                     <ReasonIconButton
-                      label={largeOn ? 'Коротко' : 'Подробнее'}
+                      label={
+                        largeOn
+                          ? t('figma-dashboard.RequestDetails.3a42d2327c')
+                          : t('figma-dashboard.RequestDetails.59589fe2a5')
+                      }
                       motionOn={motionOn}
                       onClick={onToggleLarge}
                     >
@@ -293,8 +323,7 @@ function RequestReasons({
             {aiOn ? (
               aiReady ? (
                 <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
-                  {aiText ??
-                    'Текстовый разбор пока не подключён. Причины решения остаются обычными, без выдуманного текста.'}
+                  {aiText ?? t('figma-dashboard.RequestDetails.3025714c55')}
                 </p>
               ) : (
                 <AiSearchLines />
@@ -309,10 +338,10 @@ function RequestReasons({
         <>
           <div className="mt-[16px] flex min-h-[160px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
             <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-              Как влияет
+              {t('figma-dashboard.RequestDetails.8e70b73225')}
             </FigmaText>
             <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
-              {explanation?.influence || 'Нет объяснения влияния.'}
+              {explanation?.influence || t('figma-dashboard.RequestDetails.e2cf5d6461')}
             </p>
           </div>
           <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
@@ -330,11 +359,13 @@ function ReasonIconButton({
   label,
   motionOn,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string;
   motionOn: boolean;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -342,8 +373,9 @@ function ReasonIconButton({
       type="button"
       aria-label={label}
       title={label}
+      disabled={disabled}
       onClick={onClick}
-      className="flex size-[36px] items-center justify-center rounded-full bg-white/10"
+      className="flex size-[36px] items-center justify-center rounded-full bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
       whileHover={motionOn ? { scale: 1.08, backgroundColor: 'rgba(255,255,255,0.18)' } : undefined}
       whileTap={motionOn ? { scale: 0.92 } : undefined}
       transition={{ duration: 0.16 }}
@@ -418,7 +450,7 @@ function IconFactList({
   if (facts.length === 0) {
     return (
       <p className={`${className} font-medium text-[18px] leading-[24px] text-white/70`}>
-        Нет причин по этому выбору.
+        {t('figma-dashboard.RequestDetails.62804d2068')}
       </p>
     );
   }

@@ -5,6 +5,7 @@ import { AuthModule } from './auth';
 import { AppConfigModule } from './common/config';
 import { HealthModule } from './common/health';
 import { RequestContextMiddleware } from './common/logging';
+import { ObservabilityModule } from './common/observability/observability.module';
 import { TimeModule } from './common/time';
 import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
@@ -33,6 +34,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
 @Module({
   imports: [
     AppConfigModule,
+    ObservabilityModule,
     TimeModule,
     HealthModule,
     PersistenceModule,

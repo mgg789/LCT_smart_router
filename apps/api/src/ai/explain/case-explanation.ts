@@ -61,7 +61,7 @@ export interface ExplainEngineerView {
 
 export interface ExplainPlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff' | 'delivery' | 'office_pickup';
   readonly requestId: string | null;
   readonly arrivalAt: number;
   readonly startAt: number;
@@ -248,6 +248,23 @@ export function explainSelection(
   route: ExplainPlanRouteView | null,
 ): CaseExplanation | null {
   if (request) {
+    if (!assignment || assignment.status === 'unassigned') {
+      const suitable = engineersInRegion(snapshot, request.region).filter((item) =>
+        item.skills.includes(request.requiredSkill),
+      );
+      if (suitable.length > 0 && suitable.every((item) => item.day?.availability === 'offline')) {
+        return {
+          title: 'Почему без назначения',
+          facts: [
+            `Заявка №${request.id} требует навык «${skillLabel(request.requiredSkill)}».`,
+            `Все инженеры этого региона с нужным навыком сейчас не на смене: ${suitable.map((item) => item.displayName).join(', ')}.`,
+          ],
+          influence:
+            'Инженеры не на смене недоступны для назначения. Это подтверждённое текущее ограничение, даже если отдельный код причины в результате расчёта отсутствует.',
+          result: `Заявка №${request.id} без назначения; сейчас нет доступной бригады с нужным навыком.`,
+        };
+      }
+    }
     if (assignment?.status === 'unassigned') {
       return explainUnassigned(snapshot, request, assignment);
     }
@@ -305,10 +322,10 @@ function explainAssigned(
       ? `Навык «${skillLabel(request.requiredSkill)}» есть у ${name}, поэтому назначение допустимо.`
       : `Солвер пометил назначение как допустимое по навыку, транспорту и смене.`,
     margin !== null && margin >= 0
-      ? `Приезд укладывается в окно — это удерживает заявку у этого исполнителя.`
-      : `Окно было учитываемым ограничением при выборе слота.`,
+      ? `Приезд укладывается в окно. Это подтверждает допустимость слота, но само по себе не объясняет выбор этого инженера.`
+      : `Окно учитывалось при проверке расписания; данных о том, что именно оно повлияло на выбор, нет.`,
     skilledIdle.length
-      ? `В той же зоне свободно ${skilledIdle.map((item) => item.displayName).join(', ')}, но политика «${policyTitle(snapshot.policyId)}» оставила работу на уже открытой смене.`
+      ? `В той же зоне свободен инженер с нужным навыком: ${skilledIdle.map((item) => item.displayName).join(', ')}. Без сравнения рассчитанных вариантов нельзя подтвердить, почему выбран текущий инженер.`
       : sameRegionIdle.length
         ? `Свободные в зоне (${sameRegionIdle.map((item) => item.displayName).join(', ')}) не имеют навыка «${skillLabel(request.requiredSkill)}».`
         : `Других свободных смен в этой зоне нет — новых исполнителей открывать было некого.`,
@@ -357,12 +374,7 @@ function explainUnassigned(
   } else if (code === 'NO_AVAILABLE_ENGINEER' || code === 'NO_REGION_MATCH') {
     influence = `В этой зоне нет доступного исполнителя, которому можно отдать заявку.`;
   } else if (idleSkilled.length || idleNames.length) {
-    influence =
-      snapshot.policyId === 'compact'
-        ? `Поиск не вставил заявку в уже собранные маршруты. ${idleNames.join(', ')} свободен и навык подходит, но политика «Компактнее» не открывает новую смену, пока считает, что текущие маршруты ещё должны вместить работу. Это предел расчёта, не доказанная невозможность.`
-        : snapshot.policyId === 'covering'
-          ? `Покрывающая политика сначала отдаёт остаток свободным в зоне, и только потом добавляет смены. ${idleNames.join(', ')} свободен, но в его смену заявка всё равно не встала — окно, доезд или уже занятый день не дали допустимого слота.`
-          : `Свободный ${idleNames.join(', ')} не получил заявку: навык формально есть, но слот в смене не сошёлся по окну или доезду.`;
+    influence = `По сохранённым фактам ${idleNames.join(', ')} свободен и имеет нужный навык. Причину, по которой расчёт не назначил ему заявку, можно установить только проверкой кандидата или повторным расчётом; текущий результат сам по себе этого не доказывает.`;
   } else if (idle.length) {
     influence = `Свободные ${idle.map((item) => item.displayName).join(', ')} не подходят по навыку: заявка просит «${skillLabel(request.requiredSkill)}», у них ${
       unique(idle.flatMap((item) => item.skills))

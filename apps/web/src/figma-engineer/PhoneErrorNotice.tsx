@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 /**
  * Error banner for the engineer and client phone column.
  *
@@ -23,7 +24,7 @@ export function PhoneErrorNotice({
           <p className="font-semibold text-[16px] leading-5">{title}</p>
           <button
             type="button"
-            aria-label="Закрыть уведомление"
+            aria-label={t('figma-engineer.PhoneErrorNotice.1907d5c300')}
             className="shrink-0 text-[20px] leading-none text-white"
             onClick={onClose}
           >

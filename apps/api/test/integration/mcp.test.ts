@@ -170,6 +170,7 @@ describe('dashboard mcp server', () => {
     for (const expected of [
       'get_dispatcher_context',
       'get_situation',
+      'get_previous_plan',
       'get_plan_explanations',
       'list_requests',
       'list_alerts',
@@ -182,6 +183,7 @@ describe('dashboard mcp server', () => {
       'get_router_controls',
       'set_control_mode',
       'update_dispatcher_settings',
+      'restore_previous_plan',
     ]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
     }

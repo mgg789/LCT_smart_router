@@ -12,11 +12,14 @@ import os
 import time
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Literal
 
 from core.contracts import GeoPoint, Transport
 from core.geo import TravelQuote, TravelSource
+
+if TYPE_CHECKING:
+    from core.predict_calibration import WeatherMultiplierCalibration
 
 WeatherKind = Literal["clear", "cloud", "rain", "snow", "storm", "unknown"]
 
@@ -178,6 +181,21 @@ def _clear_for_tests() -> WeatherSnapshot:
     return WeatherSnapshot(0, None, 0, "clear", "Ясно", 1.0)
 
 
+def _rescale_segments(segments, duration_sec: int):
+    """Keep composite segment durations summing exactly to a scaled quote."""
+    if not segments:
+        return segments
+    total = sum(segment.duration_sec for segment in segments)
+    if total <= 0:
+        return segments
+    exact = [duration_sec * segment.duration_sec / total for segment in segments]
+    durations = [math.floor(value) for value in exact]
+    remainder = duration_sec - sum(durations)
+    for index in sorted(range(len(exact)), key=lambda i: exact[i] - durations[i], reverse=True)[:remainder]:
+        durations[index] += 1
+    return tuple(replace(segment, duration_sec=durations[index]) for index, segment in enumerate(segments))
+
+
 def weather_multiplier() -> float:
     """Car-traffic multiplier for the cached forecast. Calm weather and failures are 1."""
     if os.environ.get("PYTEST_CURRENT_TEST"):
@@ -244,15 +262,83 @@ class WeatherTravel:
         ):
             factor = _WALK_STORM_PENALTY
         if factor == 1.0:
-            return quote
+            return replace(quote, weather_multiplier_used=1.0)
         from core.geo import TravelQuote
 
+        duration_sec = max(1, math.ceil(quote.duration_sec * factor))
         return TravelQuote(
-            duration_sec=max(1, math.ceil(quote.duration_sec * factor)),
+            duration_sec=duration_sec,
             distance_m=quote.distance_m,
             points=quote.points,
             provenance=quote.provenance,
             traffic_factor=round(quote.traffic_factor * (self.multiplier if profile == "car" else 1.0), 2),
             geometry_exact=quote.geometry_exact,
-            segments=quote.segments,
+            segments=_rescale_segments(quote.segments, duration_sec),
+            weather_multiplier_used=factor,
+        )
+
+
+class LearnedWeatherTravel:
+    """Opt-in, region-bound learned weather factor for planning quotes.
+
+    This wrapper is created only when Router's explicit solver-learning switch is
+    enabled and the snapshot has one unambiguous region. Prediction calibration
+    remains the default path; the wrapper never infers a region from coordinates.
+    """
+
+    def __init__(
+        self,
+        travel: TravelSource,
+        region: str,
+        calibrations: tuple[WeatherMultiplierCalibration, ...],
+    ) -> None:
+        self.travel = travel
+        self.region = region
+        self.calibrations = tuple(calibrations)
+        from core.geo import content_hash
+
+        self.version = content_hash(json.dumps({
+            "base_version": getattr(travel, "version", ""),
+            "region": region,
+            "calibrations": [item.model_dump(mode="json") for item in calibrations],
+        }, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+
+    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
+        return self._apply(self.travel.quote(origin, destination, profile), profile)
+
+    def quote_at(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: Transport,
+        departure_at: int,
+    ) -> TravelQuote | None:
+        from core.geo import quote_at
+
+        return self._apply(quote_at(self.travel, origin, destination, profile, departure_at), profile)
+
+    def _apply(self, quote: TravelQuote | None, profile: Transport) -> TravelQuote | None:
+        if quote is None or quote.distance_m <= 0:
+            return quote
+        kind = weather_kind()
+        candidate = next((row for row in self.calibrations
+            if row.region == self.region and row.transport_type == profile and row.kind == kind
+            and row.source == "learned"), None)
+        if candidate is None or quote.weather_multiplier_used is None:
+            return quote
+        from core.geo import TravelQuote
+
+        previous_factor = quote.weather_multiplier_used
+        if previous_factor <= 0:
+            return quote
+        duration_sec = max(1, math.ceil((quote.duration_sec / previous_factor) * candidate.multiplier))
+        return TravelQuote(
+            duration_sec=duration_sec,
+            distance_m=quote.distance_m,
+            points=quote.points,
+            provenance=quote.provenance,
+            traffic_factor=max(1.0, round(quote.traffic_factor * candidate.multiplier / previous_factor, 2)),
+            geometry_exact=quote.geometry_exact,
+            segments=_rescale_segments(quote.segments, duration_sec),
+            weather_multiplier_used=candidate.multiplier,
         )

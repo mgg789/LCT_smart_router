@@ -49,6 +49,7 @@ export interface MapProviderStatus {
  */
 @Injectable()
 export class MapRoutingService {
+  private readonly straightRoutes = process.env.NAVIX_STRAIGHT_ROUTES === 'true';
   private readonly cache = new Map<string, MapRoute>();
   private readonly roadShapeCache = new Map<
     string,
@@ -77,6 +78,7 @@ export class MapRoutingService {
     trafficEnabled: boolean,
     transports: ReadonlyMap<string, string> = new Map(),
   ): Promise<PlanView> {
+    if (this.straightRoutes) return collapsePlanGeometry(plan);
     const configured = await this.settings.read();
     if (!configured.twogisApiKey && !configured.yandexApiKey) {
       // No paid map provider. Exact lines are queued, never awaited on this call.
@@ -155,6 +157,7 @@ export class MapRoutingService {
     traffic: boolean,
     transport: SurfaceTransport = 'car',
   ): Promise<MapRoute | null> {
+    if (this.straightRoutes) return null;
     if (straightLineMetres(from, to) <= MAP_API_MIN_DISTANCE_M) return null;
     traffic = traffic && transport === 'car';
     const settings = await this.settings.read();
@@ -197,6 +200,7 @@ export class MapRoutingService {
    * must not await the road API.
    */
   projectPlan(plan: PlanView): PlanView {
+    if (this.straightRoutes) return collapsePlanGeometry(plan);
     const base = roadApiBase();
     const building = readRouterPhase().phase === 'building';
     const edges = base ? this.neededEdges(plan) : [];
@@ -228,6 +232,15 @@ export class MapRoutingService {
     routes: ReturnType<typeof toRouteView>[],
     transports: ReadonlyMap<string, string>,
   ): ReturnType<typeof toRouteView>[] {
+    if (this.straightRoutes)
+      return routes.map((route) => ({
+        ...route,
+        segments: route.segments.map((segment) =>
+          segment.travelSource === 'metro'
+            ? segment
+            : { ...segment, points: endpoints(segment.points) },
+        ),
+      }));
     const base = roadApiBase();
     if (!base) return routes;
     return routes.map((route) => ({
@@ -643,6 +656,40 @@ export class MapRoutingService {
       this.cache.delete(first);
     }
   }
+}
+
+function endpoints<T>(points: readonly T[]): T[] {
+  return points.length < 2
+    ? [...points]
+    : [points[0], points.at(-1)].filter((point): point is T => point !== undefined);
+}
+
+/** Geometry-only offline projection; Router timing, metrics and execution facts stay untouched. */
+function collapsePlanGeometry(plan: PlanView): PlanView {
+  return {
+    ...plan,
+    routes: plan.routes.map((route) => ({
+      ...route,
+      legs: route.legs.map((leg) =>
+        leg.travelSource === 'metro'
+          ? leg
+          : {
+              ...leg,
+              geometry: leg.geometry
+                ? { ...leg.geometry, points: endpoints(leg.geometry.points) }
+                : leg.geometry,
+              segments: leg.segments?.map((segment) =>
+                segment.travelSource === 'metro'
+                  ? segment
+                  : {
+                      ...segment,
+                      geometry: { ...segment.geometry, points: endpoints(segment.geometry.points) },
+                    },
+              ),
+            },
+      ),
+    })),
+  };
 }
 
 function roadApiBase(): string | null {

@@ -123,6 +123,7 @@ class TravelQuote:
     traffic_factor: float = 1.0
     geometry_exact: bool = False
     segments: tuple["TravelSegment", ...] = ()
+    weather_multiplier_used: float | None = None
 
 
 @dataclass(frozen=True)
@@ -280,6 +281,7 @@ class TechnicalTravel:
             traffic_factor,
             quote.geometry_exact if provenance != "approximate" else False,
             segments,
+            quote.weather_multiplier_used,
         )
 
 
@@ -393,6 +395,7 @@ class ProfilePolicyTravel:
                 points=quote.points,
                 provenance=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
                 geometry_exact=quote.geometry_exact,
                 segments=quote.segments,
             )

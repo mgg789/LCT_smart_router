@@ -20,6 +20,16 @@ export const liveActionSchema = z.discriminatedUnion('kind', [
     handoffId: z.string().min(1),
   }),
   operationEnvelopeSchema.extend({
+    kind: z.literal('equipment_delivery_confirm'),
+    engineerId: z.string().min(1).optional(),
+    logisticsId: z.string().min(1),
+  }),
+  operationEnvelopeSchema.extend({
+    kind: z.literal('office_pickup_confirm'),
+    engineerId: z.string().min(1).optional(),
+    logisticsId: z.string().min(1),
+  }),
+  operationEnvelopeSchema.extend({
     kind: z.literal('online'),
     engineerId: z.string().min(1).optional(),
   }),

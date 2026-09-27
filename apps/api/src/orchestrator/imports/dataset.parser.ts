@@ -1,3 +1,4 @@
+import type { WorkCategory } from '@lct/shared';
 import { parse } from 'csv-parse/sync';
 import { decode } from 'iconv-lite';
 import { SysError } from '../../common/errors';
@@ -17,6 +18,7 @@ import { findWorkTypeByTitle, type WorkNormProfileCode } from '../requests/work-
  */
 
 export interface ParsedRequest {
+  readonly workCategory: WorkCategory;
   readonly externalId: string;
   readonly workTypeCode: string;
   readonly skill: Skill;
@@ -138,6 +140,7 @@ export function parseSyntheticFile(
     requests.push({
       externalId: id,
       workTypeCode: spec.code,
+      workCategory: spec.category,
       skill: spec.skill,
       normProfileCode: spec.normProfileCode,
       normativeTravelDurationSec: spec.normativeTravelDurationSec,

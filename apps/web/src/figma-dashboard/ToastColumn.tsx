@@ -6,7 +6,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useLetterboxInsets } from './artboardScale';
+import { t } from '../i18n';
+import { ARTBOARD_BLEED } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 import {
@@ -73,14 +74,13 @@ export function ToastColumn({
 }) {
   const visible = useVisibleColumnToasts();
   const latestDetailId = visible.reduce<string | null>((best, toast) => {
-    if (toast.actionLabel !== 'Подробнее') return best;
+    if (toast.actionLabel !== t('figma-dashboard.ToastColumn.59589fe2a5')) return best;
     if (!best) return toast.id;
     const current = visible.find((item) => item.id === best);
     return (toast.createdAt ?? 0) >= (current?.createdAt ?? 0) ? toast.id : best;
   }, null);
   const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
-  const letterbox = useLetterboxInsets(scale);
   const wheelX = useRef(0);
   const wheelReset = useRef<number | null>(null);
   const onCollapseRef = useRef(onCollapse);
@@ -147,10 +147,10 @@ export function ToastColumn({
                   aria-hidden
                   className="pointer-events-auto absolute right-0 z-0"
                   style={{
-                    top: -letterbox.y,
-                    bottom: -letterbox.y,
-                    right: -letterbox.x,
-                    width: VEIL_WIDTH + letterbox.x,
+                    top: -ARTBOARD_BLEED,
+                    bottom: -ARTBOARD_BLEED,
+                    right: -ARTBOARD_BLEED,
+                    width: VEIL_WIDTH + ARTBOARD_BLEED,
                     background:
                       'linear-gradient(to left, rgba(15,16,20,0.62), rgba(15,16,20,0.34) 48%, transparent)',
                     backdropFilter: 'blur(22px)',
@@ -162,7 +162,7 @@ export function ToastColumn({
                 />
                 <motion.button
                   type="button"
-                  aria-label="Свернуть уведомления"
+                  aria-label={t('figma-dashboard.ToastColumn.8bea0d440d')}
                   onClick={onCollapse}
                   className="pointer-events-auto absolute z-20 flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
                   style={{
@@ -183,11 +183,11 @@ export function ToastColumn({
             {open ? (
               <button
                 type="button"
-                aria-label="Свернуть уведомления"
+                aria-label={t('figma-dashboard.ToastColumn.8bea0d440d')}
                 className="absolute z-[5] cursor-default bg-transparent"
                 style={{
-                  top: -letterbox.y,
-                  bottom: -letterbox.y,
+                  top: -ARTBOARD_BLEED,
+                  bottom: -ARTBOARD_BLEED,
                   width: TOAST_WIDTH + 72,
                   left: TOAST_LEFT - TOAST_WIDTH - 72,
                 }}
@@ -202,7 +202,7 @@ export function ToastColumn({
                   top: TOAST_STACK_TOP,
                   left: TOAST_LEFT - SHADOW_PAD,
                   width: TOAST_WIDTH + SHADOW_PAD * 2,
-                  bottom: -letterbox.y,
+                  bottom: -ARTBOARD_BLEED,
                   paddingLeft: SHADOW_PAD,
                   paddingRight: SHADOW_PAD,
                   paddingBottom: 20 + SHADOW_PAD,
@@ -501,7 +501,7 @@ function ToastFace({
         <button
           type="button"
           data-toast-close
-          aria-label="Закрыть уведомление"
+          aria-label={t('figma-dashboard.ToastColumn.1907d5c300')}
           className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onClose?.()}

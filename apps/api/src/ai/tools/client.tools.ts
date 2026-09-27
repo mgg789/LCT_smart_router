@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { toRequestView } from '../../api/request-view';
 import { AppConfigService } from '../../common/config';
+import { SysError } from '../../common/errors';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { WORK_TYPE_CODES } from '../../orchestrator/requests/work-type.catalog';
 import type { PrismaService } from '../../persistence';
@@ -110,5 +111,94 @@ export function buildClientTools(deps: ClientToolDeps): readonly ToolSpec[] {
     },
   };
 
-  return [createRequest, listMyRequests];
+  const ownRequest = async (ctx: ToolContext, requestId: string) => {
+    const row = await deps.prisma.request.findFirst({
+      where: { id: requestId, clientAccountId: ctx.accountId },
+    });
+    if (!row) throw SysError.notFound('Request');
+    return row;
+  };
+  const getRequest: ToolSpec<{ requestId: string }> = {
+    name: 'get_my_request',
+    description:
+      'Read the current status and fields of one request owned by the signed-in customer.',
+    schema: z.object({ requestId: z.string().min(1) }),
+    async run(ctx, args) {
+      const request = await ownRequest(ctx, args.requestId);
+      return {
+        ok: true,
+        summary: 'Current owned request',
+        resultContent: JSON.stringify({ request: toRequestView(request) }),
+      };
+    },
+  };
+  const cancelRequest: ToolSpec<{ requestId: string; reason?: string }> = {
+    name: 'cancel_my_request',
+    description:
+      'Prepare cancellation of an own request that has not started. The customer must confirm the card before cancellation.',
+    schema: z.object({
+      requestId: z.string().min(1),
+      reason: z.string().trim().max(2000).optional(),
+    }),
+    async run(ctx, args) {
+      const row = await ownRequest(ctx, args.requestId);
+      const prepared = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'client.request.cancel',
+        targetRef: row.id,
+        payload: { expectedVersion: row.version, reason: args.reason ?? null },
+      });
+      return {
+        ok: true,
+        summary: 'Cancellation awaiting customer confirmation',
+        resultContent: JSON.stringify({
+          operation_id: prepared.operationId,
+          state: prepared.state,
+          preview: prepared.preview,
+        }),
+      };
+    },
+  };
+  const rescheduleSchema = z.object({
+    requestId: z.string().min(1),
+    windowDate: localDateSchema,
+    windowStartLocal: localTimeSchema,
+    windowEndLocal: localTimeSchema,
+  });
+  const rescheduleRequest: ToolSpec<z.infer<typeof rescheduleSchema>> = {
+    name: 'reschedule_my_request',
+    description:
+      'Prepare a new date/window for an own request that has not started. Never changes a request until the customer confirms the card.',
+    schema: rescheduleSchema,
+    async run(ctx, args) {
+      const row = await ownRequest(ctx, args.requestId);
+      const zone = deps.config.get('APP_TIME_ZONE');
+      const prepared = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'client.request.reschedule',
+        targetRef: row.id,
+        payload: {
+          expectedVersion: row.version,
+          windowStartAt: localToUnixSeconds(args.windowDate, args.windowStartLocal, zone),
+          windowEndAt: localToUnixSeconds(args.windowDate, args.windowEndLocal, zone),
+        },
+      });
+      return {
+        ok: true,
+        summary: 'Window change awaiting customer confirmation',
+        resultContent: JSON.stringify({
+          operation_id: prepared.operationId,
+          state: prepared.state,
+          preview: prepared.preview,
+        }),
+      };
+    },
+  };
+  return [createRequest, listMyRequests, getRequest, cancelRequest, rescheduleRequest];
 }

@@ -1,7 +1,9 @@
+import { ActionGuardService } from '../../src/ai/operations/action-guard';
+import { isWindowConfirmationRequired } from '../../src/orchestrator/requests/window-confirmation';
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AiOperationService, RoleProfileService } from '../../src/ai';
@@ -167,6 +169,85 @@ describe('AI operation prepare/confirm spine', () => {
     windowStartAt: 2_000_000_000,
     windowEndAt: 2_000_003_600,
     urgent: false,
+  });
+
+  it('never auto-applies a window shift, keeps a challenge retryable, and supports rejection', async () => {
+    const client = await newClientSession();
+    const create = await aiOperations.prepare({
+      actor: client.actor,
+      accountId: client.actor.accountId as string,
+      conversationId: client.conversation.id,
+      runId: client.run.id,
+      action: 'request.create',
+      targetRef: null,
+      payload: requestPayload(),
+    });
+    const created = await aiOperations.confirm({
+      actor: client.actor,
+      aiOperationId: create.operationId,
+      operationId: randomUUID(),
+    });
+    const request = created.result as { id: string; version: number; windowStartAt: number };
+    const { actor, conversation, run } = await newDispatcherSession();
+    const guard = mock.method(context.get(ActionGuardService), 'allows', async () => true);
+    try {
+      const prepare = () =>
+        aiOperations.prepare({
+          actor,
+          accountId: actor.accountId as string,
+          conversationId: conversation.id,
+          runId: run.id,
+          action: 'request.update',
+          targetRef: request.id,
+          payload: { windowStartAt: 2_000_007_200, windowEndAt: 2_000_010_800 },
+        });
+      const op = await prepare();
+      assert.equal(op.state, 'awaiting_confirmation');
+      assert.equal(guard.mock.callCount(), 0, 'a model score must not replace window consent');
+      const operationId = randomUUID();
+      let confirmation: string | undefined;
+      await assert.rejects(
+        () => aiOperations.confirm({ actor, aiOperationId: op.operationId, operationId }),
+        (error: unknown) => {
+          assert.ok(isWindowConfirmationRequired(error));
+          confirmation = String(error.details.confirmation);
+          return true;
+        },
+      );
+      assert.equal(
+        (await prisma.aiOperation.findUniqueOrThrow({ where: { id: op.operationId } })).state,
+        'awaiting_confirmation',
+      );
+      assert.equal(await prisma.operation.count({ where: { operationId } }), 0);
+      const applied = await aiOperations.confirm({
+        actor: { ...actor, windowChangeConfirmation: confirmation },
+        aiOperationId: op.operationId,
+        operationId,
+      });
+      assert.equal(applied.state, 'applied');
+      const rejected = await aiOperations.prepare({
+        actor,
+        accountId: actor.accountId as string,
+        conversationId: conversation.id,
+        runId: run.id,
+        action: 'request.update',
+        targetRef: request.id,
+        payload: { windowStartAt: 2_000_014_400, windowEndAt: 2_000_018_000 },
+      });
+      await aiOperations.cancel({ actor, aiOperationId: rejected.operationId });
+      assert.equal(
+        (await prisma.aiOperation.findUniqueOrThrow({ where: { id: rejected.operationId } })).state,
+        'cancelled_before_apply',
+      );
+      assert.equal(
+        Number(
+          (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).windowStartAt,
+        ),
+        2_000_007_200,
+      );
+    } finally {
+      guard.mock.restore();
+    }
   });
 
   it('prepares a card, then confirming it applies the write exactly once', async () => {
@@ -370,5 +451,141 @@ describe('AI operation prepare/confirm spine', () => {
     }
 
     await roleProfiles.setDispatcherAssistMode('help');
+  });
+  it('confirms client cancellation only for an owned, unchanged request', async () => {
+    const owner = await newClientSession();
+    const other = await newClientSession();
+    const create = await aiOperations.prepare({
+      actor: owner.actor,
+      accountId: owner.conversation.accountId,
+      conversationId: owner.conversation.id,
+      runId: owner.run.id,
+      action: 'request.create',
+      targetRef: null,
+      payload: requestPayload(),
+    });
+    const created = await aiOperations.confirm({
+      actor: owner.actor,
+      aiOperationId: create.operationId,
+      operationId: randomUUID(),
+    });
+    const row = created.result as { id: string; version: number };
+    const prepare = (session: typeof owner, action: string, payload: unknown) =>
+      aiOperations.prepare({
+        actor: session.actor,
+        accountId: session.conversation.accountId,
+        conversationId: session.conversation.id,
+        runId: session.run.id,
+        action,
+        targetRef: row.id,
+        payload,
+      });
+    await assert.rejects(
+      prepare(other, 'client.request.cancel', { expectedVersion: row.version, reason: null }),
+      /not found/i,
+    );
+    const cancel = await prepare(owner, 'client.request.cancel', {
+      expectedVersion: row.version,
+      reason: 'No longer needed',
+    });
+    assert.equal(cancel.state, 'awaiting_confirmation');
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: row.id } })).lifecycle,
+      'submitted',
+    );
+    const done = await aiOperations.confirm({
+      actor: owner.actor,
+      aiOperationId: cancel.operationId,
+      operationId: randomUUID(),
+    });
+    assert.equal(done.state, 'applied');
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: row.id } })).lifecycle,
+      'cancelled',
+    );
+    await assert.rejects(
+      prepare(owner, 'client.request.reschedule', {
+        expectedVersion: row.version,
+        windowStartAt: 2_000_007_200,
+        windowEndAt: 2_000_010_800,
+      }),
+      /not started/i,
+    );
+  });
+
+  it('requires customer window consent and rejects a stale client change', async () => {
+    const owner = await newClientSession();
+    const create = await aiOperations.prepare({
+      actor: owner.actor,
+      accountId: owner.conversation.accountId,
+      conversationId: owner.conversation.id,
+      runId: owner.run.id,
+      action: 'request.create',
+      targetRef: null,
+      payload: requestPayload(),
+    });
+    const created = await aiOperations.confirm({
+      actor: owner.actor,
+      aiOperationId: create.operationId,
+      operationId: randomUUID(),
+    });
+    const row = created.result as { id: string; version: number };
+    const input = {
+      actor: owner.actor,
+      accountId: owner.conversation.accountId,
+      conversationId: owner.conversation.id,
+      runId: owner.run.id,
+      targetRef: row.id,
+    };
+    const stale = await aiOperations.prepare({
+      ...input,
+      action: 'client.request.cancel',
+      payload: { expectedVersion: row.version, reason: null },
+    });
+    const reschedule = await aiOperations.prepare({
+      ...input,
+      action: 'client.request.reschedule',
+      payload: {
+        expectedVersion: row.version,
+        windowStartAt: 2_000_007_200,
+        windowEndAt: 2_000_010_800,
+      },
+    });
+    assert.equal(reschedule.state, 'awaiting_confirmation');
+    let confirmation: string | undefined;
+    const operationId = randomUUID();
+    await assert.rejects(
+      aiOperations.confirm({
+        actor: owner.actor,
+        aiOperationId: reschedule.operationId,
+        operationId,
+      }),
+      (error: unknown) => {
+        assert.ok(isWindowConfirmationRequired(error));
+        confirmation = String(error.details.confirmation);
+        return true;
+      },
+    );
+    const applied = await aiOperations.confirm({
+      actor: { ...owner.actor, windowChangeConfirmation: confirmation },
+      aiOperationId: reschedule.operationId,
+      operationId,
+    });
+    assert.equal(applied.state, 'applied');
+    assert.equal(
+      Number((await prisma.request.findUniqueOrThrow({ where: { id: row.id } })).windowStartAt),
+      2_000_007_200,
+    );
+    const rejected = await aiOperations.confirm({
+      actor: owner.actor,
+      aiOperationId: stale.operationId,
+      operationId: randomUUID(),
+    });
+    assert.equal(rejected.state, 'rejected');
+    assert.equal(rejected.error?.code, 'VERSION_CONFLICT');
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: row.id } })).lifecycle,
+      'submitted',
+    );
   });
 });

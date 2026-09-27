@@ -1,4 +1,5 @@
 import type { PolicyComparisonRow, PolicyId } from '../api/types';
+import { t } from '../i18n';
 import { POLICY_LABELS } from '../lib/reasons';
 
 /**
@@ -87,7 +88,7 @@ function describe(
       policyId: active,
       label: POLICY_LABELS[active] ?? active,
       sameAsActive: true,
-      reason: 'Сначала нужны инженеры на линии. Смена политики сама по себе никого не назначит.',
+      reason: t('domain.policyRecommend.028e5e8b70'),
     };
   }
   if (sameAsActive && input.unassignedCount > 0 && active === 'covering') {
@@ -95,8 +96,7 @@ function describe(
       policyId: suggested,
       label,
       sameAsActive: true,
-      reason:
-        'Полное покрытие уже включено, а заявка всё равно без инженера. Ей не хватает человека, навыка или оборудования.',
+      reason: t('domain.policyRecommend.aa764329c6'),
     };
   }
   if (sameAsActive) {
@@ -104,20 +104,20 @@ function describe(
       policyId: suggested,
       label,
       sameAsActive: true,
-      reason: 'Менять политику не нужно: текущая уже закрывает то, что видно в плане.',
+      reason: t('domain.policyRecommend.87ebbe7c10'),
     };
   }
   const reason =
     suggested === 'covering'
-      ? 'Часть заявок не попала в маршруты. Полное покрытие добирает такой остаток отдельной сменой.'
+      ? t('domain.policyRecommend.ba86e9b723')
       : suggested === 'fast'
-        ? 'Есть риск опоздать к окну. «Быстрее до клиента» сокращает дорогу до визита.'
+        ? t('domain.policyRecommend.c1eff03628')
         : suggested === 'sla'
-          ? 'Даже быстрый выезд оставляет мало запаса. «Бережнее к окнам» держит запас до конца окна.'
+          ? t('domain.policyRecommend.bf4dd5bdee')
           : suggested === 'balanced'
-            ? 'Кто-то может не закрыть смену. «Ровнее загрузка» разносит хвост по свободным.'
+            ? t('domain.policyRecommend.a3ef25f6c5')
             : suggested === 'eco'
-              ? 'Пробег можно ужать, не теряя покрытие.'
-              : 'Эта политика лучше держит покрытие и запас по времени на том же наборе заявок.';
+              ? t('domain.policyRecommend.30e0a36854')
+              : t('domain.policyRecommend.66180192bd');
   return { policyId: suggested, label, sameAsActive: false, reason };
 }

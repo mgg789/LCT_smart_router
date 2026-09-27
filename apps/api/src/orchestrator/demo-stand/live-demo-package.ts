@@ -124,7 +124,7 @@ export function buildLiveDemo(workDate: string, datasetRoot: string): UploadData
         // sits with Волков, so the solver has to keep those stops on his route.
         ...(index === 3 || index === 4 ? { requiredEquipment: 'router' as const } : {}),
         ...(index === 5 ? { requiredEquipment: 'set_top_box' as const } : {}),
-        workType: 'local_repair',
+        workType: 'cable_work',
       };
     }),
   };

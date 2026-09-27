@@ -66,6 +66,42 @@ function plan(segments: PlanRouteSegmentView[]): PlanView {
 }
 
 describe('map routing transport and composite geometry', () => {
+  it('uses direct non-metro endpoints and never calls a provider when straight routes are enabled', async () => {
+    const previous = process.env.NAVIX_STRAIGHT_ROUTES;
+    process.env.NAVIX_STRAIGHT_ROUTES = 'true';
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('network must stay unused');
+    };
+    try {
+      const routing = service();
+      const source = plan([
+        {
+          geometry: { points: [a, b, c, d] },
+          travelSource: 'approximate',
+          travelTimeSec: 10,
+          distanceKm: 1,
+        },
+      ]);
+      const route = source.routes[0];
+      if (!route) throw new Error('fixture route missing');
+      const leg = route.legs[0];
+      if (!leg) throw new Error('fixture leg missing');
+      const nonMetro = {
+        ...source,
+        routes: [{ ...route, legs: [{ ...leg, travelSource: 'approximate' as const }] }],
+      };
+      const result = await routing.enrichPlan(nonMetro, true, new Map([['walker', 'car']]));
+      assert.deepEqual(result.routes[0]?.legs[0]?.geometry?.points, [a, d]);
+      assert.deepEqual(result.routes[0]?.legs[0]?.segments?.[0]?.geometry.points, [a, d]);
+      assert.equal(await routing.route(a, d, true), null);
+      assert.equal(calls, 0);
+    } finally {
+      if (previous === undefined) delete process.env.NAVIX_STRAIGHT_ROUTES;
+      else process.env.NAVIX_STRAIGHT_ROUTES = previous;
+    }
+  });
   it('enriches read-only comparison car lines asynchronously and preserves the source routes', async () => {
     const previousApi = process.env.API_ROAD_API_URL;
     process.env.API_ROAD_API_URL = 'http://road.test';

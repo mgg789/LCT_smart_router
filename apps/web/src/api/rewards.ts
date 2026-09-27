@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { locale, t } from '../i18n';
 import { requestJson } from './client';
 
 export const REWARD_LABELS = {
-  arrival: 'Точное прибытие',
-  completion: 'Работа в срок',
-  passport: 'Паспорта объектов',
-  penalty: 'Подтверждённые нарушения',
+  arrival: t('api.rewards.9967da1827'),
+  completion: t('api.rewards.3eae1b991e'),
+  passport: t('api.rewards.17767fda30'),
+  penalty: t('api.rewards.57d6a3d6c2'),
 } as const;
 const categories = z.object({
   arrival: z.number(),
@@ -67,8 +68,10 @@ export function loadRewardDay(token: string, workdayId: string) {
 /** Keeps zero/negative team means explicit rather than displaying an invalid ratio. */
 export function rewardRatioLabel(ratio: number | null): string {
   return ratio === null
-    ? 'Сравнение появится с первыми баллами команды'
-    : `${ratio.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}× среднего команды`;
+    ? t('api.rewards.1562f4250d')
+    : t('api.rewards.6b0fa78b63', {
+        value0: ratio.toLocaleString(locale, { maximumFractionDigits: 2 }),
+      });
 }
 
 const rewardFactsSchema = z.object({

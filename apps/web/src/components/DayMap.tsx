@@ -10,12 +10,14 @@ import {
   withoutMapLunch,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import {
   MAP_CANVAS,
+  MAP_EMERGENCY,
   MAP_INK,
   MAP_LUNCH_FILL,
   MAP_LUNCH_STROKE,
+  MAP_MUTED,
   MAP_ROUTE_DASH_PX,
   MAP_ROUTE_GAP_PX,
   mapPaintColor,
@@ -25,6 +27,7 @@ import {
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { requestMapPoint } from '../domain/requestPoint';
 import { type MapRouteSegment, mapRouteSegments, routeLineKind } from '../domain/travel';
+import { t } from '../i18n';
 import { engineerColor, skillMark } from '../lib/reasons';
 
 const OSRM_LINE = '#8A8F98';
@@ -338,10 +341,10 @@ export function DayMap({
   handoffs = [],
   onSelectRequest,
 }: DayMapProps) {
-  const [forceLocal, setForceLocal] = useState(!navigator.onLine);
+  const [forceLocal, setForceLocal] = useState(!browserMapOnline());
   const [retry, setRetry] = useState(0);
   useEffect(() => {
-    const update = () => setForceLocal(!navigator.onLine);
+    const update = () => setForceLocal(!browserMapOnline());
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
     return () => {
@@ -354,6 +357,9 @@ export function DayMap({
   const soloMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
+  const focusPointRef = useRef<ReturnType<typeof requestMapPoint>>(null);
+  const focusId = soloRequestId ?? selectedRequestId;
+  focusPointRef.current = focusId ? requestMapPoint(snapshot, focusId) : null;
   const [localMap, setLocalMap] = useState(forceLocal);
   const [mapFailed, setMapFailed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -396,7 +402,16 @@ export function DayMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
-    const observer = new ResizeObserver(() => map.resize());
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      // The request panel animates the map width; keep its point centred in the new viewport.
+      const point = focusPointRef.current;
+      if (point)
+        map.jumpTo({
+          center: [point.lon, point.lat],
+          padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        });
+    });
     observer.observe(container);
     mapRef.current = map;
     return () => {
@@ -617,9 +632,14 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId,
                 selected: node.requestId === selectedRequestId ? 1 : 0,
-                color: mapPaintColor(engineerColor(engineerId)),
+                color:
+                  request?.workCategory === 'emergency'
+                    ? MAP_MUTED
+                    : mapPaintColor(engineerColor(engineerId)),
                 regionColor: mapPaintColor(
-                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                  request?.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : regionStyle(request ? requestRegion(snapshot, request) : null).color,
                 ),
                 current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
@@ -647,7 +667,10 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
+                regionColor:
+                  request.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -719,7 +742,7 @@ export function DayMap({
             type: 'symbol',
             source: 'starts',
             layout: {
-              'text-field': 'Начало дня',
+              'text-field': t('components.DayMap.cf1dfa079c'),
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -795,7 +818,7 @@ export function DayMap({
             type: 'symbol',
             source: 'lunches',
             layout: {
-              'text-field': 'Обед',
+              'text-field': t('components.DayMap.69a29fbff8'),
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -839,9 +862,16 @@ export function DayMap({
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
-        if (soloPoint) {
+        const focusPoint =
+          soloPoint ?? (selectedRequestId ? requestMapPoint(snapshot, selectedRequestId) : null);
+        if (focusPoint) {
           map.resize();
-          map.easeTo({ center: [soloPoint.lon, soloPoint.lat], zoom: 14.2, duration: 400 });
+          map.easeTo({
+            center: [focusPoint.lon, focusPoint.lat],
+            ...(soloPoint ? { zoom: 14.2 } : {}),
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            duration: 400,
+          });
           return true;
         }
         const bounds = new maplibregl.LngLatBounds();
@@ -896,7 +926,20 @@ export function DayMap({
     if (!point) return;
     const pin = document.createElement('div');
     pin.setAttribute('aria-hidden', 'true');
-    pin.className = 'size-[22px] rounded-full border-[3px] border-figma-ink bg-figma-bee shadow-lg';
+    const request = snapshot.requests.find((item) => item.id === soloRequestId);
+    const jobs = snapshot.plan.plan?.routes
+      .find((route) => route.stops.some((stop) => stop.requestId === soloRequestId))
+      ?.stops.filter((stop) => stop.kind === 'job');
+    const sequence = jobs ? jobs.findIndex((stop) => stop.requestId === soloRequestId) + 1 : 0;
+    const emergency = request?.workCategory === 'emergency';
+    pin.className = `flex size-[22px] items-center justify-center rounded-full border-[3px] text-[11px] font-semibold text-white shadow-lg ${
+      emergency
+        ? sequence > 0
+          ? 'border-figma-danger bg-figma-muted'
+          : 'border-figma-ink bg-figma-danger'
+        : 'border-figma-ink bg-figma-bee'
+    }`;
+    if (emergency && sequence > 0) pin.textContent = String(sequence);
     const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
       .setLngLat([point.lon, point.lat])
       .addTo(map);
@@ -911,14 +954,14 @@ export function DayMap({
     <>
       <section
         ref={containerRef}
-        aria-label="Карта маршрутов"
+        aria-label={t('components.DayMap.b44875750d')}
         aria-busy={!mapReady && !mapFailed}
         data-map-ready={mapReady}
         className="absolute inset-0 h-full w-full"
       />
       {!soloRequestId && !mapReady && !mapFailed ? (
         <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
-          Загружаем карту…
+          {t('components.DayMap.9514ff87b5')}
         </div>
       ) : null}
       {!soloRequestId && (localMap || mapFailed) ? (
@@ -926,38 +969,38 @@ export function DayMap({
           role="status"
           className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
         >
-          {mapFailed
-            ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
-            : 'Сохранённая карта трёх регионов · улицы, парки и водоёмы'}
+          {mapFailed ? t('components.DayMap.0aca4d7172') : t('components.DayMap.bcc5576431')}
           {localMap && !forceLocal && !mapFailed ? (
             <button
               type="button"
               className="ml-2 underline"
               onClick={() => setRetry((value) => value + 1)}
             >
-              Повторить онлайн-карту
+              {t('components.DayMap.b650521777')}
             </button>
           ) : null}
         </div>
       ) : null}
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-          {localMap || mapFailed ? 'Оффлайн' : 'Онлайн'}
+          {localMap || mapFailed
+            ? t('components.DayMap.2c7bb29d64')
+            : t('components.DayMap.fd6bf6cb1a')}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
         ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
-          OpenStreetMap contributors
+          {t('components.DayMap.980ca2cea8')}
         </a>
         {' · '}
         {localMap ? (
           <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer">
-            ODbL
+            {t('components.DayMap.8656c5d416')}
           </a>
         ) : (
           <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
-            CARTO
+            {t('components.DayMap.c4911d01c1')}
           </a>
         )}
       </div>

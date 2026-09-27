@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
@@ -10,6 +10,8 @@ import { DemoStandService } from '../orchestrator/demo-stand';
 import {
   DATASET_REGIONS,
   DatasetImportService,
+  ImportPreparationService,
+  TabularImportService,
   UploadImportService,
 } from '../orchestrator/imports';
 import { ResetService } from '../orchestrator/reset';
@@ -18,7 +20,9 @@ import { APP_STATE_KEYS, PrismaService } from '../persistence';
 import { RouterClient } from '../routing/router-gateway';
 import {
   type ImportDatasetDto,
+  type ImportPreparationActionDto,
   importDatasetSchema,
+  importPreparationActionSchema,
   type ResetDto,
   type RestartDemoDto,
   resetSchema,
@@ -27,6 +31,12 @@ import {
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import { type RoadImportDto, roadImportSchema } from './dto/road-import.dto';
+import {
+  type TabularAnalyzeDto,
+  type TabularConvertDto,
+  tabularAnalyzeSchema,
+  tabularConvertSchema,
+} from './dto/tabular.dto';
 
 /** Dataset, road-resource, demo rewind and reset endpoints. */
 @Roles('dispatcher')
@@ -38,13 +48,27 @@ export class DispatchDataController {
     private readonly operations: OperationsService,
     private readonly config: AppConfigService,
     private readonly imports: DatasetImportService,
+    private readonly importPreparations: ImportPreparationService,
     private readonly uploadImports: UploadImportService,
+    private readonly tabularImports: TabularImportService,
     private readonly roadImports: RoadImportService,
     private readonly resetService: ResetService,
     private readonly demoStand: DemoStandService,
     private readonly router: RouterClient,
     private readonly ai: AiService,
   ) {}
+
+  @Post('data/tabular/analyze')
+  @ApiOperation({ summary: 'Analyze a bounded CSV, TSV, or XLSX upload without importing it' })
+  async analyzeTabular(@Body(zodBody(tabularAnalyzeSchema)) dto: TabularAnalyzeDto) {
+    return this.tabularImports.analyze(dto);
+  }
+
+  @Post('data/tabular/convert')
+  @ApiOperation({ summary: 'Convert a reviewed tabular upload into the standard upload package' })
+  async convertTabular(@Body(zodBody(tabularConvertSchema)) dto: TabularConvertDto) {
+    return this.tabularImports.convert(dto);
+  }
 
   @Get('data/state')
   @ApiOperation({ summary: 'Whether the application has been initialised, and how' })
@@ -124,6 +148,71 @@ export class DispatchDataController {
     return outcome.result;
   }
 
+  @Post('data/upload/prepare')
+  @ApiOperation({ summary: 'Validate and prepare an immutable upload batch for review' })
+  async prepareUploadData(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(uploadDataPackageSchema)) dto: UploadDataPackageDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.upload.prepare',
+        targetRef: dto.region,
+        payload: dto,
+      },
+      (context) =>
+        this.importPreparations.prepareUpload(
+          context,
+          actor,
+          dto,
+          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
+        ),
+    );
+    return outcome.result;
+  }
+
+  @Post('data/upload/prepare/:prepareId/confirm')
+  @ApiOperation({ summary: 'Confirm and atomically apply a reviewed upload batch' })
+  async confirmUploadData(
+    @CurrentActor() actor: Actor,
+    @Param('prepareId') prepareId: string,
+    @Body(zodBody(importPreparationActionSchema)) dto: ImportPreparationActionDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.upload.confirm',
+        targetRef: prepareId,
+        payload: { prepareId },
+      },
+      (context) => this.importPreparations.confirm(context, actor, prepareId),
+    );
+    return outcome.result;
+  }
+
+  @Post('data/upload/prepare/:prepareId/cancel')
+  @ApiOperation({ summary: 'Cancel an upload preparation without changing business data' })
+  async cancelUploadData(
+    @CurrentActor() actor: Actor,
+    @Param('prepareId') prepareId: string,
+    @Body(zodBody(importPreparationActionSchema)) dto: ImportPreparationActionDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.upload.cancel',
+        targetRef: prepareId,
+        payload: { prepareId },
+      },
+      (context) => this.importPreparations.cancel(context, actor, prepareId),
+    );
+    return outcome.result;
+  }
+
   @Post('data/import')
   @ApiOperation({ summary: 'Atomically load one, several or all official dataset regions' })
   async importDataset(
@@ -152,6 +241,80 @@ export class DispatchDataController {
           dto.engineerCountPerRegion ?? {},
         );
       },
+    );
+    return outcome.result;
+  }
+
+  @Post('data/import/prepare')
+  @ApiOperation({ summary: 'Validate and prepare official regions for dispatcher review' })
+  async prepareDatasetImport(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(importDatasetSchema)) dto: ImportDatasetDto,
+  ) {
+    const regions = dto.region
+      ? [dto.region]
+      : dto.regions === 'all'
+        ? [...DATASET_REGIONS]
+        : (dto.regions ?? []);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.import.prepare',
+        targetRef: dto.region ?? (dto.regions === 'all' ? 'all' : dto.regions?.join(',')),
+        payload: dto,
+      },
+      (context) =>
+        this.importPreparations.prepareOfficial(
+          context,
+          actor,
+          regions,
+          this.config.get('DATASET_ROOT'),
+          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
+          dto.engineerCountPerRegion ?? {},
+        ),
+    );
+    return outcome.result;
+  }
+
+  @Post('data/import/prepare/:prepareId/confirm')
+  @ApiOperation({ summary: 'Confirm and atomically apply reviewed official regions' })
+  async confirmDatasetImport(
+    @CurrentActor() actor: Actor,
+    @Param('prepareId') prepareId: string,
+    @Body(zodBody(importPreparationActionSchema)) dto: ImportPreparationActionDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.import.confirm',
+        targetRef: prepareId,
+        payload: { prepareId },
+      },
+      (context) => this.importPreparations.confirm(context, actor, prepareId),
+    );
+    return outcome.result;
+  }
+
+  @Post('data/import/prepare/:prepareId/cancel')
+  @ApiOperation({
+    summary: 'Cancel an official dataset preparation without changing business data',
+  })
+  async cancelDatasetImport(
+    @CurrentActor() actor: Actor,
+    @Param('prepareId') prepareId: string,
+    @Body(zodBody(importPreparationActionSchema)) dto: ImportPreparationActionDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.import.cancel',
+        targetRef: prepareId,
+        payload: { prepareId },
+      },
+      (context) => this.importPreparations.cancel(context, actor, prepareId),
     );
     return outcome.result;
   }
@@ -192,6 +355,7 @@ export class DispatchDataController {
       { operationId: dto.operationId, actor, action: 'data.restart_demo', payload: dto },
       (context) => this.demoStand.restore(context),
     );
+    if (this.router.isConfigured()) await this.ai.rollbackToFactory();
     return outcome.result;
   }
 

@@ -17,6 +17,7 @@ from core.contracts import (
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
+from core.observability import RouterObservability
 from core.predict_calibration import PredictCalibration
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
 from core.runtime import RouterRuntime
@@ -48,6 +49,9 @@ class SituationPredictRequest(Record):
     as_of: int | None = Field(default=None, gt=0)
     completed: dict[str, list[str]] = Field(default_factory=dict, max_length=1000)
     cancel_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    calibration_override: PredictCalibration | None = None
+    scenario_seed: str | None = Field(default=None, min_length=1, max_length=128)
+    working_set_generation: int | None = Field(default=None, ge=1)
 
 
 class TechnicalSettingsRequest(RouterTechnicalSettings):
@@ -74,16 +78,36 @@ class WindowProposalRequest(Record):
     day_end_at: int = Field(gt=0)
 
 
+class LogisticsProposalRequest(Record):
+    """Immutable applied-route intervals used solely for a logistics preview."""
+
+    snapshot: RouterTaskSnapshot
+    request_id: str = Field(min_length=1, max_length=128)
+    receiver_engineer_id: str = Field(min_length=1, max_length=128)
+    routes: dict[str, list[dict]] = Field(max_length=100)
+    depots: list[dict] = Field(max_length=100)
+    allow_office_pickup: bool = False
+    expected_context_version: str = Field(min_length=1)
+
+
 def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None) -> FastAPI:
     """Create the single-worker internal API; bind to loopback/private service network."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        runtime.start()
-        yield
-        runtime.close()
+        telemetry.start()
+        try:
+            runtime.start()
+            yield
+        finally:
+            try:
+                runtime.close()
+            finally:
+                telemetry.close()
 
     app = FastAPI(title="LCT Router Core", version="2.0", lifespan=lifespan)
+
+    telemetry = RouterObservability(app)
 
     configured_path = (
         os.environ.get("ROUTER_ROAD_GRAPH_PATH", "").strip() or ".router/road-import.json"
@@ -213,6 +237,9 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
                 as_of=request.as_of,
                 completed=request.completed,
                 cancel_rate=request.cancel_rate,
+                calibration_override=request.calibration_override,
+                scenario_seed=request.scenario_seed,
+                working_set_generation=request.working_set_generation,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -261,6 +288,19 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @app.post("/v1/logistics-proposal")
+    def logistics_proposal(request: LogisticsProposalRequest) -> dict:
+        """Find a delivery/pickup witness without changing Router state or a plan."""
+        try:
+            return runtime.propose_logistics(request.snapshot, request.request_id,
+                request.receiver_engineer_id, request.routes, request.depots,
+                allow_office_pickup=request.allow_office_pickup,
+                expected_context_version=request.expected_context_version)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail="LOGISTICS_SEARCH_TIMEOUT") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.put("/v1/config/tolerance")
     def tolerance(body: ToleranceRequest) -> dict:
         """Set only the technical revalidation tolerance after sys authorization."""
@@ -294,6 +334,9 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
         """Replace the calibration after an optimistic version check; idempotent."""
         if body.expected_version and body.expected_version != runtime.predict_calibration_state()["version"]:
             raise HTTPException(status_code=409, detail="CALIBRATION_VERSION_CONFLICT")
-        return runtime.set_predict_calibration(body.calibration, body.operation_id)
+        try:
+            return runtime.set_predict_calibration(body.calibration, body.operation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return app

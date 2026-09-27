@@ -20,6 +20,28 @@ export interface HandoffView {
   readonly completedAt: number | null;
 }
 
+/** Durable delivery or depot pickup, independent of legacy two-party handoffs. */
+export interface EquipmentLogisticsView {
+  readonly id: string;
+  readonly kind: 'donor_delivery' | 'office_pickup';
+  readonly state: 'searching' | 'assigned' | 'none' | 'completed' | 'cancelled' | 'error';
+  readonly requestId: string;
+  readonly equipmentType: 'router' | 'set_top_box' | 'smart_speaker';
+  readonly donorEngineerId: string | null;
+  readonly donorName: string | null;
+  readonly receiverEngineerId: string;
+  readonly depotId: string | null;
+  readonly expectedAt: number | null;
+  readonly actualAt: number | null;
+  readonly location: { readonly lat: number; readonly lon: number };
+  readonly action: {
+    readonly kind: 'equipment_delivery_confirm' | 'office_pickup_confirm';
+    readonly enabled: boolean;
+  } | null;
+  readonly retryAt: number | null;
+  readonly failureCode: 'ROUTER_UNAVAILABLE' | 'NO_FEASIBLE_LOGISTICS' | null;
+}
+
 export type LiveLineStatus = 'pending' | 'online' | 'no_show_offline' | 'technical_break';
 export type LivePhase = 'awaiting_window' | 'ready_to_start' | 'in_progress';
 
@@ -57,7 +79,7 @@ export interface LiveStats {
 }
 
 export interface LiveRoutePoint {
-  readonly kind: 'start' | 'job' | 'lunch' | 'handoff';
+  readonly kind: 'start' | 'job' | 'lunch' | 'handoff' | 'delivery' | 'office_pickup';
   readonly requestId: string | null;
   readonly handoffId?: string | null;
   readonly lat: number;
@@ -103,6 +125,7 @@ export interface LiveEngineerState {
 
 export interface EngineerLiveView {
   readonly handoffs: HandoffView[];
+  readonly logistics?: EquipmentLogisticsView[];
   readonly workday: LiveWorkday;
   readonly engineer: LiveEngineerState;
   /** The just-applied route is included with the live snapshot for an atomic refresh. */
@@ -119,6 +142,7 @@ export interface EngineerLiveView {
 
 export interface DispatchLiveView {
   readonly handoffs: HandoffView[];
+  readonly logistics?: EquipmentLogisticsView[];
   readonly workday: LiveWorkday;
   readonly engineers: LiveEngineerState[];
   readonly breaks: readonly LiveBreak[];
@@ -159,6 +183,8 @@ const requestSchema: z.ZodType<RequestView> = z.object({
   requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
+  workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+  receivedAt: z.number().int().nullable().optional(),
   requiredSkill: z.string(),
   normProfileCode: z.string().optional(),
   normativeTravelDurationSec: z.number().int().optional(),
@@ -200,9 +226,41 @@ const handoffSchema: z.ZodType<HandoffView> = z.object({
   receiverConfirmedAt: z.number().int().nullable(),
   completedAt: z.number().int().nullable(),
 });
+const logisticsSchema: z.ZodType<EquipmentLogisticsView> = z.object({
+  id: z.string(),
+  kind: z.enum(['donor_delivery', 'office_pickup']),
+  state: z.enum(['searching', 'assigned', 'none', 'completed', 'cancelled', 'error']),
+  requestId: z.string(),
+  equipmentType: z.enum(['router', 'set_top_box', 'smart_speaker']),
+  donorEngineerId: z.string().nullable(),
+  donorName: z.string().nullable(),
+  receiverEngineerId: z.string(),
+  depotId: z.string().nullable(),
+  expectedAt: z.number().int().nullable(),
+  actualAt: z.number().int().nullable(),
+  location: z.object({ lat: z.number(), lon: z.number() }),
+  action: z
+    .object({
+      kind: z.enum(['equipment_delivery_confirm', 'office_pickup_confirm']),
+      enabled: z.boolean(),
+    })
+    .nullable(),
+  retryAt: z.number().int().nullable(),
+  failureCode: z.enum(['ROUTER_UNAVAILABLE', 'NO_FEASIBLE_LOGISTICS']).nullable(),
+});
 const stopSchema: z.ZodType<PlanStopView> = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff', 'delivery', 'office_pickup']),
+  logistics: z
+    .object({
+      logistics_id: z.string(),
+      kind: z.enum(['donor_delivery', 'office_pickup']),
+      request_id: z.string(),
+      equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+    })
+    .nullable()
+    .optional(),
+
   handoff: z
     .object({
       handoff_id: z.string(),
@@ -232,7 +290,7 @@ const liveStatsSchema: z.ZodType<LiveStats> = z.object({
   technicalBreakCount: z.number().int().nonnegative(),
 });
 const progressPointSchema: z.ZodType<LiveRoutePoint> = z.object({
-  kind: z.enum(['start', 'job', 'lunch']),
+  kind: z.enum(['start', 'job', 'lunch', 'handoff', 'delivery', 'office_pickup']),
   requestId: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
@@ -301,6 +359,7 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
 });
 const engineerLiveSchema: z.ZodType<EngineerLiveView> = z.object({
   handoffs: z.array(handoffSchema).default([]),
+  logistics: z.array(logisticsSchema).default([]),
   workday: workdaySchema,
   engineer: engineerSchema,
   route: z.custom<PlanRouteView | null>((value) => value === null || typeof value === 'object'),
@@ -317,6 +376,7 @@ const engineerLiveSchema: z.ZodType<EngineerLiveView> = z.object({
 });
 const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
   handoffs: z.array(handoffSchema).default([]),
+  logistics: z.array(logisticsSchema).default([]),
   workday: workdaySchema,
   engineers: z.array(engineerSchema),
   breaks: z
@@ -356,6 +416,10 @@ export type EngineerLiveAction =
       readonly note: string;
       readonly additionalDurationSec?: number;
       readonly missingEquipment?: 'router' | 'set_top_box' | 'smart_speaker';
+    }
+  | {
+      readonly kind: 'equipment_delivery_confirm' | 'office_pickup_confirm';
+      readonly logisticsId: string;
     }
   | { readonly kind: 'handoff_confirm'; readonly handoffId: string }
   | { readonly kind: 'break_start' | 'break_finish' };

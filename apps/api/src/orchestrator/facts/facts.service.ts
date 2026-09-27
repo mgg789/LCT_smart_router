@@ -1,14 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { FactKind, Request } from '../../generated/prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { workDateOf } from '../engineers/workday';
 import { assertNoPendingHandoff } from '../equipment/handoffs';
 import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
+
+const CALIBRATION_TIME_ZONE = 'Europe/Moscow';
+const WEATHER_QUOTE_BUCKET_SEC = 600;
 
 export type ReportableFact = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';
 
@@ -51,11 +56,14 @@ export class FactsService {
 
     switch (kind) {
       case 'arrived':
-      case 'arrived_blocked':
+      case 'arrived_blocked': {
         // Arrival is recorded and the work stays not started. Being on site is not
         // performing the work.
-        await this.write(context, engineerId, requestId, kind, occurredAt, note);
+        const metadata =
+          kind === 'arrived' ? await this.arrivalCalibrationMetadata(context.tx, occurredAt) : null;
+        await this.write(context, engineerId, requestId, kind, occurredAt, note, metadata);
         return this.reload(context.tx, requestId);
+      }
 
       case 'started':
         return this.start(context, engineerId, request, occurredAt, note);
@@ -212,7 +220,13 @@ export class FactsService {
       })) > 0;
     const shouldReplan = materialVariance || openUnassignedDemand;
 
-    await this.write(context, engineerId, request.id, 'finished', occurredAt, note);
+    const metadata = await this.finishCalibrationMetadata(
+      context.tx,
+      engineerId,
+      request,
+      occurredAt,
+    );
+    await this.write(context, engineerId, request.id, 'finished', occurredAt, note, metadata);
     await context.tx.request.update({
       where: { id: request.id },
       data: {
@@ -305,6 +319,7 @@ export class FactsService {
     kind: FactKind,
     occurredAt: number,
     note: string | null,
+    metadata: Prisma.InputJsonValue | null = null,
   ): Promise<void> {
     await context.tx.requestFact.create({
       data: {
@@ -317,6 +332,7 @@ export class FactsService {
         recordedAt: BigInt(context.now),
         note,
         operationId: context.operationId,
+        metadata: metadata ?? Prisma.DbNull,
       },
     });
     // A fact submitted by the engineer is also a confirmed app activity. It is not
@@ -335,7 +351,112 @@ export class FactsService {
     });
   }
 
+  private async arrivalCalibrationMetadata(
+    tx: Tx,
+    occurredAt: number,
+  ): Promise<Prisma.InputJsonObject | null> {
+    const plan = await this.plans.current(tx);
+    if (!plan) return null;
+    return {
+      weatherCalibration: {
+        planId: plan.id,
+        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+      },
+    };
+  }
+
+  private async finishCalibrationMetadata(
+    tx: Tx,
+    engineerId: string,
+    request: Request,
+    occurredAt: number,
+  ): Promise<Prisma.InputJsonObject | null> {
+    const plan = await this.plans.current(tx);
+    const engineer = await tx.engineer.findUnique({
+      where: { id: engineerId },
+      select: { region: true, transportType: true },
+    });
+    if (!plan) return null;
+    const baseMetadata = {
+      weatherCalibration: {
+        planId: plan.id,
+        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+      },
+    };
+    if (!engineer?.region) return baseMetadata;
+    const route = plan.routes.find((candidate) => candidate.engineerId === engineerId);
+    if (!route) return baseMetadata;
+
+    const currentIndex = route.stops.findIndex(
+      (stop) => stop.kind === 'job' && stop.requestId === request.id,
+    );
+    const nextStop = currentIndex >= 0 ? route.stops[currentIndex + 1] : route.stops[0];
+    let expectedFromStopId: string | null =
+      currentIndex >= 0
+        ? (plan.assignments.find((assignment) => assignment.requestId === request.id)?.stopId ??
+          null)
+        : null;
+    if (currentIndex < 0) {
+      // Replans remove active work from the free set; the continuation route can still
+      // start exactly at the confirmed work location and carry the next untouched leg.
+      if (
+        request.lat == null ||
+        request.lon == null ||
+        Math.abs(route.startLat - request.lat) > 0.00001 ||
+        Math.abs(route.startLon - request.lon) > 0.00001
+      )
+        return baseMetadata;
+      expectedFromStopId = null;
+    }
+    if (nextStop?.kind !== 'job' || !nextStop.requestId) return baseMetadata;
+    const expectedToStopId = plan.assignments.find(
+      (assignment) => assignment.requestId === nextStop?.requestId,
+    )?.stopId;
+    if (!expectedToStopId) return baseMetadata;
+    const rawLegs = Array.isArray(route.legs) ? route.legs : [];
+    const leg = rawLegs.find((value) => {
+      const row = asRecord(value);
+      return row?.toStopId === expectedToStopId && row.fromStopId === expectedFromStopId;
+    });
+    const legData = asRecord(leg);
+    const travelTimeSec = finitePositive(legData?.travelTimeSec);
+    const weatherMultiplierUsed = finitePositive(legData?.weatherMultiplierUsed);
+    const departureAt = finitePositive(legData?.departureAt);
+    if (!travelTimeSec || !weatherMultiplierUsed || !departureAt || weatherMultiplierUsed > 3)
+      return baseMetadata;
+    if (
+      Math.floor(departureAt / WEATHER_QUOTE_BUCKET_SEC) !==
+      Math.floor(occurredAt / WEATHER_QUOTE_BUCKET_SEC)
+    )
+      return baseMetadata;
+    const canonicalSec = Math.ceil(travelTimeSec / weatherMultiplierUsed);
+    if (!Number.isSafeInteger(canonicalSec) || canonicalSec <= 0) return baseMetadata;
+
+    return {
+      weatherCalibration: {
+        planId: plan.id,
+        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+        nextRequestId: nextStop.requestId,
+        region: engineer.region,
+        transport: engineer.transportType,
+        departureAt,
+        weatherMultiplierUsed,
+        canonicalSec,
+      },
+    };
+  }
+
   private async reload(tx: Tx, requestId: string): Promise<Request> {
     return tx.request.findUniqueOrThrow({ where: { id: requestId } });
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function finitePositive(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
 }

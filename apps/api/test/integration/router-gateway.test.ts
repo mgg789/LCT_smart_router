@@ -6,12 +6,15 @@ import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
-import { AllExceptionsFilter } from '../../src/common/errors';
+import type { Actor } from '../../src/auth';
+import { AllExceptionsFilter, SysError } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { ExecutionOverrunCoordinator } from '../../src/orchestrator/facts';
+import { McpToolsService } from '../../src/orchestrator/mcp/mcp-tools';
 import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
 import { RouterClient, type UpdateRouterTechnicalSettings } from '../../src/routing/router-gateway';
+import { routerResultSchema } from '../../src/routing/router-gateway/result.types';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 import { buildRouterResult } from '../support/router-result';
 
@@ -410,9 +413,13 @@ describe('router gateway', () => {
       orderBy: { workDate: 'desc' },
     });
     assert.ok(issuedDay.equipmentIssuedAt, 'the first accepted plan freezes the morning issue');
-    assert.equal(issuedDay.equipmentRouter, 2, 'one assigned router plus one spare is issued');
-    assert.equal(issuedDay.equipmentSetTopBox, 0);
-    assert.equal(issuedDay.equipmentSmartSpeaker, 0);
+    assert.equal(
+      issuedDay.equipmentRouter,
+      3,
+      'one assigned router plus two car spares are issued',
+    );
+    assert.equal(issuedDay.equipmentSetTopBox, 2);
+    assert.equal(issuedDay.equipmentSmartSpeaker, 2);
 
     const planResponse = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
     const planBody = (await planResponse.json()) as {
@@ -437,6 +444,36 @@ describe('router gateway', () => {
       where: { businessEventKey: `engineer_assigned:${request.id}:${engineerId}` },
     });
     assert.ok(intent, 'accepting an assignment is a business transition with its own letter');
+  });
+
+  it('accepts the immediate emergency projection while retaining source-window stale checks', async () => {
+    const request = await submitRequest('outage');
+    const { snapshot } = await publishedSnapshot();
+    const input = snapshot.requests.find((item) => item.request_id === request.id);
+    assert.ok(input);
+    assert.equal(input.work_category, 'emergency');
+    assert.equal(input.service_duration_sec, 6000);
+    assert.ok(input.window_end_at >= snapshot.horizon_end_at);
+    const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    assert.equal(input.source_window_end_at, Number(stored.windowEndAt));
+    const result = buildRouterResult({
+      resultId: unique('emergency-effective-window'),
+      inputHash: await publishedHash(),
+      contextVersion: 'ctx-1',
+      planningAsOf: now(),
+      assigned: [
+        {
+          requestId: request.id,
+          engineerId,
+          lat: request.lat,
+          lon: request.lon,
+          startAt: Math.max(now(), input.window_start_at),
+          durationSec: 6000,
+        },
+      ],
+    });
+    const { body } = await feed(result, 'ctx-1');
+    assert.equal(body.accepted, true, body.detail);
   });
 
   it('does not apply the same result twice', async () => {
@@ -1062,7 +1099,7 @@ describe('router gateway', () => {
   });
 
   describe('manual control', () => {
-    it('stops applying results and keeps the plan visible', async () => {
+    it('keeps applying fresh calculations in manual mode without freezing the plan', async () => {
       const request = await submitRequest();
       await feed(
         buildRouterResult({
@@ -1090,6 +1127,7 @@ describe('router gateway', () => {
       const manual = await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'manual',
+        reason: 'Dispatcher chooses constraints while routing remains live',
       });
       assert.equal(manual.status, 201);
 
@@ -1113,23 +1151,97 @@ describe('router gateway', () => {
         }),
         'ctx-1',
       );
-      assert.equal(refused.body.accepted, false);
-      assert.equal(refused.body.reason, 'MODE_MANUAL', refused.body.detail);
+      assert.equal(refused.body.accepted, true, refused.body.detail);
 
-      // The last applied plan stays on screen; the day is not cleared.
+      // Manual mode keeps routing live; only explicit constraints limit future calculations.
       const planAfter = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
       const after = (await planAfter.json()) as {
         mode: string;
         plan: { revision: number; planAsOf: number };
       };
       assert.equal(after.mode, 'manual');
-      assert.equal(after.plan.revision, revisionBefore);
+      assert.ok(after.plan.revision > revisionBefore);
       assert.ok(after.plan.planAsOf > 0, 'the plan carries the moment it describes');
 
       await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'auto',
       });
+    });
+
+    it('holds conflicts until priority acknowledgment and rejects incomplete resolution metadata', async () => {
+      const request = await submitRequest();
+      await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
+        operationId: randomUUID(),
+        mode: 'manual',
+        reason: 'Review conflicting preferences',
+      });
+      const read = async () =>
+        (await (await call('GET', '/api/v1/dispatch/manual', dispatcherToken)).json()) as {
+          version: number;
+          needsReview: boolean;
+          decisions: Array<{ id: string }>;
+        };
+      try {
+        const initial = await read();
+        const saved = await call('POST', '/api/v1/dispatch/manual/decisions', dispatcherToken, {
+          operationId: randomUUID(),
+          expectedVersion: initial.version,
+          kind: 'assignment',
+          targetId: request.id,
+          engineerId,
+        });
+        assert.equal(saved.status, 201, await saved.clone().text());
+        const state = await read();
+        const decision = state.decisions[0];
+        assert.ok(decision);
+        const id = decision.id;
+        const candidate = async (conflicts: string[]) => {
+          const result = routerResultSchema.parse(
+            buildRouterResult({
+              resultId: unique('manual-conflict'),
+              inputHash: await publishedHash(),
+              contextVersion: 'ctx-1',
+              planningAsOf: now(),
+              unassigned: [
+                { requestId: request.id, code: 'NO_CAPACITY', text: 'No feasible assignment' },
+              ],
+            }),
+          );
+          assert.ok(result.main);
+          result.main.manual_resolution = {
+            accepted_ids: [],
+            rejected_ids: [id],
+            conflict_ids: conflicts,
+          };
+          return feed(result, 'ctx-1');
+        };
+        const invalid = await candidate([]);
+        assert.equal(invalid.body.reason, 'RESULT_NOT_APPLICABLE');
+        const conflict = await candidate([id]);
+        assert.equal(conflict.body.accepted, false);
+        assert.equal(conflict.body.reason, 'MODE_MANUAL');
+        assert.equal((await read()).needsReview, true);
+        const acknowledged = await call(
+          'POST',
+          '/api/v1/dispatch/manual/priorities',
+          dispatcherToken,
+          {
+            operationId: randomUUID(),
+            expectedVersion: state.version,
+            decisionIds: [id],
+          },
+        );
+        assert.equal(acknowledged.status, 201, await acknowledged.clone().text());
+        const accepted = await candidate([id]);
+        assert.equal(accepted.body.accepted, true, accepted.body.detail);
+        assert.equal((await read()).needsReview, false);
+      } finally {
+        await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
+          operationId: randomUUID(),
+          mode: 'auto',
+        });
+      }
     });
 
     it('refuses a manual edit while automatic mode is on', async () => {
@@ -1147,6 +1259,11 @@ describe('router gateway', () => {
     });
 
     it('restores the immediate predecessor as a new immutable revision', async () => {
+      const resetPolicy = await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
+        operationId: randomUUID(),
+        policyId: 'balanced',
+      });
+      assert.equal(resetPolicy.status, 201, await resetPolicy.clone().text());
       const router = app.get<RouterClient>(RouterClient);
       const getActiveContextVersion = router.getActiveContextVersion.bind(router);
       router.getActiveContextVersion = async () => 'ctx-1';
@@ -1251,6 +1368,45 @@ describe('router gateway', () => {
       assert.equal(
         current.plan.routes[0]?.stops[0]?.startAt,
         pair.previous.routes[0]?.stops[0]?.startAt,
+      );
+
+      const mcp = app.get(McpToolsService);
+      const mcpActor: Actor = {
+        kind: 'account',
+        source: 'ui',
+        id: 'mcp-dispatcher-test',
+        role: 'dispatcher',
+        tokenCategory: null,
+        accountId: 'mcp-dispatcher-test',
+      };
+      const mcpPrevious = (await mcp.call('get_previous_plan', {}, mcpActor)) as {
+        current: { revision: number };
+        previous: { revision: number };
+        eligibility: { eligible: boolean };
+      };
+      assert.equal(mcpPrevious.current.revision, body.restoredRevision);
+      assert.equal(mcpPrevious.eligibility.eligible, true);
+
+      const mcpOperationId = randomUUID();
+      const mcpRestored = await mcp.call(
+        'restore_previous_plan',
+        { operationId: mcpOperationId, expectedRevision: mcpPrevious.current.revision },
+        mcpActor,
+      );
+      const mcpReplay = await mcp.call(
+        'restore_previous_plan',
+        { operationId: mcpOperationId, expectedRevision: mcpPrevious.current.revision },
+        mcpActor,
+      );
+      assert.deepEqual(mcpReplay, mcpRestored, 'the supplied MCP operationId must replay');
+      await assert.rejects(
+        () =>
+          mcp.call(
+            'restore_previous_plan',
+            { operationId: randomUUID(), expectedRevision: mcpPrevious.current.revision },
+            mcpActor,
+          ),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
       );
       router.getActiveContextVersion = getActiveContextVersion;
     });

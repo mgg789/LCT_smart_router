@@ -17,7 +17,9 @@ import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api
 import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { ENGINEER_ASSETS } from './assets';
+import { DeskShell } from './DeskShell';
 import {
   DESIGN_PREVIEW_DAY,
   DESIGN_PREVIEW_NOW_MS,
@@ -28,6 +30,7 @@ import { EngineerAiPane } from './EngineerAiPane';
 import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
+import { EquipmentLogisticsStatus } from './EquipmentLogisticsStatus';
 import { engineerHeaderStamp } from './engineerClock';
 import type { EngineerJobItem } from './engineerDay';
 import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
@@ -35,6 +38,7 @@ import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
 import { LiveControls, LiveDayOverlay } from './LiveControls';
 import { loadEngineerSessionLive } from './liveSession';
+import { usePhoneDesk } from './phoneDesk';
 import { EngineerListCard } from './RequestCards';
 import { RequestDetail } from './RequestDetail';
 import {
@@ -65,6 +69,7 @@ export function EngineerApp({
   designPreview?: boolean;
 }) {
   const motionOn = !useReducedMotion();
+  const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<EngineerMenuId>('day');
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -89,6 +94,8 @@ export function EngineerApp({
   const requestGeneration = useRef(0);
   const liveReceivedAt = useRef(Date.now());
   const [actionBusy, setActionBusy] = useState(false);
+  const [equipmentSearching, setEquipmentSearching] = useState(false);
+  const [equipmentRequestId, setEquipmentRequestId] = useState<string | null>(null);
   const acceptLive = useCallback((value: EngineerLiveView, receivedAt = Date.now()) => {
     liveReceivedAt.current = receivedAt;
     setLive(value);
@@ -159,7 +166,9 @@ export function EngineerApp({
         acceptLive(nextLive);
       } catch (cause) {
         if (failSession(cause)) return;
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить смену');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.5077c0a25c'),
+        );
       } finally {
         readPending.current = false;
         if (initial) setLoading(false);
@@ -195,7 +204,9 @@ export function EngineerApp({
       } catch (cause) {
         if (disposed || generation !== requestGeneration.current) return;
         if (!failSession(cause)) {
-          setError(cause instanceof Error ? cause.message : 'Не удалось обновить статус смены');
+          setError(
+            cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.9a5d55a48d'),
+          );
         }
       } finally {
         readPending.current = false;
@@ -230,11 +241,18 @@ export function EngineerApp({
 
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day, lunch, live?.handoffs ?? [], live?.engineer.id)
+      engineerListItems(
+        plan,
+        live ? null : day,
+        lunch,
+        live?.handoffs ?? [],
+        live?.engineer.id,
+        live?.logistics ?? [],
+      )
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
-            : item.kind === 'handoff'
+            : item.kind === 'handoff' || item.kind === 'logistics'
               ? true
               : item.request.lifecycle !== 'completed' &&
                 item.request.lifecycle !== 'cancelled' &&
@@ -259,13 +277,26 @@ export function EngineerApp({
     liveActionPending.current = true;
     requestGeneration.current += 1;
     setActionBusy(true);
+    if (action.kind === 'problem' && action.problemKind === 'missing_equipment') {
+      setEquipmentRequestId(action.requestId);
+      setEquipmentSearching(true);
+    }
     try {
       const next = await sendEngineerLiveAction(token, action);
       window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
-        action.kind === 'finish' || (action.kind === 'problem' && action.problemKind !== 'delay')
+        action.kind === 'finish' ||
+        (action.kind === 'problem' &&
+          action.problemKind !== 'delay' &&
+          (action.problemKind !== 'missing_equipment' ||
+            (next.current?.request.id !== action.requestId &&
+              !(next.logistics ?? []).some(
+                (entry) =>
+                  entry.requestId === action.requestId &&
+                  ['searching', 'assigned', 'error'].includes(entry.state),
+              ))))
           ? action.requestId
           : null;
       try {
@@ -299,8 +330,7 @@ export function EngineerApp({
                 }
               : previous,
           );
-        if (!failSession(cause))
-          setError('Отметка сохранена. Не удалось обновить маршрут — повторим автоматически.');
+        if (!failSession(cause)) setError(t('figma-engineer.EngineerApp.0c52041c00'));
       }
       if (terminalId)
         setOpenedJob((previous) => (previous?.request.id === terminalId ? null : previous));
@@ -308,17 +338,18 @@ export function EngineerApp({
       return true;
     } catch (cause) {
       if (failSession(cause)) return false;
-      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить отметку');
+      setError(cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.7ec6dc5553'));
       return false;
     } finally {
       liveActionPending.current = false;
       setActionBusy(false);
+      setEquipmentSearching(false);
     }
   };
 
   const startJob = async (requestId: string) => {
     if (designPreview) {
-      setNotice('В макете факт «приступить» не отправляется.');
+      setNotice(t('figma-engineer.EngineerApp.ab18472057'));
       return;
     }
     setStartPendingId(requestId);
@@ -341,7 +372,7 @@ export function EngineerApp({
 
   const startBreak = async () => {
     if (designPreview) {
-      setNotice('В макете технический перерыв не отправляется.');
+      setNotice(t('figma-engineer.EngineerApp.86bbfbe169'));
       setMenuOpen(false);
       return;
     }
@@ -365,8 +396,8 @@ export function EngineerApp({
       setProfile(profileFromSettings(profile, draft));
       setNotice(
         emailChangePending(profile.email ?? fallbackEmail, draft.email)
-          ? 'Имя и транспорт сохранены в макете. Смена почты здесь только локально — PATCH /engineer/profile почту не принимает.'
-          : 'Профиль обновлён в макете.',
+          ? t('figma-engineer.EngineerApp.368ccd1f9d')
+          : t('figma-engineer.EngineerApp.7c20339930'),
       );
       setScreen('day');
       return;
@@ -383,25 +414,28 @@ export function EngineerApp({
       setProfile(next);
       setNotice(
         emailChangePending(profile.email ?? fallbackEmail, draft.email)
-          ? 'Имя и транспорт сохранены. Смена почты через PATCH /engineer/profile ещё не доступна.'
-          : 'Профиль сохранён.',
+          ? t('figma-engineer.EngineerApp.5b25099147')
+          : t('figma-engineer.EngineerApp.131e1e3469'),
       );
       setScreen('day');
     } catch (cause) {
       if (failSession(cause)) return;
-      setSettingsError(cause instanceof Error ? cause.message : 'Не удалось сохранить профиль');
+      setSettingsError(
+        cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.6093b8a820'),
+      );
     } finally {
       setSettingsSubmitting(false);
     }
   };
 
-  const name = profile?.displayName ?? 'Инженер';
+  const name = profile?.displayName ?? t('figma-engineer.EngineerApp.88d71676fa');
   const detailJob = openedJob
     ? (items.find(
         (item): item is EngineerJobItem =>
           item.kind === 'job' && item.request.id === openedJob.request.id,
       ) ?? null)
     : null;
+  const deskJob = screen === 'day' ? detailJob : null;
   const controls = (id: string, detail = false) =>
     live?.current?.request.id === id ? (
       <LiveControls
@@ -417,287 +451,405 @@ export function EngineerApp({
   const overlayOpen = detailJob !== null || screen === 'settings';
   const sheetY = window.innerHeight;
 
-  return (
-    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
-      <div className="engineer-phone relative h-dvh overflow-hidden">
-        <div
-          className="flex h-full min-h-0 flex-col overflow-y-auto"
-          style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
-        >
-          <header className="flex items-center" style={{ gap: eu(20) }}>
-            <motion.button
-              type="button"
-              aria-label="Меню"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(true)}
-              whileTap={{ scale: 0.96 }}
-              transition={{ duration: 0.16 }}
-              className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
-              style={{
-                width: eu(90),
-                height: eu(90),
-                borderRadius: eu(20),
-              }}
-            >
-              <FigmaIcon
-                src={ENGINEER_ASSETS.menu}
-                alt=""
-                width={36}
-                height={25}
-                style={{ width: eu(36), height: eu(25) }}
-              />
-            </motion.button>
-            <p
-              className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
-              style={{ fontSize: eu(32), position: 'relative', top: 2 }}
-            >
-              {engineerHeaderStamp(live ? logicalNow * 1000 : nowMs)}
-            </p>
-          </header>
+  /**
+   * The same menu twice over: a drawer behind a button on the phone, and the
+   * rail itself on a desk, where there is room for it to simply be there.
+   */
+  const deskMenu = (
+    <EngineerMenu
+      docked
+      token={designPreview ? undefined : token}
+      open
+      motionOn={motionOn}
+      name={name}
+      email={email || '—'}
+      active={screen}
+      lunch={lunch}
+      breakActive={
+        live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
+      }
+      breakPending={breakPending}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        setOpenedJob(null);
+        setScreen(id);
+        setMenuOpen(false);
+        setNotice(null);
+        setSettingsError(null);
+      }}
+      onBreak={() => void startBreak()}
+      onSupport={() => {
+        setOpenedJob(null);
+        setScreen('assistant');
+        setMenuOpen(false);
+        setNotice(null);
+      }}
+      onSignOut={onSignOut}
+    />
+  );
 
-          {screen !== 'assistant' ? (
-            <>
-              <h1
-                className="font-extrabold tracking-[0.02em] text-figma-ink"
-                style={{ marginTop: eu(48), fontSize: eu(36) }}
+  const menuDrawer = (
+    <EngineerMenu
+      token={designPreview ? undefined : token}
+      open={menuOpen}
+      motionOn={motionOn}
+      name={name}
+      email={email || '—'}
+      active={screen}
+      lunch={lunch}
+      breakActive={
+        live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
+      }
+      breakPending={breakPending}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        setOpenedJob(null);
+        setScreen(id);
+        setMenuOpen(false);
+        setNotice(null);
+        setSettingsError(null);
+      }}
+      onBreak={() => void startBreak()}
+      onSupport={() => {
+        setOpenedJob(null);
+        setScreen('assistant');
+        setMenuOpen(false);
+        setNotice(null);
+      }}
+      onSignOut={onSignOut}
+    />
+  );
+
+  const column = (
+    <>
+      {/*
+       * On a desk the day is the one screen worth the whole width; the
+       * assistant and the settings are not, so they keep a readable column.
+       */}
+      <div
+        className={`flex h-full min-h-0 flex-col overflow-y-auto ${
+          desk && screen !== 'day' ? 'phone-desk-center' : ''
+        }`}
+        style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
+      >
+        <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
+          <motion.button
+            type="button"
+            aria-label={t('figma-engineer.EngineerApp.122f717650')}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+            whileTap={{ scale: 0.96 }}
+            transition={{ duration: 0.16 }}
+            className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
+            style={{
+              width: eu(90),
+              height: eu(90),
+              borderRadius: eu(20),
+            }}
+          >
+            <FigmaIcon
+              src={ENGINEER_ASSETS.menu}
+              alt=""
+              width={36}
+              height={25}
+              style={{ width: eu(36), height: eu(25) }}
+            />
+          </motion.button>
+          <p
+            className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
+            style={{ fontSize: eu(32), position: 'relative', top: 2 }}
+          >
+            {engineerHeaderStamp(live ? logicalNow * 1000 : nowMs)}
+          </p>
+        </header>
+
+        {/*
+         * The settings arrive as a sheet over the day. On a phone that sheet is
+         * the whole screen and the day behind it is out of the way; in a pane it
+         * is the day's own scrollbar that shows through beside a form that fits.
+         */}
+        {screen === 'day' || (!desk && screen === 'settings') ? (
+          <>
+            <h1
+              className="font-extrabold tracking-[0.02em] text-figma-ink"
+              style={{ marginTop: eu(48), fontSize: eu(36) }}
+            >
+              {t('figma-engineer.EngineerApp.db511eb63e')}
+            </h1>
+            {notice ? (
+              <p
+                className="font-medium text-figma-muted"
+                style={{ marginTop: eu(16), fontSize: eu(16), lineHeight: eu(22) }}
               >
-                Список заявок
-              </h1>
-              {notice ? (
-                <p
-                  className="font-medium text-figma-muted"
-                  style={{ marginTop: eu(16), fontSize: eu(16), lineHeight: eu(22) }}
-                >
-                  {notice}
+                {notice}
+              </p>
+            ) : null}
+            {error ? (
+              <div
+                className="bg-white"
+                style={{
+                  marginTop: eu(20),
+                  borderRadius: eu(20),
+                  padding: eu(24),
+                }}
+              >
+                <p className="font-semibold text-figma-ink" style={{ fontSize: eu(20) }}>
+                  {error}
                 </p>
-              ) : null}
-              {error ? (
-                <div
-                  className="bg-white"
+                <motion.button
+                  type="button"
+                  onClick={() => void reload()}
+                  whileTap={{ scale: 0.98 }}
+                  className="bg-figma-bee font-semibold text-figma-ink"
                   style={{
-                    marginTop: eu(20),
+                    marginTop: eu(16),
                     borderRadius: eu(20),
-                    padding: eu(24),
+                    padding: `${eu(16)} ${eu(32)}`,
+                    fontSize: eu(20),
                   }}
                 >
-                  <p className="font-semibold text-figma-ink" style={{ fontSize: eu(20) }}>
-                    {error}
-                  </p>
-                  <motion.button
-                    type="button"
-                    onClick={() => void reload()}
-                    whileTap={{ scale: 0.98 }}
-                    className="bg-figma-bee font-semibold text-figma-ink"
-                    style={{
-                      marginTop: eu(16),
-                      borderRadius: eu(20),
-                      padding: `${eu(16)} ${eu(32)}`,
-                      fontSize: eu(20),
-                    }}
-                  >
-                    Повторить
-                  </motion.button>
-                </div>
-              ) : null}
-              {loading && items.length === 0 && error === null ? (
+                  {t('figma-engineer.EngineerApp.5189135a61')}
+                </motion.button>
+              </div>
+            ) : null}
+            {loading && items.length === 0 && error === null ? (
+              <p
+                className="font-medium text-figma-muted"
+                style={{ marginTop: eu(24), fontSize: eu(20) }}
+              >
+                {t('figma-engineer.EngineerApp.0c92bb28fa')}
+              </p>
+            ) : null}
+            {!loading && items.length === 0 && error === null ? (
+              <div
+                className="bg-white"
+                style={{
+                  marginTop: eu(20),
+                  borderRadius: eu(20),
+                  padding: `${eu(28)} ${eu(24)}`,
+                }}
+              >
+                <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
+                  {live?.engineer.canFinishDay
+                    ? t('figma-engineer.EngineerApp.9dc11e5b04')
+                    : t('figma-engineer.EngineerApp.abf4555deb')}
+                </p>
                 <p
                   className="font-medium text-figma-muted"
-                  style={{ marginTop: eu(24), fontSize: eu(20) }}
+                  style={{ marginTop: eu(8), fontSize: eu(18) }}
                 >
-                  Загружаем смену…
+                  {live?.engineer.canFinishDay
+                    ? t('figma-engineer.EngineerApp.86065ade26')
+                    : t('figma-engineer.EngineerApp.ca428dc364')}
                 </p>
-              ) : null}
-              {!loading && items.length === 0 && error === null ? (
+              </div>
+            ) : null}
+            <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
+              {items.map((item, index) => (
                 <div
-                  className="bg-white"
-                  style={{
-                    marginTop: eu(20),
-                    borderRadius: eu(20),
-                    padding: `${eu(28)} ${eu(24)}`,
-                  }}
-                >
-                  <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
-                    {live?.engineer.canFinishDay
-                      ? 'Работа на сегодня завершена'
-                      : 'Ожидаем новые заявки'}
-                  </p>
-                  <p
-                    className="font-medium text-figma-muted"
-                    style={{ marginTop: eu(8), fontSize: eu(18) }}
-                  >
-                    {live?.engineer.canFinishDay
-                      ? 'Ваши заявки завершены, можно ехать домой. Диспетчер продолжит работу с алертами.'
-                      : 'До 17:00 остаёмся на связи. После 17:00 можно закончить день, когда ваша работа завершена и нет новых назначений.'}
-                  </p>
-                </div>
-              ) : null}
-              <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
-                {items.map((item, index) => (
-                  <div
-                    key={
-                      item.kind === 'lunch'
-                        ? `lunch-${item.startAt}`
-                        : item.kind === 'handoff'
-                          ? `handoff-${item.handoff.id}`
+                  key={
+                    item.kind === 'lunch'
+                      ? `lunch-${item.startAt}`
+                      : item.kind === 'handoff'
+                        ? `handoff-${item.handoff.id}`
+                        : item.kind === 'logistics'
+                          ? `logistics-${item.logistics.id}`
                           : item.request.id
-                    }
-                  >
-                    <EngineerListCard
-                      item={item}
-                      motionOn={motionOn}
-                      delay={index * 0.04}
-                      actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
-                      handoffAction={
-                        live && item.kind === 'handoff'
-                          ? () =>
+                  }
+                >
+                  <EngineerListCard
+                    item={item}
+                    motionOn={motionOn}
+                    delay={index * 0.04}
+                    actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                    logisticsAction={
+                      live &&
+                      !actionBusy &&
+                      item.kind === 'logistics' &&
+                      item.logistics.action?.enabled
+                        ? () => {
+                            const action = item.logistics.action;
+                            if (action)
                               void applyLiveAction({
-                                kind: 'handoff_confirm',
-                                handoffId: item.handoff.id,
-                              })
-                          : undefined
-                      }
-                      startPending={item.kind === 'job' && startPendingId === item.request.id}
-                      onOpen={
-                        item.kind === 'job'
-                          ? () => {
-                              setOpenedJob(item);
-                              setScreen('day');
-                              setNotice(null);
-                            }
-                          : undefined
-                      }
-                      onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
-                      onStart={
-                        item.kind === 'job' ? () => void startJob(item.request.id) : undefined
-                      }
-                    />
-                    {!designPreview &&
-                    item.kind === 'job' &&
-                    live?.current?.request.id === item.request.id &&
-                    live.current.phase === 'in_progress' ? (
-                      <PassportOffer
-                        key={item.request.id}
-                        token={token}
-                        requestId={item.request.id}
-                      />
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
-              <EngineerAiPane token={token} displayName={profile?.displayName ?? null} />
-            </div>
-          )}
-        </div>
-
-        <AnimatePresence>
-          {openedJob && detailJob ? (
-            <motion.div
-              key={`detail-${openedJob.request.id}`}
-              className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
-              initial={motionOn ? { x: '100%' } : false}
-              animate={{ x: '0%' }}
-              exit={motionOn ? { x: '100%' } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
-            >
-              <div className="h-full overflow-y-auto">
-                <RequestDetail
-                  token={designPreview ? undefined : token}
-                  item={detailJob}
-                  actions={live ? controls(detailJob.request.id, true) : undefined}
-                  nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
-                  onBack={() => {
-                    setOpenedJob(null);
-                    setNotice(null);
-                  }}
-                  onRoute={() => openRoute(openedJob)}
-                />
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        {live ? (
-          <LiveDayOverlay
-            live={live}
-            now={logicalNow}
-            busy={actionBusy}
-            send={applyLiveAction}
-            token={designPreview ? null : token}
-            equipment={day?.equipmentStock ?? null}
-          />
-        ) : null}
-        {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
-        <AnimatePresence>
-          {screen === 'settings' ? (
-            <motion.div
-              key="settings"
-              className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
-              initial={motionOn ? { y: sheetY } : false}
-              animate={{ y: 0 }}
-              exit={motionOn ? { y: sheetY } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
-            >
-              <div className="h-full overflow-y-auto">
-                {profile ? (
-                  <EngineerSettings
-                    profile={profile}
-                    fallbackEmail={fallbackEmail}
-                    submitting={settingsSubmitting}
-                    saveError={settingsError}
-                    onBack={() => {
-                      setScreen('day');
-                      setSettingsError(null);
-                    }}
-                    onSave={(draft) => void saveSettings(draft)}
+                                kind: action.kind,
+                                logisticsId: item.logistics.id,
+                              });
+                          }
+                        : undefined
+                    }
+                    handoffAction={
+                      live && item.kind === 'handoff'
+                        ? () =>
+                            void applyLiveAction({
+                              kind: 'handoff_confirm',
+                              handoffId: item.handoff.id,
+                            })
+                        : undefined
+                    }
+                    selected={item.kind === 'job' && item.request.id === openedJob?.request.id}
+                    startPending={item.kind === 'job' && startPendingId === item.request.id}
+                    onOpen={
+                      item.kind === 'job'
+                        ? () => {
+                            setOpenedJob(item);
+                            setScreen('day');
+                            setNotice(null);
+                          }
+                        : undefined
+                    }
+                    onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
+                    onStart={item.kind === 'job' ? () => void startJob(item.request.id) : undefined}
                   />
-                ) : (
-                  <p
-                    className="font-medium text-figma-muted"
-                    style={{ padding: eu(40), fontSize: eu(20) }}
-                  >
-                    Загружаем профиль…
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        {overlayOpen ? null : (
-          <EngineerMenu
-            token={designPreview ? undefined : token}
-            open={menuOpen}
-            motionOn={motionOn}
-            name={name}
-            email={email || '—'}
-            active={screen}
-            lunch={lunch}
-            breakActive={
-              live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
-            }
-            breakPending={breakPending}
-            onClose={() => setMenuOpen(false)}
-            onNavigate={(id) => {
-              setOpenedJob(null);
-              setScreen(id);
-              setMenuOpen(false);
-              setNotice(null);
-              setSettingsError(null);
-            }}
-            onBreak={() => void startBreak()}
-            onSupport={() => {
-              setOpenedJob(null);
-              setScreen('assistant');
-              setMenuOpen(false);
-              setNotice(null);
-            }}
-            onSignOut={onSignOut}
-          />
+                  {!designPreview &&
+                  item.kind === 'job' &&
+                  live?.current?.request.id === item.request.id &&
+                  live.current.phase === 'in_progress' ? (
+                    <PassportOffer
+                      key={item.request.id}
+                      token={token}
+                      requestId={item.request.id}
+                    />
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+            <EngineerAiPane token={token} displayName={profile?.displayName ?? null} />
+          </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {openedJob && detailJob && !desk ? (
+          <motion.div
+            key={`detail-${openedJob.request.id}`}
+            className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
+            initial={motionOn ? { x: '100%' } : false}
+            animate={{ x: '0%' }}
+            exit={motionOn ? { x: '100%' } : undefined}
+            transition={motionOn ? slide : { duration: 0 }}
+          >
+            <div className="h-full overflow-y-auto">
+              <RequestDetail
+                token={designPreview ? undefined : token}
+                item={detailJob}
+                actions={live ? controls(detailJob.request.id, true) : undefined}
+                nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
+                onBack={() => {
+                  setOpenedJob(null);
+                  setNotice(null);
+                }}
+                onRoute={() => openRoute(openedJob)}
+              />
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {live ? (
+        <LiveDayOverlay
+          live={live}
+          now={logicalNow}
+          busy={actionBusy}
+          send={applyLiveAction}
+          token={designPreview ? null : token}
+          equipment={day?.equipmentStock ?? null}
+        />
+      ) : null}
+      {live ? (
+        <EquipmentLogisticsStatus
+          live={live}
+          now={logicalNow}
+          searching={equipmentSearching}
+          requestId={equipmentRequestId ?? live.current?.request.id ?? null}
+        />
+      ) : null}
+      {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
+      <AnimatePresence>
+        {screen === 'settings' ? (
+          <motion.div
+            key="settings"
+            className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
+            initial={motionOn ? { y: sheetY } : false}
+            animate={{ y: 0 }}
+            exit={motionOn ? { y: sheetY } : undefined}
+            transition={motionOn ? slide : { duration: 0 }}
+          >
+            <div
+              className={`flex h-full flex-col overflow-y-auto ${desk ? 'phone-desk-center' : ''}`}
+            >
+              {profile ? (
+                <EngineerSettings
+                  profile={profile}
+                  fallbackEmail={fallbackEmail}
+                  submitting={settingsSubmitting}
+                  saveError={settingsError}
+                  onBack={() => {
+                    setScreen('day');
+                    setSettingsError(null);
+                  }}
+                  onSave={(draft) => void saveSettings(draft)}
+                />
+              ) : (
+                <p
+                  className="font-medium text-figma-muted"
+                  style={{ padding: eu(40), fontSize: eu(20) }}
+                >
+                  {t('figma-engineer.EngineerApp.48883e0674')}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {desk || overlayOpen ? null : menuDrawer}
+    </>
+  );
+
+  if (desk) {
+    return (
+      <DeskShell
+        menu={deskMenu}
+        detailKey={deskJob?.request.id}
+        detail={
+          deskJob ? (
+            <RequestDetail
+              actions={live ? controls(deskJob.request.id, true) : undefined}
+              item={deskJob}
+              nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
+              onBack={() => {
+                setOpenedJob(null);
+                setNotice(null);
+              }}
+              onRoute={() => openRoute(deskJob)}
+              token={designPreview ? undefined : token}
+            />
+          ) : undefined
+        }
+        header={
+          <>
+            <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">
+              {engineerHeaderStamp(live ? logicalNow * 1000 : nowMs)}
+            </p>
+            <span className="flex-1" />
+            <p className="font-semibold text-[18px] text-figma-ink">{name}</p>
+            <p className="font-medium text-[16px] text-figma-muted">{email || '—'}</p>
+          </>
+        }
+        fitScreen={desk && screen === 'settings'}
+        screenKey={screen}
+      >
+        {column}
+      </DeskShell>
+    );
+  }
+
+  return (
+    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
+      <div className="engineer-phone relative h-dvh overflow-hidden">{column}</div>
     </main>
   );
 }

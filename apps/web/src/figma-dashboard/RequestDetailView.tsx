@@ -4,8 +4,10 @@ import { useState } from 'react';
 import type { DashboardSnapshot, EngineerView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import { RequestPassport } from '../components/passports/PassportDetails';
+import { t } from '../i18n';
 import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
+import { ManualRequestControls } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   assignableEngineers,
@@ -61,7 +63,7 @@ export function RequestDetailView({
       >
         <motion.button
           type="button"
-          aria-label="Назад к заявкам"
+          aria-label={t('figma-dashboard.RequestDetailView.d8b45936b2')}
           onClick={onBack}
           className="flex size-[43px] shrink-0 items-center justify-center"
           whileHover={animate ? { scale: 1.08 } : undefined}
@@ -111,7 +113,7 @@ export function RequestDetailView({
       >
         <motion.button
           type="button"
-          aria-label="Закрыть заявку"
+          aria-label={t('figma-dashboard.RequestDetailView.448d82146d')}
           onClick={onBack}
           className="absolute z-20 flex items-center justify-center rounded-full bg-white"
           style={{ top: CLOSE_INSET, right: CLOSE_INSET, width: CLOSE_SIZE, height: CLOSE_SIZE }}
@@ -161,7 +163,7 @@ function RequestDetailPanel({
     <div className="flex h-full flex-col gap-4 overflow-y-auto px-[27px] pt-[24px] pb-[24px]">
       <Copyable
         value={shortRequestId(model.id)}
-        label="Скопировать номер заявки"
+        label={t('figma-dashboard.RequestDetailView.fd3834086e')}
         className="pr-[52px] text-left"
       >
         <FigmaText
@@ -176,6 +178,7 @@ function RequestDetailPanel({
           <DetailTag key={tag} label={tag} />
         ))}
       </div>
+      <ManualRequestControls requestId={model.id} />
       {model.equipmentTags.length > 0 ? (
         <div className="mt-[12px] flex flex-wrap gap-[12px]">
           {model.equipmentTags.map((tag) => (
@@ -233,7 +236,9 @@ function RequestDetailActions({
       await work();
       setPickerOpen(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось выполнить действие.');
+      setError(
+        cause instanceof Error ? cause.message : t('figma-dashboard.RequestDetailView.c4f2454fb5'),
+      );
     } finally {
       setPending(null);
     }
@@ -244,10 +249,10 @@ function RequestDetailActions({
         type="button"
         disabled
         aria-disabled
-        title="Скоро"
+        title={t('figma-dashboard.RequestDetailView.72c299e0d6')}
         className="flex h-[61px] w-[430px] cursor-not-allowed items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white opacity-45"
       >
-        Написать клиенту
+        {t('figma-dashboard.RequestDetailView.b9f2392df4')}
       </motion.button>
       <motion.button
         type="button"
@@ -267,13 +272,15 @@ function RequestDetailActions({
       {pickerOpen ? (
         <div className="rounded-[16px] bg-white/10 p-[16px] text-white">
           <label className="block font-medium text-[16px]">
-            Инженер
+            {t('figma-dashboard.RequestDetailView.88d71676fa')}
             <select
               className="mt-[8px] block w-full rounded-[12px] bg-white p-[10px] text-figma-ink"
               value={engineerId}
               onChange={(event) => setEngineerId(event.target.value)}
             >
-              {candidates.length === 0 ? <option value="">Нет подходящих</option> : null}
+              {candidates.length === 0 ? (
+                <option value="">{t('figma-dashboard.RequestDetailView.eb014bb3ec')}</option>
+              ) : null}
               {candidates.map((engineer) => (
                 <option key={engineer.id} value={engineer.id}>
                   {engineer.displayName}
@@ -291,14 +298,16 @@ function RequestDetailActions({
                 void run('assign', () => onAssignEngineer(engineerId));
               }}
             >
-              {pending === 'assign' ? 'Назначаем…' : 'Назначить'}
+              {pending === 'assign'
+                ? t('figma-dashboard.RequestDetailView.040f8f0bbf')
+                : t('figma-dashboard.RequestDetailView.cfd07e716f')}
             </button>
             <button
               type="button"
               className="rounded-[16px] border border-white/40 px-[18px] py-[10px] text-white"
               onClick={() => setPickerOpen(false)}
             >
-              Отмена
+              {t('figma-dashboard.RequestDetailView.8fbe9b75cb')}
             </button>
           </div>
         </div>
@@ -315,7 +324,9 @@ function RequestDetailActions({
           void run('cancel', onCancelVisit);
         }}
       >
-        {pending === 'cancel' ? 'Отменяем…' : 'Отменить визит'}
+        {pending === 'cancel'
+          ? t('figma-dashboard.RequestDetailView.4ba8a8d87b')
+          : t('figma-dashboard.RequestDetailView.63895de5f0')}
       </motion.button>
       {error ? (
         <p role="alert" className="font-medium text-[16px] text-white">

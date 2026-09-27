@@ -5,6 +5,7 @@ import type {
   PlanStopView,
   RequestView,
 } from '../api/types';
+import { t } from '../i18n';
 import { moscowAt } from '../lib/time';
 
 const WORK_DATE = '2026-09-15';
@@ -59,7 +60,7 @@ export const DESIGN_PREVIEW_NOW_MS = moscowAt(WORK_DATE, 11, 55) * 1000;
 export const DESIGN_PREVIEW_PROFILE: EngineerView = {
   id: 'eng-preview',
   version: 1,
-  displayName: 'Александра Смирнова',
+  displayName: t('figma-engineer.designPreview.cdd068377e'),
   inputOrder: 1,
   skills: ['connection'],
   transportType: 'car',
@@ -143,27 +144,27 @@ export const DESIGN_PREVIEW_PLAN: EngineerPlanResponse = {
     {
       ...request({
         id: 'req-taganka',
-        addressText: 'ул. Таганская, дом 17, корп. 1, этаж 4, кв. 14',
-        workTypeTitle: 'Подключение интернета',
+        addressText: t('figma-engineer.designPreview.ec050ddce8'),
+        workTypeTitle: t('figma-engineer.designPreview.9fa84e238b'),
         serviceDurationSec: 45 * 60,
         windowStartAt: moscowAt(WORK_DATE, 12, 0),
         windowEndAt: moscowAt(WORK_DATE, 14, 0),
       }),
-      contactName: 'Виктор Сергеевич Кравцов',
+      contactName: t('figma-engineer.designPreview.57853e3b8d'),
       requiredEquipment: 'router',
     },
     request({
       id: 'req-lesnaya-a',
-      addressText: 'Офис - ул. Лесная, 7',
-      workTypeTitle: 'Замена роутера',
+      addressText: t('figma-engineer.designPreview.cf9424ded9'),
+      workTypeTitle: t('figma-engineer.designPreview.1e0fd1a7f5'),
       serviceDurationSec: 40 * 60,
       windowStartAt: moscowAt(WORK_DATE, 9, 0),
       windowEndAt: moscowAt(WORK_DATE, 10, 20),
     }),
     request({
       id: 'req-lesnaya-b',
-      addressText: 'Офис - ул. Лесная, 7',
-      workTypeTitle: 'Замена роутера',
+      addressText: t('figma-engineer.designPreview.cf9424ded9'),
+      workTypeTitle: t('figma-engineer.designPreview.1e0fd1a7f5'),
       serviceDurationSec: 40 * 60,
       windowStartAt: moscowAt(WORK_DATE, 9, 0),
       windowEndAt: moscowAt(WORK_DATE, 10, 20),

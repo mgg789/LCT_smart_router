@@ -30,13 +30,13 @@ describe('addEntity catalog helpers', () => {
     );
   });
 
-  it('stretches an hour-long outage window to the 80-minute norm', () => {
+  it('stretches an hour-long outage window to the 100-minute norm', () => {
     const hour = windowFromClocks('2026-09-19', '17:45', '18:45');
     expect(typeof hour).not.toBe('string');
     if (typeof hour === 'string') throw new Error(hour);
-    expect(fitWindowToService(hour, 'outage')).toEqual({
+    expect(fitWindowToService(hour, 100 * 60)).toEqual({
       windowStartAt: hour.windowStartAt,
-      windowEndAt: hour.windowStartAt + 80 * 60,
+      windowEndAt: hour.windowStartAt + 100 * 60,
     });
   });
 
@@ -47,30 +47,39 @@ describe('addEntity catalog helpers', () => {
 
   it('requires the request fields the form collects', () => {
     expect(
-      validateRequestDraft({
-        workType: 'connection_request',
-        addressText: 'Таганская, 24',
-        startClock: '09:00',
-        endClock: '11:00',
-        lat: 55.74,
-        lon: 37.65,
-      }),
+      validateRequestDraft(
+        {
+          workType: 'connection_request',
+          addressText: 'Таганская, 24',
+          startClock: '09:00',
+          endClock: '11:00',
+          lat: 55.74,
+          lon: 37.65,
+        },
+        [{ code: 'connection_request' }],
+      ),
     ).toBeNull();
     expect(
-      validateRequestDraft({
-        workType: 'connection_request',
-        addressText: 'Таганская, 24',
-        startClock: '09:00',
-        endClock: '11:00',
-      }),
+      validateRequestDraft(
+        {
+          workType: 'connection_request',
+          addressText: 'Таганская, 24',
+          startClock: '09:00',
+          endClock: '11:00',
+        },
+        [{ code: 'connection_request' }],
+      ),
     ).toBe('Выберите адрес из подсказки или точку на карте');
     expect(
-      validateRequestDraft({
-        workType: 'unknown',
-        addressText: 'Таганская, 24',
-        startClock: '09:00',
-        endClock: '11:00',
-      }),
+      validateRequestDraft(
+        {
+          workType: 'unknown',
+          addressText: 'Таганская, 24',
+          startClock: '09:00',
+          endClock: '11:00',
+        },
+        [{ code: 'connection_request' }],
+      ),
     ).toBe('Выберите тип заявки');
   });
 

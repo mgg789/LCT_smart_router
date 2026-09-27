@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import { DashboardApiError, parseDashboardSnapshot } from '../api/client';
 import type { DashboardSnapshot } from '../api/types';
+import { t } from '../i18n';
 
 const CACHE_KEY = 'lct.saved-day.v1';
 const SCOPE_KEY = 'lct.saved-day.scope';
@@ -39,7 +40,7 @@ export function connectionDiagnostic(cause: unknown): ConnectionDiagnostic {
     at: Date.now(),
     category: error?.status
       ? 'http'
-      : error?.message.includes('контракт')
+      : error?.message.includes(t('domain.resilience.7fa66ba7ab'))
         ? 'contract'
         : 'connection',
     status: error?.status ?? null,

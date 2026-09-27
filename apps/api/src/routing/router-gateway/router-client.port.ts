@@ -21,6 +21,43 @@ export interface WindowProposalInput {
   day_end_at: number;
 }
 
+/** Frozen-route witness; no mutation occurs until sys rechecks its captured state. */
+export interface LogisticsProposalInput {
+  snapshot: RouterTaskSnapshot;
+  request_id: string;
+  receiver_engineer_id: string;
+  expected_context_version: string;
+  routes: Record<
+    string,
+    Array<{
+      kind: string;
+      request_id: string | null;
+      lat: number;
+      lon: number;
+      start_at: number;
+      end_at: number;
+    }>
+  >;
+  depots: Array<{ id: string; lat: number; lon: number }>;
+}
+
+/** One feasible donor detour, or a confirmed exhausted search. */
+export interface LogisticsProposal {
+  status: 'available' | 'none';
+  router_context_version: string;
+  proposal: {
+    kind: 'donor_delivery';
+    donor_engineer_id: string;
+    at: number;
+    location: { lat: number; lon: number };
+    travel_delta_sec: number;
+    distance_delta_m: number;
+    wait_delta_sec: number;
+    occupied_from_at: number;
+    occupied_until_at: number;
+  } | null;
+}
+
 /** One witnessed same-day slot. Neighbors are the jobs already beside the insertion. */
 export interface WindowProposalSlot {
   engineerId: string;
@@ -225,6 +262,10 @@ export interface PolicyComparison {
  * A port keeps the optional null transport and private-network HTTP transport interchangeable.
  */
 export abstract class RouterClient {
+  /** Search equipment delivery without holding a database transaction. */
+  proposeLogistics(_input: LogisticsProposalInput): Promise<LogisticsProposal> {
+    return Promise.reject(new Error('Equipment logistics is unavailable'));
+  }
   /** Imports one validated offline OSRM resource into Router's persistent graph. */
   importRoadData(_input: RouterRoadImportInput): Promise<RouterRoadImportResult> {
     throw SysError.notConfigured('Router road import');
@@ -329,6 +370,12 @@ export interface SituationPredictionInput {
   readonly as_of?: number | null;
   readonly completed?: Record<string, string[]>;
   readonly cancel_rate?: number | null;
+  /** Current API working-set epoch; Core drops persisted learned state after a reset. */
+  readonly working_set_generation?: number;
+  /** Private paired-evaluation override; callers must not expose this on public DTOs. */
+  readonly calibration_override?: PredictCalibrationDocument;
+  /** Reuses Monte-Carlo draws across baseline and shadow candidate evaluations. */
+  readonly scenario_seed?: string;
 }
 
 /** Per-request dry outcome of the situation prediction. */
@@ -385,6 +432,8 @@ export interface SituationPrediction {
  * regimes stay factory until a real weather-linked execution history exists.
  */
 export interface PredictCalibrationDocument {
+  /** Monotonic data epoch; protects Router from a delayed pre-reset calibration PUT. */
+  readonly working_set_generation?: number;
   readonly service_cv: number;
   readonly leg_cv_short: number;
   readonly leg_cv_long: number;
@@ -401,6 +450,23 @@ export interface PredictCalibrationDocument {
     readonly probability: number;
     readonly travel_multiplier: number;
   }>;
+  readonly weather_multipliers: ReadonlyArray<WeatherMultiplierCalibration>;
+}
+
+/** Region/profile-specific candidate evaluated against forward-day execution facts. */
+export interface WeatherMultiplierCalibration {
+  readonly region: string;
+  readonly transport_type: 'car' | 'walk' | 'bike' | 'transit';
+  readonly kind: 'rain' | 'snow' | 'storm';
+  readonly multiplier: number;
+  readonly source: 'learned';
+  readonly observations: number;
+  readonly days: number;
+  readonly baseline_travel_error: number;
+  readonly candidate_travel_error: number;
+  readonly baseline_brier: number;
+  readonly candidate_brier: number;
+  readonly validation_version: string;
 }
 
 export interface RouterPredictCalibration {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 import { DashboardApiError, requestJson } from './client';
 
 /**
@@ -656,11 +657,7 @@ export async function streamAssistantRun(
 ): Promise<void> {
   const response = await openAssistantRunEvents(runId, token, afterSeq, signal);
   if (!response.body) {
-    throw new DashboardApiError(
-      'Сервер не открыл поток событий ассистента',
-      response.status,
-      `ai/runs/${runId}/events`,
-    );
+    throw new DashboardApiError(t('api.ai.f96963397c'), response.status, `ai/runs/${runId}/events`);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -670,18 +667,18 @@ export async function streamAssistantRun(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      buffer = drainFrames(buffer, aiRunEventSchema, 'ассистента', onEvent);
+      buffer = drainFrames(buffer, aiRunEventSchema, t('api.ai.0940af4949'), onEvent);
     }
     // A stream that ends right after its last frame's data may not carry a trailing blank
     // line; feed one so that last complete frame is still parsed rather than dropped.
-    drainFrames(`${buffer}\n\n`, aiRunEventSchema, 'ассистента', onEvent);
+    drainFrames(`${buffer}\n\n`, aiRunEventSchema, t('api.ai.0940af4949'), onEvent);
   } catch (cause) {
     // An aborted read (the caller called stop(), or unmounted) is expected termination,
     // not a failure to report — the reader simply stops.
     if (signal?.aborted) return;
     throw cause instanceof DashboardApiError
       ? cause
-      : new DashboardApiError('Поток событий ассистента прервался', 0, `ai/runs/${runId}/events`);
+      : new DashboardApiError(t('api.ai.0b12c2bba9'), 0, `ai/runs/${runId}/events`);
   } finally {
     reader.releaseLock();
   }
@@ -702,7 +699,9 @@ export async function fetchAssistantRunEventsOnce(
   const response = await openAssistantRunEvents(runId, token, afterSeq, signal);
   const text = await response.text();
   const outcomes: AiStreamOutcome[] = [];
-  drainFrames(`${text}\n\n`, aiRunEventSchema, 'ассистента', (outcome) => outcomes.push(outcome));
+  drainFrames(`${text}\n\n`, aiRunEventSchema, t('api.ai.0940af4949'), (outcome) =>
+    outcomes.push(outcome),
+  );
   return outcomes;
 }
 
@@ -718,7 +717,7 @@ async function openAssistantRunEvents(
   );
   if (!response.ok) {
     throw new DashboardApiError(
-      `Не удалось открыть поток событий (HTTP ${response.status})`,
+      t('api.ai.125ed29258', { value0: response.status }),
       response.status,
       `ai/runs/${runId}/events`,
     );
@@ -774,7 +773,11 @@ function parseFrame<TEvent>(
     onEvent({
       ok: false,
       raw,
-      error: new DashboardApiError(`Событие ${contextLabel} повреждено (не JSON)`, 0, 'ai-stream'),
+      error: new DashboardApiError(
+        t('api.ai.86d99ce975', { value0: contextLabel }),
+        0,
+        'ai-stream',
+      ),
     });
     return;
   }
@@ -793,7 +796,7 @@ function parseFrame<TEvent>(
       ok: false,
       raw,
       error: new DashboardApiError(
-        `Событие ${contextLabel} не соответствует контракту`,
+        t('api.ai.2321c233d0', { value0: contextLabel }),
         0,
         'ai-stream',
       ),
@@ -829,17 +832,13 @@ export async function streamChatEvents(
   });
   if (!response.ok) {
     throw new DashboardApiError(
-      `Не удалось открыть поток чата (HTTP ${response.status})`,
+      t('api.ai.6f5e9677f5', { value0: response.status }),
       response.status,
       'chat-stream',
     );
   }
   if (!response.body) {
-    throw new DashboardApiError(
-      'Сервер не открыл поток событий чата',
-      response.status,
-      'chat-stream',
-    );
+    throw new DashboardApiError(t('api.ai.016128877e'), response.status, 'chat-stream');
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -849,18 +848,18 @@ export async function streamChatEvents(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      buffer = drainFrames(buffer, chatStreamEventSchema, 'чата', onEvent);
+      buffer = drainFrames(buffer, chatStreamEventSchema, t('api.ai.5e04c41f88'), onEvent);
     }
     // Same trailing-frame rule as the run stream: feed a closing blank line so a last frame
     // with no following one of its own is still parsed rather than dropped.
-    drainFrames(`${buffer}\n\n`, chatStreamEventSchema, 'чата', onEvent);
+    drainFrames(`${buffer}\n\n`, chatStreamEventSchema, t('api.ai.5e04c41f88'), onEvent);
   } catch (cause) {
     // An aborted read (the caller reconnecting, or unmounting) is expected termination, not
     // a failure to report — the reader simply stops.
     if (signal?.aborted) return;
     throw cause instanceof DashboardApiError
       ? cause
-      : new DashboardApiError('Поток событий чата прервался', 0, 'chat-stream');
+      : new DashboardApiError(t('api.ai.07959bf5c2'), 0, 'chat-stream');
   } finally {
     reader.releaseLock();
   }

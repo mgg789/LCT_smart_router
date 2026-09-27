@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 export type DangerActionId = 'endDay' | 'restartDay' | 'resetData' | 'signOut';
 
 export type DangerActionTone = 'bee' | 'danger';
@@ -14,38 +15,34 @@ export type DangerAction = {
 export const DANGER_ACTIONS: Record<DangerActionId, DangerAction> = {
   endDay: {
     id: 'endDay',
-    title: 'Завершить день',
-    word: 'ЗАВЕРШИТЬ',
-    warning:
-      'Смена закроется, и дашборд скроется. Данные дня останутся. Чтобы снова открыть план, нужно нажать «Начать рабочий день».',
-    confirmLabel: 'Завершить день',
+    title: t('figma-dashboard.confirmPhrase.070512aa40'),
+    word: t('figma-dashboard.confirmPhrase.57de74ebda'),
+    warning: t('figma-dashboard.confirmPhrase.a8809a1aad'),
+    confirmLabel: t('figma-dashboard.confirmPhrase.070512aa40'),
     tone: 'bee',
   },
   restartDay: {
     id: 'restartDay',
-    title: 'День заново',
-    word: 'ЗАНОВО',
-    warning:
-      'План заменится исходным демо-набором, а экран вернётся к приветствию. Назначения и правки этой сессии пропадут.',
-    confirmLabel: 'День заново',
+    title: t('figma-dashboard.confirmPhrase.79953852a9'),
+    word: t('figma-dashboard.confirmPhrase.61d6e683a6'),
+    warning: t('figma-dashboard.confirmPhrase.f2d4e06d96'),
+    confirmLabel: t('figma-dashboard.confirmPhrase.79953852a9'),
     tone: 'danger',
   },
   resetData: {
     id: 'resetData',
-    title: 'Сбросить данные',
-    word: 'СБРОС',
-    warning:
-      'Текущий день заменится исходным демо-набором. Назначения и правки этой сессии пропадут, вы останетесь в дашборде.',
-    confirmLabel: 'Сбросить данные',
+    title: t('figma-dashboard.confirmPhrase.d613027d96'),
+    word: t('figma-dashboard.confirmPhrase.6dae233da9'),
+    warning: t('figma-dashboard.confirmPhrase.db0f71eeee'),
+    confirmLabel: t('figma-dashboard.confirmPhrase.d613027d96'),
     tone: 'danger',
   },
   signOut: {
     id: 'signOut',
-    title: 'Выйти',
-    word: 'ВЫЙТИ',
-    warning:
-      'Сессия диспетчера закроется, локальный кэш дня очистится. Чтобы вернуться, нужно войти снова.',
-    confirmLabel: 'Выйти',
+    title: t('figma-dashboard.confirmPhrase.5690c2e63b'),
+    word: t('figma-dashboard.confirmPhrase.948fc1c763'),
+    warning: t('figma-dashboard.confirmPhrase.39b3554372'),
+    confirmLabel: t('figma-dashboard.confirmPhrase.5690c2e63b'),
     tone: 'danger',
   },
 };

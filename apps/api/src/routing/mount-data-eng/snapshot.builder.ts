@@ -9,7 +9,10 @@ import {
 } from '../../orchestrator/equipment/equipment-policy';
 import { handoffView } from '../../orchestrator/equipment/handoffs';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
+import { readRequestPriority } from '../../orchestrator/policy/request-priority';
+import { findWorkType, findWorkTypeByTitle } from '../../orchestrator/requests/work-type.catalog';
 import type { Tx } from '../../persistence';
+import { readManualState } from '../router-gateway/manual-state';
 import {
   type RouterTaskSnapshot,
   SNAPSHOT_SCHEMA_VERSION,
@@ -53,6 +56,10 @@ export class SnapshotBuilder {
     const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     const policyId = active?.policyId ?? DEFAULT_POLICY_ID;
     const equipmentSettings = await readEquipmentSettings(tx);
+    const manual = await readManualState(tx);
+    const control = await tx.controlState.findUnique({ where: { id: 'singleton' } });
+    const decisions =
+      control?.mode === 'manual' && manual.workDate === workDate ? manual.decisions : [];
 
     const rawDays = await tx.engineerDay.findMany({
       where: {
@@ -131,6 +138,7 @@ export class SnapshotBuilder {
         reservations.get(day.engineerId) ?? null,
         liveAnchors.get(day.engineerId) ?? null,
         liveLunches.get(day.engineerId) ?? null,
+        decisions.some((item) => item.kind === 'shift' && item.targetId === day.engineerId),
       );
       if (!projected) {
         engineersWithoutStartLocation += 1;
@@ -163,12 +171,20 @@ export class SnapshotBuilder {
 
     const activeEngineers = await tx.engineer.count({ where: { archivedAt: null } });
 
+    const manualRequestIds = decisions
+      .filter((item) => item.kind === 'assignment' || item.kind === 'window')
+      .map((item) => item.targetId);
     const candidates = await tx.request.findMany({
       // Only work available for a new distribution. Started, finished and cancelled work
       // is not returned to the free pool; its occupancy is expressed through the
       // engineer's start pair instead (context/33 section 5).
       where: {
         lifecycle: 'submitted',
+        OR: [
+          { routingDeferredUntil: null },
+          { routingDeferredUntil: { lte: BigInt(planningAsOf) } },
+          ...(manualRequestIds.length ? [{ id: { in: manualRequestIds } }] : []),
+        ],
         assignmentState: { in: ['pending', 'assigned', 'unassigned'] },
         startedAt: null,
         // LIVE keeps its "silently completed by schedule" assumption outside the
@@ -188,6 +204,7 @@ export class SnapshotBuilder {
       orderBy: { arrivalOrder: 'asc' },
     });
 
+    const requestPriority = await readRequestPriority(tx, workDate);
     const requests: SnapshotRequest[] = [];
     let requestsWithoutLocation = 0;
     let requestsOutsideHorizon = 0;
@@ -201,7 +218,27 @@ export class SnapshotBuilder {
       }
       const windowStart = Number(request.windowStartAt);
       const windowEnd = Number(request.windowEndAt);
-      if (windowEnd < horizon.start || windowStart > horizon.end) {
+      const category =
+        (findWorkType(request.workTypeHd ?? '') ?? findWorkTypeByTitle(request.workTypeHd ?? ''))
+          ?.category ??
+        request.workCategory ??
+        (request.priority === 'urgent' ? 'emergency' : 'service');
+      // Imported day plans are known at the start of that day. An explicit source
+      // receipt timestamp takes precedence; online submissions use the actual receipt.
+      const receivedAt =
+        request.receivedAt != null
+          ? Number(request.receivedAt)
+          : request.origin === 'import'
+            ? workDateOf(windowStart, this.config.get('APP_TIME_ZONE')) > workDate
+              ? windowStart
+              : horizon.start
+            : Number(request.submittedAt ?? request.createdAt);
+      if (
+        !manualRequestIds.includes(request.id) &&
+        (category === 'emergency'
+          ? receivedAt > horizon.end
+          : windowEnd < horizon.start || windowStart > horizon.end)
+      ) {
         // Work for another day. A window that merely lies in the past *within* this
         // horizon stays in: that is a reasoned non-assignment, not an exclusion
         // (context/33 section 10.2).
@@ -214,9 +251,15 @@ export class SnapshotBuilder {
         arrival_order: request.arrivalOrder,
         location: { lat: request.lat, lon: request.lon },
         service_duration_sec: request.serviceDurationSec,
-        window_start_at: windowStart,
-        window_end_at: windowEnd,
+        window_start_at:
+          category === 'emergency' ? Math.max(horizon.start, receivedAt) : windowStart,
+        window_end_at: category === 'emergency' ? Math.max(windowEnd, horizon.end) : windowEnd,
         priority: request.priority,
+        source_window_start_at: windowStart,
+        source_window_end_at: windowEnd,
+        work_category: category,
+        dispatcher_priority: requestPriority?.requestId === request.id,
+        received_at: receivedAt,
         required_skill: request.requiredSkill,
         required_transport: request.requiredTransport,
         required_equipment: request.requiredEquipment,
@@ -224,6 +267,54 @@ export class SnapshotBuilder {
     }
 
     const snapshot: RouterTaskSnapshot = {
+      ...(decisions.length
+        ? {
+            manual_decisions: decisions.map((item) => ({
+              id: item.id,
+              kind: item.kind,
+              target_id: item.targetId,
+              priority: item.priority,
+              ...(item.engineerId !== undefined ? { engineer_id: item.engineerId } : {}),
+              ...(item.startAt !== undefined ? { start_at: item.startAt } : {}),
+              ...(item.endAt !== undefined ? { end_at: item.endAt } : {}),
+            })),
+          }
+        : {}),
+      depots: (await tx.depot.findMany({ orderBy: { id: 'asc' } })).flatMap((depot) =>
+        depot.lat === null || depot.lon === null
+          ? []
+          : [
+              {
+                depot_id: depot.id,
+                region: depot.region,
+                location: { lat: depot.lat, lon: depot.lon },
+              },
+            ],
+      ),
+      pending_equipment_logistics: (
+        await tx.equipmentLogistics.findMany({
+          where: { workDate, status: 'assigned' },
+          orderBy: { id: 'asc' },
+        })
+      ).flatMap((row) =>
+        row.expectedAt === null
+          ? []
+          : [
+              {
+                logistics: {
+                  logistics_id: row.id,
+                  kind: row.kind,
+                  request_id: row.requestId,
+                  equipment_type: row.equipmentType,
+                  donor_engineer_id: row.donorEngineerId,
+                  receiver_engineer_id: row.receiverEngineerId,
+                  depot_id: row.depotId,
+                },
+                location: { lat: row.lat, lon: row.lon },
+                at: Number(row.expectedAt),
+              },
+            ],
+      ),
       pending_equipment_handoffs: (
         await tx.equipmentHandoff.findMany({
           where: { workDate, completedAt: null },
@@ -249,7 +340,14 @@ export class SnapshotBuilder {
       engineers,
       policy: {
         policy_id: policyId,
-        parameters: {},
+        parameters:
+          policyId === 'personal' &&
+          active?.parameters &&
+          typeof active.parameters === 'object' &&
+          !Array.isArray(active.parameters) &&
+          typeof active.parameters.objective_order === 'string'
+            ? { objective_order: active.parameters.objective_order }
+            : {},
       },
     };
 
@@ -295,6 +393,7 @@ export class SnapshotBuilder {
     reservation: { request: Request; etaAt: number } | null,
     liveAnchor: { request: Request; availableFrom: number } | null,
     liveLunch: { lat: number; lon: number; availableFrom: number } | null,
+    manualShift: boolean,
   ): SnapshotEngineer | null {
     const activeExecution = execution?.lifecycle === 'in_progress' ? execution : null;
     const lat =
@@ -336,7 +435,10 @@ export class SnapshotBuilder {
         : liveAnchor
           ? BigInt(liveAnchor.availableFrom)
           : (execution?.continuationAvailableAt ?? null));
-    const availableFrom = continuation === null ? shiftStart : Number(continuation);
+    // Without an execution anchor the selected shift alone determines release. Zero
+    // preserves original timing if Core rejects the shift, yet permits an earlier shift.
+    const availableFrom =
+      continuation === null ? (manualShift ? 0 : shiftStart) : Number(continuation);
 
     return {
       engineer_id: engineer.id,

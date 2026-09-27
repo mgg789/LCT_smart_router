@@ -1,7 +1,9 @@
 import { CheckCircle2, Headset, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { AiMessage, AiMessageAuthor, AiRoleProfile, DispatchChatView } from '../api/ai';
+import { t } from '../i18n';
 import { formatClock } from '../lib/time';
+import { ChatBottomSpacer } from './ai/ChatBottomSpacer';
 
 interface Props {
   readonly token: string | null;
@@ -23,7 +25,9 @@ interface Props {
 /** Which side of a `user` message actually spoke, since `AiMessageAuthor` only knows
  * `user`/`assistant`/`dispatcher`/`system` and not who the `user` role belongs to. */
 function userLabel(roleProfile: AiRoleProfile): string {
-  return roleProfile === 'engineer' ? 'Инженер' : 'Клиент';
+  return roleProfile === 'engineer'
+    ? t('components.ChatsPage.88d71676fa')
+    : t('components.ChatsPage.3e622aecbf');
 }
 
 function authorLabel(author: AiMessageAuthor, roleProfile: AiRoleProfile): string {
@@ -33,19 +37,19 @@ function authorLabel(author: AiMessageAuthor, roleProfile: AiRoleProfile): strin
     case 'assistant':
       return 'AI';
     case 'dispatcher':
-      return 'Диспетчер';
+      return t('components.ChatsPage.d75c355491');
     case 'system':
-      return 'Система';
+      return t('components.ChatsPage.6da215b1bd');
   }
 }
 
 /** Who opened this episode: the assistant escalating on the person's behalf (`initiatedBy
  * === 'user'`), or a dispatcher reaching out first from elsewhere in the dashboard. */
 function originLabel(chat: DispatchChatView): string {
-  if (chat.handoff.initiatedBy === 'dispatcher') return 'Вы написали первым';
+  if (chat.handoff.initiatedBy === 'dispatcher') return t('components.ChatsPage.e3be141751');
   return chat.conversation.roleProfile === 'engineer'
-    ? 'Инженер попросил диспетчера'
-    : 'Клиент попросил диспетчера';
+    ? t('components.ChatsPage.8db0180fda')
+    : t('components.ChatsPage.cb8a5b989d');
 }
 
 /** The seq to mark a chat read up to: the newest message it has, or the handover's own
@@ -102,7 +106,7 @@ export function ChatsPage({
     return (
       <main className="min-h-0 flex-1 overflow-auto px-4 pb-4">
         <section className="mx-auto max-w-5xl rounded-3xl bg-white p-6 text-center text-sm text-muted shadow-sm">
-          Чаты доступны только в живом контуре — подключитесь к рабочему серверу.
+          {t('components.ChatsPage.dddf6406c8')}
         </section>
       </main>
     );
@@ -113,10 +117,8 @@ export function ChatsPage({
       <section className="mx-auto grid max-w-5xl grid-cols-1 gap-4 rounded-3xl bg-white p-6 shadow-sm md:grid-cols-[18rem_1fr]">
         <div className="md:col-span-2 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">Чаты</h1>
-            <p className="mt-2 text-sm text-muted">
-              Диалоги, переданные диспетчеру. Ответ здесь ведёт диалог до «Завершить чат».
-            </p>
+            <h1 className="text-2xl font-semibold">{t('components.ChatsPage.b5121e526d')}</h1>
+            <p className="mt-2 text-sm text-muted">{t('components.ChatsPage.12b573bdd0')}</p>
           </div>
           <button
             type="button"
@@ -124,7 +126,7 @@ export function ChatsPage({
             className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-sm"
           >
             <RefreshCw className="h-4 w-4" />
-            Обновить
+            {t('components.ChatsPage.603e460bf5')}
           </button>
         </div>
         {error ? (
@@ -136,10 +138,10 @@ export function ChatsPage({
           </p>
         ) : null}
         {loading && list.length === 0 ? (
-          <p className="md:col-span-2 text-sm text-muted">Загружаем чаты…</p>
+          <p className="md:col-span-2 text-sm text-muted">{t('components.ChatsPage.1c1f3c812b')}</p>
         ) : list.length === 0 ? (
           <p className="md:col-span-2 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">
-            Сейчас нет диалогов, переданных диспетчеру.
+            {t('components.ChatsPage.3d33268fb0')}
           </p>
         ) : (
           <>
@@ -147,7 +149,8 @@ export function ChatsPage({
               {live.length > 0 ? (
                 <div>
                   <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    Активные · {live.length}
+                    {t('components.ChatsPage.e9115a0550')}
+                    {live.length}
                   </p>
                   <ul className="mt-1 space-y-1">
                     {live.map((chat) => (
@@ -164,7 +167,8 @@ export function ChatsPage({
               {finished.length > 0 ? (
                 <div>
                   <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                    Завершённые · {finished.length}
+                    {t('components.ChatsPage.b3b02b5702')}
+                    {finished.length}
                   </p>
                   <ul className="mt-1 space-y-1">
                     {finished.map((chat) => (
@@ -230,10 +234,13 @@ function ChatListRow({
         <span className="mt-0.5 block text-[12px] text-muted">{originLabel(chat)}</span>
         <span className="mt-0.5 block text-[12px] text-muted">
           {finished
-            ? `Завершён${chat.handoff.closedAt !== null ? ` · ${formatClock(chat.handoff.closedAt)}` : ''}`
+            ? t('components.ChatsPage.3baaeec690', {
+                value0:
+                  chat.handoff.closedAt !== null ? ` · ${formatClock(chat.handoff.closedAt)}` : '',
+              })
             : answered
-              ? 'Ответ отправлен'
-              : 'Ожидает ответа'}
+              ? t('components.ChatsPage.a79345c505')
+              : t('components.ChatsPage.3f2ab13b35')}
         </span>
         {last ? (
           <span className="mt-0.5 block truncate text-[12px] text-muted">{last.text}</span>
@@ -288,7 +295,7 @@ function ChatThread({
       await onSendMessage(text);
       setDraft('');
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : 'Не удалось отправить сообщение');
+      setActionError(cause instanceof Error ? cause.message : t('components.ChatsPage.2dd8acb7a8'));
     } finally {
       setSending(false);
     }
@@ -300,7 +307,7 @@ function ChatThread({
     try {
       await onFinish();
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : 'Не удалось завершить чат');
+      setActionError(cause instanceof Error ? cause.message : t('components.ChatsPage.7420da1a75'));
     } finally {
       setFinishing(false);
     }
@@ -315,15 +322,18 @@ function ChatThread({
         <div className="flex items-center gap-2 text-sm">
           <Headset className="h-4 w-4 text-muted" />
           {finished
-            ? `Чат завершён${chat.handoff.closedAt !== null ? ` · ${formatClock(chat.handoff.closedAt)}` : ''}`
+            ? t('components.ChatsPage.ea0154c8c9', {
+                value0:
+                  chat.handoff.closedAt !== null ? ` · ${formatClock(chat.handoff.closedAt)}` : '',
+              })
             : answered
-              ? 'Диалог ведёт диспетчер'
-              : 'Ожидаем первого ответа диспетчера'}
+              ? t('components.ChatsPage.57b040aecc')
+              : t('components.ChatsPage.1f76f329d6')}
         </div>
         {finished ? (
           <span className="flex items-center gap-1.5 rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-muted">
             <CheckCircle2 className="h-3.5 w-3.5" />
-            Только чтение
+            {t('components.ChatsPage.50cee3d628')}
           </span>
         ) : (
           <button
@@ -332,19 +342,21 @@ function ChatThread({
             onClick={() => void finish()}
             className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
           >
-            {finishing ? 'Завершаем…' : 'Завершить чат'}
+            {finishing
+              ? t('components.ChatsPage.e85da2d59b')
+              : t('components.ChatsPage.14f7a99f9a')}
           </button>
         )}
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {chat.messages.length === 0 ? (
-          <p className="text-sm text-muted">Сообщений пока нет.</p>
+          <p className="text-sm text-muted">{t('components.ChatsPage.91e2c2161e')}</p>
         ) : (
           <>
             {history.length > 0 ? (
               <>
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  До передачи — адресовано ассистенту
+                  {t('components.ChatsPage.6aefc25387')}
                 </p>
                 {history.map((message) => (
                   <MessageBubble
@@ -354,7 +366,7 @@ function ChatThread({
                   />
                 ))}
                 <p className="border-t border-dashed border-line pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  Передано диспетчеру
+                  {t('components.ChatsPage.910778e14c')}
                 </p>
               </>
             ) : null}
@@ -367,10 +379,11 @@ function ChatThread({
             ))}
           </>
         )}
+        <ChatBottomSpacer />
       </div>
       {finished ? (
         <div className="shrink-0 border-t border-line p-3 text-xs text-muted">
-          Чат завершён и доступен только для чтения.
+          {t('components.ChatsPage.090943ef1d')}
         </div>
       ) : (
         <div className="shrink-0 space-y-2 border-t border-line p-3">
@@ -385,7 +398,7 @@ function ChatThread({
               onChange={(event) => setDraft(event.target.value)}
               disabled={writesDisabled || sending}
               rows={2}
-              placeholder="Ответить в диалог…"
+              placeholder={t('components.ChatsPage.09da769c65')}
               className="min-h-[2.5rem] flex-1 resize-none rounded-xl border border-line bg-canvas px-3 py-2 text-sm disabled:opacity-50"
             />
             <button
@@ -394,7 +407,9 @@ function ChatThread({
               disabled={writesDisabled || sending || draft.trim().length === 0}
               className="shrink-0 rounded-full bg-bee px-4 py-2 text-sm font-semibold disabled:opacity-50"
             >
-              {sending ? 'Отправляем…' : 'Отправить'}
+              {sending
+                ? t('components.ChatsPage.899dce11fb')
+                : t('components.ChatsPage.ceb68a9287')}
             </button>
           </div>
         </div>

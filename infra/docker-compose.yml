@@ -87,6 +87,14 @@ services:
       ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_ROAD_API_CACHE: /app/state/road-api-cache
       ROUTER_ROAD_API_MAP_VERSION: moscow-mkad
+      ROUTER_METRICS_ENABLED: ${ROUTER_METRICS_ENABLED:-false}
+      ROUTER_OTEL_ENABLED: ${ROUTER_OTEL_ENABLED:-false}
+      ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      ROUTER_OTEL_TRACE_SAMPLE_RATIO: ${ROUTER_OTEL_TRACE_SAMPLE_RATIO:-0.1}
+      ROUTER_SENTRY_ENABLED: ${ROUTER_SENTRY_ENABLED:-false}
+      ROUTER_SENTRY_DSN: ${ROUTER_SENTRY_DSN:-}
+      ROUTER_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      ROUTER_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     command:
       - serve
       - --official-regions
@@ -222,6 +230,11 @@ services:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_SENTRY_ENABLED: ${VITE_SENTRY_ENABLED:-false}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+        VITE_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     restart: unless-stopped
     depends_on:
       api:
@@ -229,7 +242,28 @@ services:
     ports:
       - '127.0.0.1:${WEB_PORT:-5173}:80'
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=7d', '--storage.tsdb.retention.size=1GB']
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - '127.0.0.1:${PROMETHEUS_PORT:-9090}:9090'
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.133.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otelcol/config.yaml:ro
+    # OTLP is internal to the compose network; no public ingestion port.
+
 volumes:
+  prometheus-data:
   # Named volume, not a bind mount: an ordinary restart must keep the working plan, the
   # control mode and lunch facts (context/43 section 11.3). Removing this volume is not
   # a substitute for the application's own "full reset" action.

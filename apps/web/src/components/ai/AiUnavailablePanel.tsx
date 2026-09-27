@@ -1,6 +1,7 @@
 import { CloudOff, LogIn, OctagonPause, Timer } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { AiUnavailableReason } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 import { formatClock } from '../../lib/time';
 
 interface Props {
@@ -31,30 +32,31 @@ function reasonMeta(
     case 'provider':
       return {
         icon: CloudOff,
-        title: 'AI сейчас недоступен',
-        detail: 'Не удалось связаться с провайдером модели. Попробуйте ещё раз через минуту.',
+        title: t('components.ai.AiUnavailablePanel.17096a674b'),
+        detail: t('components.ai.AiUnavailablePanel.4e8cd4bd52'),
       };
     case 'quota':
       return {
         icon: Timer,
-        title: 'Дневная квота исчерпана',
+        title: t('components.ai.AiUnavailablePanel.1778210ec0'),
         detail:
           quotaResetAt != null
-            ? `Лимит обращений на сегодня закончился. Обновится в ${formatClock(quotaResetAt)}.`
-            : 'Лимит обращений на сегодня закончился. Обновится в начале следующих суток.',
+            ? t('components.ai.AiUnavailablePanel.855fa3432f', {
+                value0: formatClock(quotaResetAt),
+              })
+            : t('components.ai.AiUnavailablePanel.c95630c26c'),
       };
     case 'auth':
       return {
         icon: LogIn,
-        title: 'Требуется вход',
-        detail: 'Сессия закончилась или недействительна. Войдите снова, чтобы продолжить диалог.',
+        title: t('components.ai.AiUnavailablePanel.9019d4a6dc'),
+        detail: t('components.ai.AiUnavailablePanel.3559ca8159'),
       };
     case 'stopped':
       return {
         icon: OctagonPause,
-        title: 'Запуск остановлен',
-        detail:
-          'Обработка была остановлена системой. Отправьте сообщение ещё раз, чтобы начать заново.',
+        title: t('components.ai.AiUnavailablePanel.8e3b73494c'),
+        detail: t('components.ai.AiUnavailablePanel.bc8b62aa0a'),
       };
   }
 }

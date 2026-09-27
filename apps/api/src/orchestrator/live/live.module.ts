@@ -3,6 +3,7 @@ import { MountDataEngModule } from '../../routing/mount-data-eng';
 import { RouterGatewayModule } from '../../routing/router-gateway';
 import { DemoStandModule } from '../demo-stand';
 import { EngineersModule } from '../engineers';
+import { EquipmentLogisticsService } from '../equipment/logistics.service';
 import { FactsModule } from '../facts';
 import { RewardsModule } from '../rewards';
 import { LiveCoordinator } from './live.coordinator';
@@ -20,7 +21,14 @@ import { LiveRouteQuery } from './live-route-query';
     RouterGatewayModule,
     DemoStandModule,
   ],
-  providers: [LiveService, LiveCoordinator, LiveReadProjection, LiveDayState, LiveRouteQuery],
+  providers: [
+    LiveService,
+    LiveCoordinator,
+    LiveReadProjection,
+    LiveDayState,
+    LiveRouteQuery,
+    EquipmentLogisticsService,
+  ],
   exports: [LiveService, LiveCoordinator],
 })
 export class LiveModule {}

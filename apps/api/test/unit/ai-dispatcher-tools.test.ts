@@ -13,6 +13,7 @@ import { SysError } from '../../src/common/errors';
 import type { AlertsService } from '../../src/orchestrator/alerts';
 import type { EngineersService } from '../../src/orchestrator/engineers/engineers.service';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
+import type { PassportsService } from '../../src/orchestrator/passports/passports.service';
 import type { PolicyService } from '../../src/orchestrator/policy';
 import type { RequestsService } from '../../src/orchestrator/requests/requests.service';
 import type { PrismaService } from '../../src/persistence';
@@ -20,6 +21,7 @@ import type { SnapshotPublisher } from '../../src/routing/mount-data-eng';
 import type {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../src/routing/router-gateway';
 
@@ -88,6 +90,8 @@ describe('The dispatcher AI catalogue never offers a denylisted action', () => {
     policy: inert<PolicyService>(),
     publisher: inert<SnapshotPublisher>(),
     prisma: inert<PrismaService>(),
+    restore: inert<PlanRestoreService>(),
+    router: inert<RouterClient>(),
     timeZone: 'Europe/Moscow',
   });
 
@@ -139,6 +143,8 @@ describe('prepare_resolve_alert (alert.resolve) refuses an out-of-catalogue acti
       alerts: inert<AlertsService>(),
       policy: inert<PolicyService>(),
       publisher: inert<SnapshotPublisher>(),
+      restore: inert<PlanRestoreService>(),
+      router: inert<RouterClient>(),
       prisma: {
         alert: {
           findUnique: async () => ({
@@ -175,6 +181,8 @@ describe('prepare_resolve_alert (alert.resolve) refuses an out-of-catalogue acti
       alerts: inert<AlertsService>(),
       policy: inert<PolicyService>(),
       publisher: inert<SnapshotPublisher>(),
+      restore: inert<PlanRestoreService>(),
+      router: inert<RouterClient>(),
       prisma: {
         alert: {
           findUnique: async () => ({
@@ -220,6 +228,8 @@ describe('compare_policies is called at most once per run', () => {
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getPolicyComparison: async () => {
           calls += 1;
@@ -245,6 +255,262 @@ describe('compare_policies is called at most once per run', () => {
     const thirdCtx = toolContext('run-cache-test-2');
     await comparePolicies.run(thirdCtx, {});
     assert.equal(calls, 2);
+  });
+});
+
+describe('evaluate_manual_order preserves a comparable whole-plan baseline', () => {
+  const published = {
+    snapshot: { inputHash: 'a'.repeat(64) },
+  };
+  const appliedPlan = {
+    revision: 17,
+    routes: [
+      {
+        engineerId: 'eng-1',
+        stops: [
+          { kind: 'job', requestId: 'job-1' },
+          { kind: 'lunch', requestId: null },
+        ],
+      },
+      {
+        engineerId: 'eng-2',
+        stops: [{ kind: 'job', requestId: 'job-2' }],
+      },
+    ],
+  };
+
+  it('replaces one route, preserves every other route and labels Router’s baseline', async () => {
+    let evaluatedRoutes: Record<string, string[]> | undefined;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async (input: { routes: Record<string, string[]> }) => {
+          evaluatedRoutes = input.routes;
+          return {
+            input_hash: 'a'.repeat(64),
+            router_context_version: 'ctx-3',
+            policy_id: 'compact',
+            feasible: true,
+            degraded: false,
+            criterion: null,
+            before: [1, 2],
+            after: [1, 2],
+          };
+        },
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    const outcome = await tool.run(toolContext('manual-order-test'), {
+      engineerId: 'eng-1',
+      requestIds: ['job-1'],
+    });
+
+    assert.ok(outcome.ok);
+    assert.deepEqual(evaluatedRoutes, { 'eng-1': ['job-1'], 'eng-2': ['job-2'] });
+    const result = JSON.parse(outcome.resultContent) as {
+      baseline: { kind: string };
+      provenance: { appliedPlanRevision: number; inputHash: string; routerContextVersion: string };
+      limitations: string[];
+    };
+    assert.equal(result.baseline.kind, 'router_automatic_result');
+    assert.equal(result.provenance.appliedPlanRevision, 17);
+    assert.equal(result.provenance.inputHash, 'a'.repeat(64));
+    assert.equal(result.provenance.routerContextVersion, 'ctx-3');
+    assert.match(result.limitations[0] ?? '', /not a separately evaluated copy/);
+  });
+
+  it('rejects the result if the Router context changes during evaluation', async () => {
+    let versionReads = 0;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: {
+        getActiveContextVersion: async () => (++versionReads === 1 ? 'ctx-3' : 'ctx-4'),
+        evaluateManual: async () => ({
+          input_hash: 'a'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-stale-test'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
+  });
+
+  it('rejects an engineer that is not present in the applied plan', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-unknown-engineer'), {
+        engineerId: 'eng-3',
+        requestIds: ['job-1'],
+      }),
+      /selected engineer has no route/,
+    );
+  });
+
+  it('accepts only a permutation of the selected route request IDs', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-invalid-set'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1', 'job-1'],
+      }),
+      /each request from this route exactly once/,
+    );
+  });
+
+  it('rejects a result when the applied-plan revision changes during evaluation', async () => {
+    let planReads = 0;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: {
+        current: async () => (planReads++ === 0 ? appliedPlan : { ...appliedPlan, revision: 18 }),
+      } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async () => ({
+          input_hash: 'a'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-revision-changed'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
+  });
+
+  it('rejects an evaluation whose Router echoes a different input hash', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      restore: inert(),
+      now: () => 0,
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async () => ({
+          input_hash: 'b'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-echo-mismatch'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
   });
 });
 
@@ -292,6 +558,8 @@ describe('assignment reasons survive into a dispatcher tool result', () => {
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: inert(),
     });
     const getDayPlan = tools.find((tool) => tool.name === 'get_day_plan');
@@ -318,6 +586,75 @@ describe('assignment reasons survive into a dispatcher tool result', () => {
   });
 });
 
+describe('plan.restore AI action', () => {
+  it('is dispatcher-fix-only, rejects a stale revision, and performs Router preflight before its transaction handler', async () => {
+    const calls: string[] = [];
+    const restore = {
+      previous: async () => ({
+        current: { revision: 7 },
+        previous: { revision: 6 },
+        eligibility: { eligible: true, reason: null },
+      }),
+      contextMutationFence: async () => {
+        calls.push('fence');
+        return { operations: [] };
+      },
+      restore: async () => {
+        calls.push('restore');
+        return { fromRevision: 6, restoredRevision: 8, origin: 'restore' as const };
+      },
+    } as unknown as PlanRestoreService;
+    const router = {
+      getActiveContextVersion: async () => {
+        calls.push('router');
+        return 'router-context-1';
+      },
+    } as unknown as RouterClient;
+    const catalog = buildAiActionCatalog({
+      ...fullCatalogueDeps(inert<LiveService>()),
+      restore,
+      router,
+    });
+    const spec = catalog.get('plan.restore');
+    assert.ok(spec);
+    assert.deepEqual(spec.allowedProfiles, ['dispatcher_fix']);
+    assert.equal(spec.apply, undefined);
+    assert.ok(spec.prepareApply);
+
+    await assert.rejects(
+      () =>
+        spec.precheck({
+          actor,
+          accountId: actor.id,
+          targetRef: '6',
+          payload: { expectedRevision: 6 },
+          now: 1_700_000_000,
+        }),
+      (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+    );
+    assert.deepEqual(calls, ['router'], 'the stale precheck reads the current Router context');
+    calls.length = 0;
+
+    const transactionHandler = await spec.prepareApply({
+      actor,
+      accountId: actor.id,
+      targetRef: '7',
+      payload: { expectedRevision: 7 },
+      now: 1_700_000_000,
+    });
+    assert.deepEqual(calls, ['fence', 'router']);
+    await transactionHandler({
+      actor,
+      accountId: actor.id,
+      targetRef: '7',
+      payload: { expectedRevision: 7 },
+      now: 1_700_000_000,
+      context: {} as never,
+    });
+    assert.deepEqual(calls, ['fence', 'router', 'restore']);
+  });
+});
+
 const engineerActor: Actor = {
   kind: 'account',
   source: 'ui',
@@ -336,6 +673,8 @@ function fullCatalogueDeps(live: LiveService) {
     policy: inert<PolicyService>(),
     publisher: inert<SnapshotPublisher>(),
     prisma: inert<PrismaService>(),
+    restore: inert<PlanRestoreService>(),
+    router: inert<RouterClient>(),
     timeZone: 'Europe/Moscow',
   };
 }
@@ -364,6 +703,7 @@ describe('offline during a live day is not an assistant write', () => {
       aiOperations: inert<AiOperationService>(),
       live,
       config: inert<AppConfigService>(),
+      passports: inert<PassportsService>(),
     });
     const changeStatus = tools.find((tool) => tool.name === 'change_status_to');
     assert.ok(changeStatus);

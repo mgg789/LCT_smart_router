@@ -21,23 +21,26 @@ export interface AlertView {
 }
 
 /** Converts the persistence row without querying or mutating state. */
-export function toAlertView(alert: {
-  id: string;
-  kind: string;
-  code: string;
-  severity: string;
-  engineerIds: string[];
-  requestIds: string[];
-  reasons: unknown;
-  restoreOption: unknown;
-  createdAt: bigint;
-  seenAt: bigint | null;
-  resolvedAt: bigint | null;
-  resolutionAction: string | null;
-  resolutionReason: string | null;
-  resolutionDelaySec: number | null;
-  workDate: string | null;
-}): AlertView {
+export function toAlertView(
+  alert: {
+    id: string;
+    kind: string;
+    code: string;
+    severity: string;
+    engineerIds: string[];
+    requestIds: string[];
+    reasons: unknown;
+    restoreOption: unknown;
+    createdAt: bigint;
+    seenAt: bigint | null;
+    resolvedAt: bigint | null;
+    resolutionAction: string | null;
+    resolutionReason: string | null;
+    resolutionDelaySec: number | null;
+    workDate: string | null;
+  },
+  emergency = false,
+): AlertView {
   return {
     id: alert.id,
     kind: alert.kind === 'notice' ? 'notice' : 'alert',
@@ -47,7 +50,12 @@ export function toAlertView(alert: {
     requestIds: alert.requestIds,
     reasons: Array.isArray(alert.reasons) ? alert.reasons : [alert.reasons],
     restoreOption: alert.restoreOption,
-    actions: alert.kind === 'notice' ? [] : alertActionsFor(alert.code),
+    actions:
+      alert.kind === 'notice'
+        ? []
+        : alertActionsFor(alert.code).filter(
+            (action) => !emergency || (action !== 'reschedule' && action !== 'move_window'),
+          ),
     createdAt: Number(alert.createdAt),
     seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
     resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),

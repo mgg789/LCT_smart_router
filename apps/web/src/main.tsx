@@ -1,16 +1,25 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { WindowConfirmationDialog } from './components/WindowConfirmationDialog';
+import { t } from './i18n';
 import './index.css';
+import { startFrontendObservability } from './observability/sentry';
+
+void startFrontendObservability();
 
 const root = document.getElementById('root');
 if (!root) {
-  throw new Error('Root element #root is missing');
+  throw new Error(t('main.daf042c9e1'));
 }
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+      <WindowConfirmationDialog />
+    </AppErrorBoundary>
   </StrictMode>,
 );
 

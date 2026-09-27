@@ -8,6 +8,7 @@ from core.api import create_app
 from core.contracts import Diagnostic, RouterResult, RouterTechnicalSettings
 from core.engine import SearchSettings
 from core.geo import content_hash
+from core.predict_calibration import PredictCalibrationStore, factory_calibration
 from core.runtime import RouterRuntime, SnapshotPublication, calculate
 from core.settings import FileTechnicalSettingsStore
 from fastapi.testclient import TestClient
@@ -97,7 +98,7 @@ def test_latest_publication_is_the_only_result_exposed(snapshot, graph):
     runtime.tick()
     assert runtime.read_result().status == "pending"
     assert len(executor.tasks) == 2
-    assert executor.tasks[1][2][-1] == "publication-2"
+    assert executor.tasks[1][2][-3] == "publication-2"
     executor.complete(1)
     runtime.tick()
     result = runtime.read_result()
@@ -478,3 +479,23 @@ def test_snapshot_read_failure_keeps_an_inflight_solve(graph):
     assert runtime._generation == generation
     assert runtime.read_result().status == "pending"
     runtime.close()
+
+
+def test_reset_epoch_changes_factory_identity_and_rejects_stale_calibration(snapshot, graph, tmp_path):
+    store = PredictCalibrationStore(tmp_path / "predict-calibration.json")
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph, predict_calibration_store=store)
+    try:
+        factory = factory_calibration()
+        learned = factory.model_copy(update={"source": "learned"})
+        runtime.set_predict_calibration(learned, "learned-before-reset")
+        new_epoch = factory.model_copy(update={"working_set_generation": 2})
+        assert new_epoch.content_version() != factory.content_version()
+        runtime._sync_working_set_generation(2, None)
+        assert runtime.predict_calibration_state()["calibration"]["source"] == "factory"
+        assert runtime.predict_calibration_state()["calibration"]["working_set_generation"] == 2
+        with pytest.raises(ValueError, match="CALIBRATION_GENERATION_STALE"):
+            runtime.set_predict_calibration(factory, "late-pre-reset-write")
+        with pytest.raises(ValueError, match="CALIBRATION_GENERATION_STALE"):
+            runtime._sync_working_set_generation(1, None)
+    finally:
+        runtime.close()

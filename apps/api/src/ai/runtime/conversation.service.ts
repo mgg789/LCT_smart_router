@@ -10,9 +10,19 @@ import type {
   AiRoleProfile,
   Role,
 } from '../../generated/prisma/client';
+import { Prisma } from '../../generated/prisma/client';
 import type { Tx } from '../../persistence';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import type { LlmMessage } from '../provider';
+import {
+  appendProviderTranscript,
+  type ConversationMessageSource,
+  historicalEvidenceProvenance,
+  type ProviderTranscriptTurnInput,
+  providerHistoryForMessages,
+  safeConversationFocusContext,
+  sanitizeConversationFocus,
+} from './provider-transcript';
 
 export interface GetOrCreateConversationInput {
   readonly accountId: string;
@@ -81,15 +91,21 @@ export class ConversationService {
       orderBy: { lastMessageAt: 'desc' },
     });
     if (existing) {
-      return existing;
+      if (input.contextRef === undefined || input.contextRef === null) return existing;
+      const safeContextRef = sanitizeConversationFocus(input.contextRef);
+      return tx.aiConversation.update({
+        where: { id: existing.id },
+        data: { contextRef: safeContextRef ? (safeContextRef as object) : Prisma.DbNull },
+      });
     }
     const now = BigInt(this.clock.nowSeconds());
+    const safeContextRef = input.contextRef ? sanitizeConversationFocus(input.contextRef) : null;
     return tx.aiConversation.create({
       data: {
         accountId: input.accountId,
         role: input.role,
         roleProfile: input.roleProfile,
-        ...(input.contextRef ? { contextRef: input.contextRef as object } : {}),
+        ...(safeContextRef ? { contextRef: safeContextRef as object } : {}),
         ...(input.title ? { title: input.title } : {}),
         createdAt: now,
         updatedAt: now,
@@ -182,6 +198,108 @@ export class ConversationService {
   }
 
   /**
+   * Rebuilds the bounded provider conversation in sequence order. Private reasoning and
+   * complete tool groups are merged into public dialogue text without changing API views.
+   */
+  async providerHistoryWindow(
+    conversationId: string,
+    roleProfile: AiRoleProfile,
+    limit: number,
+    thinkingProtocol = false,
+  ): Promise<{ readonly messages: LlmMessage[]; readonly userSeq: number | null }> {
+    return this.uow.run(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_conversations WHERE id = ${conversationId} FOR UPDATE`;
+      const [conversation, recent] = await Promise.all([
+        tx.aiConversation.findUnique({
+          where: { id: conversationId },
+          select: { roleProfile: true, runtimeContext: true, contextRef: true },
+        }),
+        tx.aiMessage.findMany({
+          where: { conversationId, author: { in: ['user', 'assistant', 'dispatcher'] } },
+          orderBy: { seq: 'desc' },
+          take: limit,
+        }),
+      ]);
+      if (!conversation || conversation.roleProfile !== roleProfile) {
+        return { messages: [], userSeq: null };
+      }
+      const ordered = recent.slice().reverse();
+      const messageSources: ConversationMessageSource[] = [];
+      for (const message of ordered) {
+        if (
+          message.author === 'user' ||
+          message.author === 'assistant' ||
+          message.author === 'dispatcher'
+        ) {
+          messageSources.push({
+            seq: message.seq,
+            author: message.author,
+            text: message.text,
+            runId: message.runId,
+          });
+        }
+      }
+      const currentUser = ordered
+        .slice()
+        .reverse()
+        .find((message) => message.author === 'user');
+      const messages = providerHistoryForMessages(
+        conversation.runtimeContext,
+        roleProfile,
+        messageSources,
+        thinkingProtocol,
+      );
+      const provenance = historicalEvidenceProvenance(conversation.runtimeContext, roleProfile);
+      if (provenance) messages.unshift({ role: 'user', content: provenance });
+      const focus = safeConversationFocusContext(conversation.contextRef);
+      if (focus) {
+        // Put the reference beside the latest user turn without treating it as an
+        // instruction or authority. Tool dispatch still enforces the active lane.
+        let latestUserIndex = -1;
+        for (let index = messages.length - 1; index >= 0; index -= 1) {
+          if (messages[index]?.role === 'user') {
+            latestUserIndex = index;
+            break;
+          }
+        }
+        messages.splice(latestUserIndex >= 0 ? latestUserIndex : messages.length, 0, {
+          role: 'user',
+          content: focus,
+        });
+      }
+      return {
+        messages,
+        userSeq: currentUser?.seq ?? null,
+      };
+    });
+  }
+
+  /**
+   * Persists one complete assistant/tool result group under the conversation row lock.
+   * A concurrent lane switch wins by changing roleProfile; old runs then cannot restore
+   * their transcript into the new lane.
+   */
+  async appendProviderHistory(
+    conversationId: string,
+    roleProfile: AiRoleProfile,
+    turn: ProviderTranscriptTurnInput,
+  ): Promise<void> {
+    await this.uow.run(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_conversations WHERE id = ${conversationId} FOR UPDATE`;
+      const row = await tx.aiConversation.findUnique({
+        where: { id: conversationId },
+        select: { roleProfile: true, runtimeContext: true },
+      });
+      if (!row || row.roleProfile !== roleProfile) return;
+      const next = appendProviderTranscript(row.runtimeContext, roleProfile, turn);
+      await tx.aiConversation.update({
+        where: { id: conversationId },
+        data: { runtimeContext: next as object },
+      });
+    });
+  }
+
+  /**
    * Moves the open dispatcher dialogue into the other lane without opening a second chat.
    * The global flag and this row stay the same value, so the next turn's tool list matches
    * the switch the dispatcher just set.
@@ -198,6 +316,7 @@ export class ConversationService {
       data: {
         assistMode: mode,
         roleProfile: mode === 'fix' ? 'dispatcher_fix' : 'dispatcher_readonly',
+        runtimeContext: Prisma.DbNull,
         updatedAt: BigInt(now),
       },
     });

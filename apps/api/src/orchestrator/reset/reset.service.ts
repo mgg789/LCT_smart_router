@@ -7,6 +7,7 @@ import {
   lockControlState,
   lockLiveWorkdays,
   lockRoutingCurrent,
+  lockWorkingSetGeneration,
 } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 
@@ -93,6 +94,7 @@ export class ResetService {
     context: OperationContext,
     options: ClearWorkingSetOptions = {},
   ): Promise<{ generation: number }> {
+    await lockWorkingSetGeneration(context.tx);
     // Hold LIVE days, then the plan singletons, before deleting. Inverting that
     // order deadlocks with `LiveService.advanceOnce` (workday → routing).
     await lockLiveWorkdays(context.tx);
@@ -139,6 +141,7 @@ export class ResetService {
       select: { pointerVersion: true },
     });
     await tx.equipmentHandoff.deleteMany({});
+    await tx.equipmentLogistics.deleteMany({});
     await tx.appliedPlanCurrent.deleteMany({});
     await tx.appliedPlanStop.deleteMany({});
     await tx.appliedPlanRoute.deleteMany({});
@@ -162,6 +165,10 @@ export class ResetService {
     await tx.building.deleteMany({});
     await tx.reverseGeocodeCache.deleteMany({});
     await tx.requestFact.deleteMany({});
+    // A reset invalidates evidence from the previous working set, and a prepared
+    // import modal must not be able to restore that discarded dataset afterward.
+    await tx.weatherRiskPrediction.deleteMany({});
+    await tx.weatherDayCache.deleteMany({});
     await tx.requestConditionHistory.deleteMany({});
     await tx.request.deleteMany({});
 
@@ -174,6 +181,7 @@ export class ResetService {
     await tx.notificationIntent.deleteMany({});
     await tx.externalIdMap.deleteMany({});
     await tx.importPackage.deleteMany({});
+    await tx.importPreparation.deleteMany();
 
     if (options.preserveDispatcherSessions) {
       await tx.session.deleteMany({ where: { role: { not: 'dispatcher' } } });

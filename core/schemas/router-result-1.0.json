@@ -385,6 +385,77 @@
       "title": "EquipmentHandoff",
       "type": "object"
     },
+    "EquipmentLogistics": {
+      "additionalProperties": false,
+      "description": "One-sided equipment movement attached to the job it unblocks.\n\nUnlike ``EquipmentHandoff``, a delivery is a stop only for its donor and an\noffice pickup is a stop only for its recipient.  The System Layer owns the\nauthenticated stock fact; Router only schedules this immutable intention.",
+      "properties": {
+        "depot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depot Id"
+        },
+        "donor_engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Donor Engineer Id"
+        },
+        "equipment_type": {
+          "enum": [
+            "router",
+            "set_top_box",
+            "smart_speaker"
+          ],
+          "title": "Equipment Type",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "donor_delivery",
+            "office_pickup"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "logistics_id": {
+          "minLength": 1,
+          "title": "Logistics Id",
+          "type": "string"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logistics_id",
+        "kind",
+        "request_id",
+        "equipment_type",
+        "receiver_engineer_id"
+      ],
+      "title": "EquipmentLogistics",
+      "type": "object"
+    },
     "EquipmentStock": {
       "additionalProperties": false,
       "description": "Immutable start-of-day stock carried by one engineer.",
@@ -507,6 +578,40 @@
       "title": "LunchResult",
       "type": "object"
     },
+    "ManualResolution": {
+      "additionalProperties": false,
+      "description": "Audit outcome for the current main plan; absent when no active directives exist.",
+      "properties": {
+        "accepted_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Ids",
+          "type": "array"
+        },
+        "conflict_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflict Ids",
+          "type": "array"
+        },
+        "rejected_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rejected Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "accepted_ids",
+        "rejected_ids",
+        "conflict_ids"
+      ],
+      "title": "ManualResolution",
+      "type": "object"
+    },
     "Plan": {
       "additionalProperties": false,
       "description": "Validated plan; unusable plans must not be applied by sys.",
@@ -528,6 +633,17 @@
         "is_usable": {
           "title": "Is Usable",
           "type": "boolean"
+        },
+        "manual_resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManualResolution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "metric_scope": {
           "const": "snapshot_remaining",
@@ -1143,6 +1259,20 @@
           "minimum": 0,
           "title": "Travel Time Sec",
           "type": "integer"
+        },
+        "weather_multiplier_used": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 3.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weather Multiplier Used"
         }
       },
       "required": [
@@ -1265,13 +1395,26 @@
             "job",
             "lunch",
             "wait",
-            "handoff"
+            "handoff",
+            "delivery",
+            "office_pickup"
           ],
           "title": "Kind",
           "type": "string"
         },
         "location": {
           "$ref": "#/$defs/GeoPoint"
+        },
+        "logistics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EquipmentLogistics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "request_id": {
           "anyOf": [

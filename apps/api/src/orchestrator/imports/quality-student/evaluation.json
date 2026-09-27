@@ -1,0 +1,30 @@
+{
+  "teacher": "aac6fef/laya-multilingual-mlx",
+  "promptHash": "d5a742def0b823f8c8e729cfa815a204f76af0adcbc0ef6b31c33c7e07d4cd98",
+  "total": 975,
+  "accepted": {
+    "train": 400,
+    "validation": 113,
+    "test": 163
+  },
+  "humanAudit": "pending",
+  "enabled": false,
+  "metricGate": false,
+  "reason": "insufficient confident labels or label diversity",
+  "confidentLabels": {
+    "train": {
+      "valid": 400,
+      "invalid": 0
+    },
+    "validation": {
+      "valid": 113,
+      "invalid": 0
+    },
+    "test": {
+      "valid": 163,
+      "invalid": 0
+    }
+  },
+  "garbageLabelledValid": 195,
+  "auditRows": 100
+}

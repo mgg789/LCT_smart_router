@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NAVIX — Руководство инженера</title>
+<style>
+  /* ==== NAVIX brand fonts (same as apps/web) ==== */
+  @font-face {
+    font-family: "Murs Gothic";
+    src: url("assets/fonts/mursgothic-widedark.otf") format("opentype");
+    font-weight: 800;
+    font-style: normal;
+  }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-ExtraBold.woff2") format("woff2"); font-weight: 800; font-style: normal; }
+
+  :root {
+    --canvas: #f1f1f1;   /* figma-canvas */
+    --ink: #272930;      /* figma-ink */
+    --bee: #ffc72c;      /* figma-bee */
+    --muted: #727478;    /* figma-muted */
+    --dim: #555555;      /* figma-dim */
+    --card: #ffffff;
+    --line: rgba(39, 41, 48, 0.14);
+    --soft: #f4f6f8;
+  }
+
+  @page { size: A4; margin: 0; }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--canvas);
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    color: var(--ink);
+    font-size: 10pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    background: var(--canvas);
+    position: relative;
+    padding: 15mm 16mm 16mm 16mm;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+  }
+  .page:last-child { page-break-after: auto; }
+  .page > * { flex: 0 0 auto; }
+
+  /* ==== shared components ==== */
+  .kicker {
+    display: inline-block;
+    align-self: flex-start;
+    background: var(--bee);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 8pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 2.2mm 4.5mm;
+  }
+  h1 {
+    font-weight: 800;
+    font-size: 20.5pt;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    margin: 4.5mm 0 0 0;
+  }
+  .lead {
+    font-size: 10.5pt;
+    font-weight: 500;
+    color: var(--dim);
+    margin: 3.5mm 0 0 0;
+    line-height: 1.5;
+  }
+  .murs { font-family: "Murs Gothic", "Inter", sans-serif; font-weight: 800; letter-spacing: 0.02em; }
+
+  .b-dark, .b-yellow {
+    display: inline-block;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 9pt;
+    padding: 2.1mm 5.5mm;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .b-dark { background: var(--ink); color: #fff; }
+  .b-yellow { background: var(--bee); color: var(--ink); }
+
+  .callout {
+    background: var(--card);
+    border-radius: 6mm;
+    padding: 4.5mm 5.5mm;
+    margin-top: 4.5mm;
+    border-left: 2mm solid var(--bee);
+    page-break-inside: avoid;
+  }
+  .callout .c-title { font-weight: 800; font-size: 9.5pt; margin: 0 0 1.2mm 0; }
+  .callout p { margin: 0; color: var(--dim); font-size: 9.5pt; }
+  .callout.dark { background: var(--ink); border-left-color: var(--bee); }
+  .callout.dark .c-title { color: var(--bee); }
+  .callout.dark p { color: rgba(255,255,255,0.88); }
+
+  .step { display: flex; gap: 4.5mm; margin-top: 5mm; page-break-inside: avoid; }
+  .step-num {
+    flex: 0 0 auto;
+    width: 9.5mm; height: 9.5mm;
+    background: var(--ink);
+    border-radius: 3mm;
+    color: var(--bee);
+    font-family: "Murs Gothic", "Inter", sans-serif;
+    font-size: 12.5pt;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-body { min-width: 0; }
+  .step-body .s-title { font-weight: 700; font-size: 10.5pt; }
+  .step-body p { margin: 0.8mm 0 0 0; color: var(--dim); font-size: 9.5pt; }
+
+  ul.app-list { list-style: none; margin: 4mm 0 0 0; padding: 0; }
+  ul.app-list li {
+    position: relative;
+    padding-left: 6.5mm;
+    margin-top: 3.2mm;
+    font-size: 9.5pt;
+    color: var(--ink);
+  }
+  ul.app-list li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 1.7mm;
+    width: 3mm; height: 3mm;
+    border-radius: 1mm;
+    background: var(--bee);
+  }
+  ul.app-list li b { font-weight: 700; }
+  ul.app-list li .m { color: var(--dim); }
+
+  .card {
+    background: var(--card);
+    border-radius: 6mm;
+    padding: 5mm 6mm;
+    page-break-inside: avoid;
+  }
+
+  .phone {
+    border: 2mm solid var(--ink);
+    border-radius: 8.5mm;
+    overflow: hidden;
+    background: var(--canvas);
+    line-height: 0;
+  }
+  .phone img { width: 100%; height: auto; display: block; }
+  .figcap {
+    text-align: center;
+    font-size: 8pt;
+    font-weight: 500;
+    color: var(--muted);
+    margin-top: 2.5mm;
+    line-height: 1.35;
+  }
+
+  .cols { display: flex; gap: 8mm; }
+  .cols .col-text { flex: 1 1 auto; min-width: 0; }
+  .cols .col-fig { flex: 0 0 auto; }
+
+  .footer {
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    font-weight: 500;
+    color: var(--muted);
+    padding-top: 5mm;
+  }
+  .footer .fnum { font-weight: 700; color: var(--ink); }
+
+  /* ==== cover ==== */
+  .cover { display: flex; flex-direction: column; }
+  .cover-top { display: flex; align-items: center; gap: 3.5mm; }
+  .cover-top img { width: 9mm; height: 9mm; }
+  .cover-top .t { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11pt; letter-spacing: 0.06em; }
+  .cover-mid { margin-top: 34mm; display: flex; flex-direction: column; align-items: flex-start; }
+  .cover-logo { width: 30mm; height: 30mm; margin-left: 1mm; }
+  .cover-word { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 34pt; letter-spacing: 0.04em; margin-top: 8mm; }
+  .cover-title { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 40pt; line-height: 1.06; letter-spacing: 0.01em; margin-top: 2.5mm; max-width: 165mm; }
+  .cover-sub { font-size: 11.5pt; font-weight: 500; color: var(--dim); margin-top: 8mm; max-width: 130mm; line-height: 1.55; }
+  .cover-chips { display: flex; gap: 3mm; margin-top: 9mm; }
+  .chip {
+    background: var(--ink); color: #fff;
+    font-size: 8.5pt; font-weight: 600;
+    border-radius: 999px; padding: 2.2mm 5mm;
+  }
+  .chip.light { background: #fff; color: var(--ink); }
+  .cover-bottom { margin-top: auto; }
+  .stripes { display: flex; gap: 4.5mm; transform: rotate(-45deg); margin-left: -12mm; margin-bottom: 4mm; }
+  .stripes .bar { background: var(--ink); border-radius: 999px; }
+  .stripes .bar.y { background: var(--bee); }
+  .cover-note { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 4mm; font-size: 8.5pt; font-weight: 500; color: var(--muted); }
+
+  /* ==== TOC ==== */
+  .toc { margin-top: 6mm; }
+  .toc-row { display: flex; align-items: baseline; gap: 3mm; margin-top: 4.6mm; }
+  .toc-num {
+    font-family: "Murs Gothic", "Inter", sans-serif;
+    font-size: 12pt; color: var(--ink);
+    width: 8mm; flex: 0 0 auto;
+  }
+  .toc-name { font-weight: 600; font-size: 11pt; white-space: nowrap; }
+  .toc-dots { flex: 1 1 auto; border-bottom: 0.5mm dotted rgba(39,41,48,0.35); transform: translateY(-1mm); }
+  .toc-pg { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11pt; }
+
+  /* ==== misc ==== */
+  .otp { margin-top: 6mm; }
+  .otp-label { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 13pt; }
+  .otp-cells { display: flex; gap: 2.5mm; margin-top: 3.5mm; }
+  .otp-cell {
+    width: 8.5mm; height: 11mm;
+    background: #fff; border-radius: 3mm;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Murs Gothic", "Inter", sans-serif; font-size: 12.5pt;
+  }
+  .otp-hint { font-size: 8pt; color: var(--muted); font-weight: 500; margin-top: 3mm; }
+
+  .check-row { display: flex; align-items: center; gap: 3.5mm; margin-top: 3.4mm; }
+  .check-box { width: 4.6mm; height: 4.6mm; border: 0.55mm solid var(--ink); border-radius: 1.4mm; background: #fff; flex: 0 0 auto; }
+  .check-name { font-weight: 600; font-size: 9.5pt; }
+  .check-qty { color: var(--muted); font-weight: 500; font-size: 9pt; margin-left: auto; }
+
+  .variant {
+    background: #fff; border-radius: 4.5mm;
+    padding: 3.4mm 4.5mm;
+    margin-top: 3mm;
+    page-break-inside: avoid;
+  }
+  .variant .v-name { font-weight: 700; font-size: 9.5pt; }
+  .variant p { margin: 0.6mm 0 0 0; font-size: 9pt; color: var(--dim); }
+
+  .solutions { display: flex; flex-wrap: wrap; gap: 3mm; margin-top: 4mm; }
+  .solution {
+    flex: 1 1 78mm;
+    background: var(--ink);
+    border-radius: 5mm;
+    padding: 4mm 4.5mm;
+    color: #fff;
+    page-break-inside: avoid;
+  }
+  .solution .sl-name { font-weight: 700; font-size: 9.5pt; color: var(--bee); }
+  .solution p { margin: 1mm 0 0 0; font-size: 8.5pt; color: rgba(255,255,255,0.85); line-height: 1.4; }
+
+  .points-chip {
+    display: inline-flex; align-items: center; gap: 2.5mm;
+    background: var(--bee); border-radius: 999px;
+    padding: 2.5mm 5.5mm;
+    font-family: "Murs Gothic", "Inter", sans-serif;
+    font-size: 15pt;
+  }
+
+  .memo { display: flex; gap: 4mm; margin-top: 5mm; }
+  .memo-col { flex: 1 1 0; background: #fff; border-radius: 5.5mm; padding: 4.5mm 5mm; }
+  .memo-col .m-name { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11pt; color: var(--ink); }
+  .memo-col p { margin: 2mm 0 0 0; font-size: 8.8pt; color: var(--dim); line-height: 1.45; }
+
+  .roomy .step { margin-top: 6.5mm; }
+  .roomy .callout { margin-top: 5.5mm; }
+
+  .screen-adapt { display: none; }
+  @media screen {
+    html { background: var(--canvas); }
+    body { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px 0; }
+    .page { box-shadow: 0 6px 32px rgba(39,41,48,0.18); transform-origin: top center; transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= PAGE 1 · COVER ================= -->
+<div class="page cover">
+  <div class="cover-top">
+    <img src="assets/logo-dark.png" alt="">
+    <span class="t">NAVIX</span>
+  </div>
+  <div class="cover-mid">
+    <img class="cover-logo" src="assets/logo-dark.png" alt="">
+    <div class="cover-word">NAVIX</div>
+    <div class="cover-title">Руководство инженера</div>
+    <p class="cover-sub">Инструкция для работы с заявками: смена, маршрут, обед и помощь, если что-то пошло не так. Читайте один раз — и заглядывайте по мере необходимости.</p>
+    <div class="cover-chips">
+      <span class="chip">Для выездных инженеров</span>
+      <span class="chip light">Выпуск 1.0 · сентябрь 2026</span>
+    </div>
+  </div>
+  <div class="cover-bottom">
+    <div class="stripes">
+      <span class="bar" style="width: 34mm; height: 7mm;"></span>
+      <span class="bar y" style="width: 62mm; height: 7mm;"></span>
+      <span class="bar" style="width: 46mm; height: 7mm;"></span>
+      <span class="bar" style="width: 18mm; height: 7mm;"></span>
+    </div>
+    <div class="cover-note">
+      <span>Приложение выездного инженера</span>
+      <span>navix · система умных маршрутов</span>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PAGE 2 · WELCOME + TOC ================= -->
+<div class="page">
+  <span class="kicker">Знакомство</span>
+  <h1>Добро пожаловать в NAVIX</h1>
+  <p class="lead">NAVIX — приложение для выездных инженеров. Оно подсказывает, куда ехать и во сколько, ведёт по маршруту и помогает, если в дороге что-то случилось. План на день строит диспетчер — вам остаётся сверяться с приложением.</p>
+  <p style="margin-top:4mm; color:var(--dim);">Это руководство написано для знакомства с системой с нуля — никаких специальных знаний не потребуется. Читать подряд не обязательно: открывайте нужный раздел, когда возникнет вопрос. Случайным нажатием сломать приложение нельзя, так что пользуйтесь им спокойно и уверенно.</p>
+  <p style="margin-top:3mm; color:var(--dim);">Если что-то непонятно — спросите Помощника в боковом меню. Он на связи весь рабочий день и сам позвал на помощь диспетчера, если вопрос нестандартный.</p>
+
+  <div class="card" style="margin-top:6mm;">
+    <div style="font-weight:800; font-size:10.5pt;">Как читать это руководство</div>
+    <ul class="app-list" style="margin-top:3mm;">
+      <li>Кнопки в тексте выглядят так же, как в приложении: <span class="b-dark">Приступить</span>&nbsp;&nbsp;<span class="b-yellow">Опаздываю</span></li>
+      <li>Заметки «Важно» и «Совет» — то, что стоит запомнить.</li>
+      <li>Скриншоты помогают свериться с экраном телефона.</li>
+    </ul>
+  </div>
+
+  <div class="toc">
+    <div style="font-weight:800; font-size:13pt; margin-top:8mm;">Содержание</div>
+    <div class="toc-row"><span class="toc-num">1</span><span class="toc-name">Регистрация и первый вход</span><span class="toc-dots"></span><span class="toc-pg">3</span></div>
+    <div class="toc-row"><span class="toc-num">2</span><span class="toc-name">Начало рабочего дня</span><span class="toc-dots"></span><span class="toc-pg">4</span></div>
+    <div class="toc-row"><span class="toc-num">3</span><span class="toc-name">План на день и работа с заявками</span><span class="toc-dots"></span><span class="toc-pg">5</span></div>
+    <div class="toc-row"><span class="toc-num">4</span><span class="toc-name">Как проходить заявки</span><span class="toc-dots"></span><span class="toc-pg">7</span></div>
+    <div class="toc-row"><span class="toc-num">5</span><span class="toc-name">Внеплановые ситуации</span><span class="toc-dots"></span><span class="toc-pg">8</span></div>
+    <div class="toc-row"><span class="toc-num">6</span><span class="toc-name">Система баллов</span><span class="toc-dots"></span><span class="toc-pg">11</span></div>
+    <div class="toc-row"><span class="toc-num">7</span><span class="toc-name">Помощь и поддержка</span><span class="toc-dots"></span><span class="toc-pg">12</span></div>
+    <div class="toc-row"><span class="toc-num" style="color:var(--muted)">+</span><span class="toc-name" style="color:var(--dim)">Памятка на каждый день</span><span class="toc-dots"></span><span class="toc-pg" style="color:var(--muted)">12</span></div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">2</span></div>
+</div>
+
+<!-- ================= PAGE 3 · SECTION 1 ================= -->
+<div class="page roomy">
+  <span class="kicker">Раздел 1</span>
+  <h1>Регистрация и первый вход</h1>
+  <p class="lead">Работа начинается с регистрации. Саму регистрацию делает диспетчер — вам нужно сообщить ему пару деталей и один раз войти в приложение.</p>
+
+  <div class="cols" style="margin-top:2mm;">
+    <div class="col-text">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="s-title">Сообщите диспетчеру</div>
+          <p>Вашу рабочую электронную почту и основной способ передвижения по заявкам: пешком или общественным транспортом, на велосипеде или электросамокате, на автомобиле.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="s-title">Диспетчер зарегистрирует вас</div>
+          <p>Он внесёт данные в систему и подтвердит регистрацию. От вас на этом шаге больше ничего не требуется.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="s-title">Войдите в приложение</div>
+          <p>Откройте приложение по ссылке от диспетчера и введите свою почту.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="s-title">Введите код из письма</div>
+          <p>На почту придёт одноразовый код из шести цифр. Введите его в приложении — и вы внутри.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-fig" style="width: 64mm; padding-top: 4mm;">
+      <div class="otp">
+        <div class="otp-label">Код из письма</div>
+        <div class="otp-cells">
+          <span class="otp-cell">4</span><span class="otp-cell">9</span><span class="otp-cell">2</span><span class="otp-cell">7</span><span class="otp-cell">0</span><span class="otp-cell">5</span>
+        </div>
+        <div class="otp-hint">Код приходит через несколько секунд после ввода почты</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="c-title">Регистрация выполняется один раз</div>
+    <p>В следующие дни вход такой же: почта и новый код из письма. Запоминать пароль не нужно — код одноразовый и приходит каждый раз новый.</p>
+  </div>
+  <div class="callout">
+    <div class="c-title">Со временем всё можно поменять</div>
+    <p>Сменился вид транспорта или рабочая почта? Откройте боковое меню, затем «Настройки» — там можно обновить имя, почту и способ передвижения: авто, пешком или велосипед.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">3</span></div>
+</div>
+
+<!-- ================= PAGE 4 · SECTION 2 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 2</span>
+  <h1>Начало рабочего дня</h1>
+  <p class="lead">Каждое утро диспетчер собирает план на день. Обычно это занимает 5–10 минут после начала смены — можно спокойно выпить кофе.</p>
+
+  <div class="cols" style="margin-top:4mm;">
+    <div class="col-text">
+      <p style="margin:0; color:var(--dim);">Как только план готов, в приложении появится список оборудования, которое нужно взять из офиса на сегодня. Список зависит от заявок дня — проверяйте его, пока собираетесь.</p>
+      <div class="card" style="margin-top:4.5mm;">
+        <div style="font-weight:800; font-size:10pt;">Что взять с собой</div>
+        <div class="check-row"><span class="check-box"></span><span class="check-name">Роутер</span><span class="check-qty">2 шт</span></div>
+        <div class="check-row"><span class="check-box"></span><span class="check-name">ТВ-приставка</span><span class="check-qty">1 шт</span></div>
+        <div class="check-row"><span class="check-box"></span><span class="check-name">Патч-корд</span><span class="check-qty">2 шт</span></div>
+        <div class="otp-hint" style="margin-top:3.5mm;">Пример списка — у вас он будет свой, по заявкам дня</div>
+      </div>
+    </div>
+    <div class="col-fig" style="width: 78mm; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; padding-top:6mm;">
+      <div style="font-size:9.5pt; font-weight:600; color:var(--dim); text-align:center;">Когда готовы выехать — нажмите</div>
+      <div class="b-dark" style="font-size:13pt; padding:5mm 14mm; border-radius:5.5mm; margin-top:4mm;">Начать смену</div>
+      <div class="otp-hint" style="margin-top:3.5mm; text-align:center;">После этого откроется список заявок на день</div>
+    </div>
+  </div>
+
+  <div class="callout dark">
+    <div class="c-title">Важно</div>
+    <p>«Начать смену» — единственное обязательное действие инженера за день. Всё остальное в приложении — добрая рекомендация: отметки помогают системе точнее вести график и заранее предупреждать клиентов.</p>
+  </div>
+
+  <div class="callout">
+    <div class="c-title">Как заканчивается день</div>
+    <p>Когда все заявки закрыты, приложение подтвердит: «Работа на сегодня завершена» — можно ехать домой, ничего нажимать не нужно. До 17:00 могут прийти новые заявки, поэтому заглядывайте в приложение до конца смены.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">4</span></div>
+</div>
+
+<!-- ================= PAGE 5 · SECTION 3, PLAN ================= -->
+<div class="page">
+  <span class="kicker">Раздел 3</span>
+  <h1>План на день и работа с заявками</h1>
+  <div class="cols" style="margin-top:3mm;">
+    <div class="col-text">
+      <p style="margin:0; color:var(--dim);">После начала смены открывается экран «Список заявок» — ваш день по порядку. Первая карточка выделена жёлтой рамкой: это ближайшая точка. Разберём карточку по строкам.</p>
+      <ul class="app-list">
+        <li><b>Крупное время</b> — расчётное время прибытия: <span class="murs" style="font-size:11pt;">9:41</span> значит «планируйте подойти к 9:41».</li>
+        <li><b>Адрес и тип работ</b> — что за объект и что предстоит: «локальные работы, 30 минут».</li>
+        <li><b>Тёмный чип с временем</b> — временное окно заявки, например <span class="chip" style="font-size:7.5pt; padding:1mm 3mm;">9:20–10:20</span>. Это обещание клиенту: выехать за его границы нельзя.</li>
+        <li><b>Кнопка со стрелкой</b> справа — откроет навигатор с уже построенным маршрутом до адреса.</li>
+        <li><b>Нажатие на карточку</b> — подробности заявки (следующая страница).</li>
+        <li><b>Карточка с приборами</b> — обед, если он предусмотрен политикой компании на этот день.</li>
+      </ul>
+    </div>
+    <div class="col-fig" style="width: 74mm;">
+      <div class="phone"><img src="assets/screen-home.png" alt="Список заявок"></div>
+      <div class="figcap">Экран «Список заявок»: ближайшая заявка выделена жёлтой рамкой</div>
+    </div>
+  </div>
+  <div class="callout">
+    <div class="c-title">Важно: план — живой</div>
+    <p>В течение дня план может меняться: добавятся заявки, что-то перестроится. Перед выездом на каждую следующую точку сверяйтесь со списком.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">5</span></div>
+</div>
+
+<!-- ================= PAGE 6 · SECTION 3, REQUEST CARD ================= -->
+<div class="page">
+  <span class="kicker">Раздел 3 · продолжение</span>
+  <h1>Карточка заявки подробнее</h1>
+  <div class="cols" style="margin-top:3mm;">
+    <div class="col-text">
+      <p style="margin:0; color:var(--dim);">Нажмите на карточку в списке — откроется подробная информация по заявке.</p>
+      <ul class="app-list">
+        <li><b>Карта и «Построить маршрут»</b> — тот же маршрут, что и по стрелке из списка: построится дорога до адреса.</li>
+        <li><b>Клиент и окно</b> — кому едете и во сколько вас ждут, рядом полный адрес.</li>
+        <li><b>Тип работ</b> — что предстоит сделать на объекте.</li>
+        <li><b>Паспорт объекта</b> — короткая справка об адресе: тип подключения, сложность работ. Если паспорта ещё нет, приложение предложит заполнить его после нажатия «Приступить» — это пара минут, и за заполнение начисляются баллы.</li>
+        <li><b>«Написать в поддержку»</b> внизу экрана — если по этой заявке что-то не так в приложении (подробнее в разделе 7).</li>
+      </ul>
+      <div class="callout" style="margin-top:5mm;">
+        <div class="c-title">Совет</div>
+        <p>Загляните в паспорт объекта до выезда: там подсказано, насколько сложная предстоит работа, — полезно для планирования времени.</p>
+      </div>
+    </div>
+    <div class="col-fig" style="width: 74mm;">
+      <div class="phone"><img src="assets/screen-request.png" alt="Карточка заявки"></div>
+      <div class="figcap">Карточка заявки: карта, окно, адрес и паспорт объекта</div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">6</span></div>
+</div>
+
+<!-- ================= PAGE 7 · SECTION 4 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 4</span>
+  <h1>Как проходить заявки</h1>
+  <p class="lead">Отмечаться не обязательно, но короткие отметки очень помогают: график остаётся точным, клиенты предупреждены вовремя. Это дело пары секунд.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div class="step" style="margin-top:0;">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <div class="s-title">Приехали — нажмите <span class="b-dark" style="font-size:8pt; padding:1.6mm 4mm; vertical-align:middle;">Приступить</span></div>
+            <p>Кнопка превратится в таймер: приложение начнёт считать время работы на точке.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <div class="s-title">Закончили — нажмите <span class="b-dark" style="font-size:8pt; padding:1.6mm 4mm; vertical-align:middle;">Завершить</span></div>
+            <p>Заявка закроется, и можно отправляться по маршруту дальше.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <div class="s-title">Не успеваете — нажмите <span class="b-yellow" style="font-size:8pt; padding:1.6mm 4mm; vertical-align:middle;">Опаздываю</span></div>
+            <p>Укажите новое время прибытия и сохраните. Система предупредит клиента и при необходимости перестроит остаток дня.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="c-title">Без штрафов</div>
+        <p>Отметка об опоздании — чисто информационная: никаких штрафов и санкций за неё нет. Отметиться — всегда лучше, чем молча опоздать.</p>
+      </div>
+      <div class="callout">
+        <div class="c-title">За точный прогноз — 30 баллов</div>
+        <p>Указывайте время без запаса: отметьтесь не позже обещанного и не более чем на 10 минут раньше. Подробно о баллах — в разделе 6.</p>
+      </div>
+    </div>
+    <div style="flex:0 0 74mm; display:flex; flex-direction:column; gap:4mm; padding-top:1mm;">
+      <div class="card" style="display:flex; flex-direction:column; align-items:center; padding:6mm 5mm;">
+        <div style="font-size:8.5pt; font-weight:600; color:var(--muted);">Кнопки на карточке ближайшей заявки</div>
+        <div style="display:flex; gap:3.5mm; margin-top:4mm;">
+          <span class="b-yellow" style="font-size:9.5pt; padding:3mm 6mm;">Опаздываю</span>
+          <span class="b-dark" style="font-size:9.5pt; padding:3mm 6mm;">Приступить</span>
+        </div>
+        <div style="display:flex; gap:3.5mm; margin-top:3.5mm;">
+          <span class="b-dark" style="font-size:9.5pt; padding:3mm 6mm; min-width:22mm; text-align:center;">12:40</span>
+          <span class="b-dark" style="font-size:9.5pt; padding:3mm 6mm;">Завершить</span>
+        </div>
+        <div class="otp-hint" style="margin-top:3.5mm; text-align:center;">Во время работы таймер живёт на месте кнопки</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">7</span></div>
+</div>
+
+<!-- ================= PAGE 8 · SECTION 5.1 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 5 · Внеплановые ситуации</span>
+  <h1>Технический перерыв</h1>
+  <div class="cols" style="margin-top:3mm;">
+    <div class="col-text">
+      <p style="margin:0; color:var(--dim);">Заправка, кофе, туалет — нормальная часть рабочего дня. Чтобы диспетчер видел, что у вас всё в порядке и вы просто на паузе, отметьте технический перерыв.</p>
+      <div class="step" style="margin-top:5mm;">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="s-title">Откройте боковое меню</div>
+          <p>Кнопка с полосками в левом верхнем углу экрана.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="s-title">Нажмите «Тех. перерыв»</div>
+          <p>Экран покажет таймер паузы — можно отложить телефон и заниматься делами.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="s-title">Готовы продолжить — «Вернуться»</div>
+          <p>Пауза завершится, и вы снова на маршруте.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="c-title">Спокойный режим</div>
+        <p>Плановая длительность перерыва — до 15 минут. Это базовый режим работы: без штрафов и санкций.</p>
+      </div>
+    </div>
+    <div class="col-fig" style="width: 80mm;">
+      <div class="phone"><img src="assets/screen-break.png" alt="Технический перерыв"></div>
+      <div class="figcap">Экран перерыва: таймер и кнопка «Вернуться»</div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">8</span></div>
+</div>
+
+<!-- ================= PAGE 9 · SECTION 5.2 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 5 · Внеплановые ситуации</span>
+  <h1>Проблема по текущей заявке</h1>
+  <div class="cols" style="margin-top:3mm;">
+    <div class="col-text">
+      <p style="margin:0; color:var(--dim);">Не получается выполнить заявку как планировалось: работы больше, чем ожидалось, не хватает оборудования, клиент не отвечает? Расскажите приложению — оно подберёт решение.</p>
+      <div class="step" style="margin-top:4.5mm;">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="s-title">Откройте карточку заявки</div>
+          <p>Внизу карточки есть тёмная кнопка <b>«Проблема»</b>&nbsp;— нажмите её.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="s-title">Выберите, что случилось</div>
+          <p>И добавьте пару слов в поле «Описание», если нужно.</p>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="v-name">Нужно больше времени</div>
+        <p>Укажите, сколько минут добавить к текущему сроку работ.</p>
+      </div>
+      <div class="variant">
+        <div class="v-name">Опаздываю к заявке</div>
+        <p>Назовите новое время прибытия — клиент будет предупреждён.</p>
+      </div>
+      <div class="variant">
+        <div class="v-name">Нет оборудования</div>
+        <p>Выберите, чего не хватает: роутер, ТВ-приставка или умная колонка.</p>
+      </div>
+      <div class="variant">
+        <div class="v-name">Другая проблема · Невозможно выполнить</div>
+        <p>Опишите ситуацию словами — подключим диспетчера.</p>
+      </div>
+    </div>
+    <div class="col-fig" style="width: 74mm;">
+      <div class="phone"><img src="assets/screen-problem.png" alt="Диалог проблемы"></div>
+      <div class="figcap">Диалог «Что случилось»: выбор причины и новое время</div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">9</span></div>
+</div>
+
+<!-- ================= PAGE 10 · SECTION 5.2 SOLUTIONS + 5.3 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 5 · Внеплановые ситуации</span>
+  <h1>Что сделает система</h1>
+  <p style="margin:3mm 0 0 0; color:var(--dim);">После того как вы описали проблему, система подберёт решение — одного из четырёх видов:</p>
+  <div class="solutions">
+    <div class="solution">
+      <div class="sl-name">Расширит временное окно</div>
+      <p>Договорится о новом времени с клиентом, чтобы вы спокойно доделали работу.</p>
+    </div>
+    <div class="solution">
+      <div class="sl-name">Довезёт оборудование</div>
+      <p>Найдёт другого инженера, который передаст недостающее оборудование вам.</p>
+    </div>
+    <div class="solution">
+      <div class="sl-name">Свяжёт с клиентом</div>
+      <p>Откроет чат по заявке, чтобы уточнить нюансы на месте.</p>
+    </div>
+    <div class="solution">
+      <div class="sl-name">Отменит заявку</div>
+      <p>В редком случае, когда выполнить нельзя. Отмена засчитывается как выполненная заявка — маршрут просто продолжается.</p>
+    </div>
+  </div>
+
+  <div style="font-weight:800; font-size:15pt; margin-top:9mm;">Проблема случилась в пути, а не по заявке?</div>
+  <p style="margin:2.5mm 0 0 0; color:var(--dim);">Пробило колесо, не получается заправиться — для таких случаев есть <b>Помощник</b>. Откройте боковое меню и выберите «Помощник», затем опишите проблему словами. Помощник решает типовые ситуации сам, а если случай нестандартный — сам переключит на диспетчера, и вам ответит человек.</p>
+  <div style="display:flex; gap:10mm; justify-content:center; margin-top:5mm;">
+    <div style="width: 62mm;">
+      <div class="phone"><img src="assets/screen-menu.png" alt="Боковое меню"></div>
+      <div class="figcap">Боковое меню: Помощник, Тех. перерыв и поддержка</div>
+    </div>
+    <div style="width: 58mm;">
+      <div class="phone"><img src="assets/screen-assistant.png" alt="Помощник"></div>
+      <div class="figcap">Помощник: опишите проблему своими словами</div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">10</span></div>
+</div>
+
+<!-- ================= PAGE 11 · SECTION 6 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 6</span>
+  <h1>Система баллов</h1>
+  <p class="lead">Баллы — это не оценка качества вашей работы. Они показывают, насколько активно вы взаимодействуете с системой, и отражают вклад в оптимизацию маршрутов и планов за месяц.</p>
+
+  <div class="cols" style="margin-top:4mm;">
+    <div class="col-text">
+      <div class="card">
+        <div style="font-weight:800; font-size:10.5pt;">За что начисляются баллы</div>
+        <ul class="app-list" style="margin-top:3mm;">
+          <li><b>Своевременные отметки статусов</b> — «Приступить» и «Завершить» по факту.</li>
+          <li><b>Точный прогноз прибытия</b> — 30 баллов за отметку «Опаздываю», совпавшую с реальностью.</li>
+          <li><b>Заполнение паспорта объекта</b> — помогаете следующему выезду на этот адрес.</li>
+          <li><b>Сообщения о проблемах</b> — система учится и становится точнее.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="flex:0 0 58mm; display:flex; flex-direction:column; align-items:center; padding-top:2mm;">
+      <div style="font-size:8.5pt; font-weight:600; color:var(--muted); text-align:center;">Так выглядят баллы<br>в боковом меню</div>
+      <div class="points-chip" style="margin-top:4mm;">
+        128
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2.5l2.9 5.9 6.5.95-4.7 4.58 1.1 6.47L12 17.35l-5.8 3.05 1.1-6.47L2.6 9.35l6.5-.95L12 2.5z" stroke="#272930" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout dark" style="margin-top:6mm;">
+    <div class="c-title">Хорошая новость</div>
+    <p>Баллы никогда не списываются и не сгорают. Они считаются за каждый календарный месяц и просто отражают ваш вклад за этот период.</p>
+  </div>
+  <div class="callout">
+    <div class="c-title">Где посмотреть</div>
+    <p>Откройте боковое меню — рядом с вашим именем жёлтый значок со звездой и текущее число баллов.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">11</span></div>
+</div>
+
+<!-- ================= PAGE 12 · SECTION 7 + MEMO ================= -->
+<div class="page">
+  <span class="kicker">Раздел 7</span>
+  <h1>Помощь и поддержка</h1>
+  <p class="lead">Приложение должно работать предсказуемо. Если что-то ведёт себя странно — кнопка не нажимается, данные не те, экран выглядит не как в этом руководстве или просто что-то неудобно, — расскажите нам.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div class="col-text">
+      <div class="card">
+        <div style="font-weight:800; font-size:10.5pt;">Два способа сообщить</div>
+        <ul class="app-list" style="margin-top:3mm;">
+          <li><b>Через Помощника.</b> Боковое меню → «Помощник». Опишите ситуацию — Помощник поможет на месте и передаст сообщение в поддержку сервиса.</li>
+          <li><b>Кнопкой «Написать в поддержку».</b> Она есть в боковом меню и внизу карточки каждой заявки — жёлтая, заметная.</li>
+        </ul>
+      </div>
+      <p style="margin:4mm 0 0 0; color:var(--dim);">Мы читаем каждое сообщение: отчёты о багах и предложения по удобству напрямую влияют на следующие версии NAVIX. Пишите даже про мелочи — это помогает сделать приложение лучше для всех инженеров.</p>
+    </div>
+    <div class="col-fig" style="width: 58mm; padding-top:1mm;">
+      <div class="callout" style="margin-top:0;">
+        <div class="c-title">Что написать</div>
+        <p>Что случилось и на каком экране, что вы делали перед этим. По возможности — скриншот. Этого достаточно, чтобы мы быстро разобрались.</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-weight:800; font-size:15pt; margin-top:8mm;">Памятка на каждый день</div>
+  <div class="memo">
+    <div class="memo-col">
+      <div class="m-name">Утро</div>
+      <p>Зайдите в приложение, проверьте список оборудования, нажмите «Начать смену».</p>
+    </div>
+    <div class="memo-col">
+      <div class="m-name">День</div>
+      <p>По каждой заявке — «Приступить» и «Завершить». Опаздываете — «Опаздываю». Пауза — «Тех. перерыв». Проблема — кнопка «Проблема».</p>
+    </div>
+    <div class="memo-col">
+      <div class="m-name">Вечер</div>
+      <p>Все заявки закрыты — «Работа на сегодня завершена». Ничего нажимать не нужно, можно ехать домой.</p>
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; align-items:center; margin-top:10mm;">
+    <img src="assets/logo-dark.png" alt="" style="width:12mm; height:12mm;">
+    <div class="murs" style="font-size:21pt; margin-top:3mm;">Хорошего дня!</div>
+    <div style="font-size:8.5pt; font-weight:500; color:var(--muted); margin-top:1.5mm;">Команда NAVIX</div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство инженера</span><span class="fnum">12</span></div>
+</div>
+
+</body>
+</html>

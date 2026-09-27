@@ -2,9 +2,16 @@
 
 import pytest
 from core.geo import GraphTravel
-from core.robustness import predict_situation
+from core.robustness import _sample_weather_kind, predict_situation
 
 ROUTES = {"eng-1": ["job-1", "job-2", "job-3"]}
+
+
+def test_heavy_weather_sampling_is_seeded_and_does_not_depend_on_candidates():
+    first = [_sample_weather_kind("heavy", "paired-seed", simulation) for simulation in range(40)]
+    second = [_sample_weather_kind("heavy", "paired-seed", simulation) for simulation in range(40)]
+    assert first == second
+    assert set(first) == {"snow", "storm"}
 
 
 def _predict(snapshot, graph, routes=None, **kwargs):

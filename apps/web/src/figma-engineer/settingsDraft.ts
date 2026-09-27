@@ -1,5 +1,6 @@
 import type { EngineerView } from '../api/types';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
+import { t } from '../i18n';
 
 /** Draft of the engineer settings form (name, login email, transport). */
 export interface EngineerSettingsDraft {
@@ -10,12 +11,12 @@ export interface EngineerSettingsDraft {
 
 /** Same checks as the dispatcher add-engineer fields that this screen reuses. */
 export function validateEngineerSettings(draft: EngineerSettingsDraft): string | null {
-  if (!draft.displayName.trim()) return 'Укажите имя';
+  if (!draft.displayName.trim()) return t('figma-engineer.settingsDraft.aa20ef525c');
   if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType)) {
-    return 'Выберите транспорт';
+    return t('figma-engineer.settingsDraft.1840f4cded');
   }
   if (draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
-    return 'Проверьте адрес почты';
+    return t('figma-engineer.settingsDraft.932880ca99');
   }
   return null;
 }

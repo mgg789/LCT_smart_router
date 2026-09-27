@@ -6,6 +6,7 @@ import { SysError } from '../../common/errors';
 import { formatUnixSeconds } from '../../common/time';
 import type { AiRoleProfile, Request } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
+import { assertManualConflictResolved } from '../../operations/manual-conflict-guard';
 import {
   type AlertAction,
   AlertsService,
@@ -19,6 +20,8 @@ import {
 import { assertLunchConditions } from '../../orchestrator/engineers/workday';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { findPolicy, PolicyService } from '../../orchestrator/policy';
+import { personalPolicyUpdateSchema } from '../../orchestrator/policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../../orchestrator/policy/personal-policy-preset';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 // Catalog file only, not the `requests` barrel: the barrel also loads Nest modules and
 // can leave `findWorkType` undefined under CJS circular imports in unit tests
@@ -26,7 +29,12 @@ import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { findWorkType, WORK_TYPE_CODES } from '../../orchestrator/requests/work-type.catalog';
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
+import { manualDecisionSchema } from '../../routing/router-gateway/manual-state';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
+import { requireManualMode } from '../tools/manual.tools';
+import { buildClientActions } from './client-actions';
 
 /**
  * The AI-gateway's own catalogue of writable actions.
@@ -59,7 +67,12 @@ export interface AiActionApplyArgs<TPayload> extends AiActionCheckArgs<TPayload>
   readonly context: OperationContext;
 }
 
-export interface AiActionSpec<TPayload = unknown> {
+/** Reads external state before `OperationsService` opens the write transaction. */
+export type AiActionApplyFactory<TPayload> = (
+  args: AiActionCheckArgs<TPayload>,
+) => Promise<(args: AiActionApplyArgs<TPayload>) => Promise<unknown>>;
+
+interface AiActionSpecBase<TPayload> {
   readonly zodSchema: z.ZodType<TPayload>;
   /** Role profiles allowed to prepare or confirm this action. Re-checked at confirm time
    *  against the actor's *current* profile, so a dispatcher's `fix -> help` flip made
@@ -71,8 +84,19 @@ export interface AiActionSpec<TPayload = unknown> {
   readonly precheck: (args: AiActionCheckArgs<TPayload>) => Promise<void>;
   /** Server-rendered preview rows for the confirmation card. Never the model's prose. */
   readonly preview: (args: AiActionCheckArgs<TPayload>) => Promise<readonly AiPreviewRow[]>;
-  readonly apply: (args: AiActionApplyArgs<TPayload>) => Promise<unknown>;
 }
+
+/** Every action either applies entirely in the domain transaction, or prepares external
+ * state first and returns the only transaction handler that may consume it. */
+export type AiActionSpec<TPayload = unknown> =
+  | (AiActionSpecBase<TPayload> & {
+      readonly apply: (args: AiActionApplyArgs<TPayload>) => Promise<unknown>;
+      readonly prepareApply?: never;
+    })
+  | (AiActionSpecBase<TPayload> & {
+      readonly apply?: never;
+      readonly prepareApply: AiActionApplyFactory<TPayload>;
+    });
 
 export interface AiActionCatalogDeps {
   readonly requests: RequestsService;
@@ -81,12 +105,15 @@ export interface AiActionCatalogDeps {
   readonly alerts: AlertsService;
   readonly policy: PolicyService;
   readonly publisher: SnapshotPublisher;
+  readonly restore: PlanRestoreService;
+  readonly router: RouterClient;
   /** Read-only lookups a precheck needs (the alert row, the request row) that have no
    *  dedicated service method of their own -- the same pattern `engineer.tools.ts`'s
    *  prechecks already use through a service, applied here directly since the alert
    *  and request rows themselves have none. */
   readonly prisma: PrismaService;
   readonly timeZone: string;
+  readonly manualDecisions?: ManualDecisionsService;
 }
 
 const requestIdSchema = z.string().min(1);
@@ -140,6 +167,9 @@ export type CancelRequestPayload = z.infer<typeof cancelRequestPayloadSchema>;
 export const selectPolicyPayloadSchema = z.object({ policyId: z.string().min(1).max(64) });
 export type SelectPolicyPayload = z.infer<typeof selectPolicyPayloadSchema>;
 
+const restorePlanPayloadSchema = z.object({ expectedRevision: z.number().int().positive() });
+type RestorePlanPayload = z.infer<typeof restorePlanPayloadSchema>;
+
 const alertActionSchema = z.enum([
   'reschedule',
   'move_window',
@@ -155,6 +185,8 @@ const alertActionSchema = z.enum([
   'message',
   'remove_shift',
   'message_remove',
+  'make_passive',
+  'prioritize',
   'extend',
 ]);
 
@@ -284,6 +316,73 @@ async function ensureClientAccount(
 
 export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<string, AiActionSpec> {
   const catalog = new Map<string, AiActionSpec>();
+  const manualEditSchema = manualDecisionSchema
+    .omit({ id: true, priority: true })
+    .extend({ expectedVersion: z.number().int().nonnegative() });
+  const manualRemoveSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionId: z.string().min(1),
+  });
+  const manualOrderSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionIds: z.array(z.string().min(1)),
+  });
+  const manualService = () => {
+    if (!deps.manualDecisions)
+      throw SysError.validationFailed('Manual decisions service unavailable');
+    return deps.manualDecisions;
+  };
+  catalog.set('manual.decision.put', {
+    zodSchema: manualEditSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      const payload = manualEditSchema.parse(args.payload);
+      return [
+        { label: 'Ручное решение', value: payload.kind },
+        { label: 'Объект', value: payload.targetId },
+        { label: 'Параметры', value: JSON.stringify(payload) },
+      ];
+    },
+    async apply(args) {
+      const { expectedVersion, ...input } = manualEditSchema.parse(args.payload);
+      return manualService().put(args.context, expectedVersion, input);
+    },
+  });
+  catalog.set('manual.decision.remove', {
+    zodSchema: manualRemoveSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Удалить ручное решение',
+          value: manualRemoveSchema.parse(args.payload).decisionId,
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualRemoveSchema.parse(args.payload);
+      return manualService().remove(args.context, input.expectedVersion, input.decisionId);
+    },
+  });
+  catalog.set('manual.priorities', {
+    zodSchema: manualOrderSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Приоритеты от высшего к низшему',
+          value: manualOrderSchema.parse(args.payload).decisionIds.join(', '),
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualOrderSchema.parse(args.payload);
+      return manualService().reorder(args.context, input.expectedVersion, input.decisionIds);
+    },
+  });
 
   catalog.set('request.create', {
     zodSchema: createRequestPayloadSchema,
@@ -440,12 +539,48 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  catalog.set('policy.personal.save', {
+    zodSchema: personalPolicyUpdateSchema,
+    allowedProfiles: ['dispatcher_fix', 'dispatcher_readonly'],
+    async precheck(args) {
+      if (!args.actor.accountId) throw SysError.forbidden('Личная политика требует учётную запись');
+    },
+    async preview(args) {
+      const input = personalPolicyUpdateSchema.parse(args.payload);
+      return [
+        { label: 'Личная политика', value: input.title },
+        { label: 'Цели от главной к последней', value: input.objectiveOrder.join(', ') },
+        {
+          label: 'Применение',
+          value: 'Сохранение без выбора. Если уже активна — пересчёт с новыми предпочтениями.',
+        },
+      ];
+    },
+    async apply({ context, payload }) {
+      const result = await deps.policy.savePersonal(
+        context,
+        personalPolicyUpdateSchema.parse(payload),
+      );
+      if (result.activeUpdated)
+        await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+      return result;
+    },
+  });
+
   catalog.set('policy.select', {
     zodSchema: selectPolicyPayloadSchema,
     allowedProfiles: ['dispatcher_fix'],
     async precheck(args) {
       const payload = args.payload as SelectPolicyPayload;
-      if (!findPolicy(payload.policyId)) {
+      const personal =
+        payload.policyId === 'personal'
+          ? (await deps.policy.personal(deps.prisma, args.actor.accountId)).profile
+          : null;
+      if (!findPolicy(payload.policyId) && !personal) {
         throw new SysError('VALIDATION_FAILED', 'Unknown policy', {
           details: { policyId: payload.policyId },
         });
@@ -456,17 +591,30 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       const spec = findPolicy(payload.policyId);
       return [{ label: 'Политика', value: spec?.title ?? payload.policyId }];
     },
-    async apply({ context, payload }) {
-      const input = payload as SelectPolicyPayload;
-      const selected = await deps.policy.select(context, input.policyId);
-      // The choice is data of the task, so it is republished, exactly like
-      // `DispatchController.selectPolicy`'s own call.
-      const publication = await deps.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.POLICY_CHANGED,
-      );
-      return { ...selected, publication };
+    async prepareApply(args) {
+      const input = args.payload as SelectPolicyPayload;
+      if (input.policyId === 'personal') {
+        await assertManualConflictResolved(deps.prisma, {
+          actor: args.actor,
+          operationId: 'personal-selection-precheck',
+          action: 'policy.select',
+          payload: input,
+        });
+        const { profile } = await deps.policy.personal(deps.prisma, args.actor.accountId);
+        if (!profile) throw SysError.validationFailed('Личная политика не создана');
+        await applyPersonalPolicyRouterPreset(deps.router, deps.live, profile.preset);
+      }
+      return async ({ context }) => {
+        const selected = await deps.policy.select(context, input.policyId);
+        // The choice is data of the task, so it is republished, exactly like
+        // `DispatchController.selectPolicy`'s own call.
+        const publication = await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+        return { ...selected, publication };
+      };
     },
   });
 
@@ -620,15 +768,24 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
     async apply({ context, targetRef, payload }) {
       const input = payload as ResolveAlertPayload;
+      const alertId = requireTargetRef(targetRef, 'an alert');
+      const alert =
+        input.action === 'move_window'
+          ? await context.tx.alert.findUnique({ where: { id: alertId } })
+          : null;
+      const request = alert?.requestIds[0]
+        ? await context.tx.request.findUnique({ where: { id: alert.requestIds[0] } })
+        : null;
       const resolveInput: ResolveAlertInput = {
         action: input.action,
+        ...(request ? { expectedRequestVersion: request.version } : {}),
         ...(input.reason === undefined ? {} : { reason: input.reason }),
         ...(input.minutes === undefined ? {} : { minutes: input.minutes }),
         ...(input.windowStartAt === undefined ? {} : { windowStartAt: input.windowStartAt }),
         ...(input.windowEndAt === undefined ? {} : { windowEndAt: input.windowEndAt }),
         ...(input.engineerId === undefined ? {} : { engineerId: input.engineerId }),
       };
-      return deps.alerts.resolve(context, requireTargetRef(targetRef, 'an alert'), resolveInput);
+      return deps.alerts.resolve(context, alertId, resolveInput);
     },
   });
 
@@ -671,6 +828,52 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     async apply({ context, payload }) {
       const input = payload as CloseShiftPayload;
       return deps.alerts.closeShift(context, input.workDate);
+    },
+  });
+
+  catalog.set('plan.restore', {
+    zodSchema: restorePlanPayloadSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    async precheck(args) {
+      const payload = args.payload as RestorePlanPayload;
+      const pair = await deps.restore.previous(
+        { tx: deps.prisma, now: args.now },
+        await deps.router.getActiveContextVersion(),
+      );
+      if (!pair.current) {
+        throw SysError.notFound('Applied plan');
+      }
+      if (pair.current.revision !== payload.expectedRevision) {
+        throw SysError.versionConflict(
+          'Applied plan',
+          payload.expectedRevision,
+          pair.current.revision,
+        );
+      }
+      if (!pair.eligibility.eligible) {
+        throw new SysError('RESULT_NOT_APPLICABLE', 'The previous plan is not safe to restore', {
+          details: { reason: pair.eligibility.reason },
+        });
+      }
+    },
+    async preview(args) {
+      const payload = args.payload as RestorePlanPayload;
+      const pair = await deps.restore.previous(
+        { tx: deps.prisma, now: args.now },
+        await deps.router.getActiveContextVersion(),
+      );
+      return [
+        { label: 'Действие', value: 'Восстановить предыдущий план' },
+        { label: 'Текущая ревизия', value: String(payload.expectedRevision) },
+        { label: 'Возвращаемая ревизия', value: String(pair.previous?.revision ?? 'недоступна') },
+      ];
+    },
+    async prepareApply(args) {
+      const payload = args.payload as RestorePlanPayload;
+      const contextFence = await deps.restore.contextMutationFence(deps.prisma);
+      const activeContextVersion = await deps.router.getActiveContextVersion();
+      return ({ context }) =>
+        deps.restore.restore(context, payload.expectedRevision, activeContextVersion, contextFence);
     },
   });
 
@@ -804,21 +1007,31 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       rows.push({ label: 'Комментарий', value: payload.note });
       return rows;
     },
-    async apply({ context, targetRef, payload }) {
-      const input = payload as LiveProblemPayload;
-      return deps.live.act(context, requireEngineerId(targetRef), {
-        operationId: context.operationId,
-        kind: 'problem',
-        requestId: input.requestId,
-        problemKind: input.problemKind,
-        note: input.note,
-        ...(input.additionalDurationSec === undefined
-          ? {}
-          : { additionalDurationSec: input.additionalDurationSec }),
-        ...(input.missingEquipment === undefined
-          ? {}
-          : { missingEquipment: input.missingEquipment }),
-      });
+    async prepareApply(args) {
+      const input = args.payload as LiveProblemPayload;
+      const enabled =
+        deps.router.isConfigured() && input.problemKind === 'missing_equipment'
+          ? (await deps.router.getTechnicalSettings()).equipmentTransfersEnabled === true
+          : false;
+      return async ({ context, targetRef }) =>
+        deps.live.act(
+          context,
+          requireEngineerId(targetRef),
+          {
+            operationId: context.operationId,
+            kind: 'problem',
+            requestId: input.requestId,
+            problemKind: input.problemKind,
+            note: input.note,
+            ...(input.additionalDurationSec === undefined
+              ? {}
+              : { additionalDurationSec: input.additionalDurationSec }),
+            ...(input.missingEquipment === undefined
+              ? {}
+              : { missingEquipment: input.missingEquipment }),
+          },
+          enabled,
+        );
     },
   });
 
@@ -858,6 +1071,7 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  for (const [name, action] of buildClientActions(deps)) catalog.set(name, action);
   return catalog;
 }
 

@@ -5,9 +5,37 @@
  * This package is types only: both apps import it with `import type`.
  */
 
-export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering';
+export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering' | 'personal';
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
+
+/** Advisory finding: never changes or rejects a structurally valid import. */
+export interface ImportQualityFinding {
+  readonly code: string;
+  readonly layer: 'rules' | 'statistics' | 'student';
+  readonly count: number;
+  readonly examples: readonly string[];
+  readonly message: string;
+  readonly score?: number;
+}
+
+/** Immutable server-side preparation, owned by the authenticated dispatcher for 24 hours. */
+export interface ImportPreparationView {
+  readonly prepareId: string;
+  readonly source: string;
+  readonly immutableBatchHash: string;
+  readonly versions: {
+    readonly rules: string;
+    readonly statistics: string;
+    readonly student: string;
+    readonly transform?: string;
+  };
+  readonly expiresAt: number;
+  readonly findings: readonly ImportQualityFinding[];
+}
+
+/** UI acknowledgement callback; false cancels without committing business data. */
+export type ReviewImportQuality = (report: ImportPreparationView) => Promise<boolean>;
 
 export interface EquipmentStock {
   readonly router: number;
@@ -20,6 +48,19 @@ export interface PolicySpec {
   readonly title: string;
   readonly description: string;
   readonly isDefault: boolean;
+}
+
+/** Business routing tiers; qualification and a customer's urgency flag are independent. */
+export type WorkCategory = 'emergency' | 'connection' | 'service';
+
+/** Canonical public work catalogue used by request forms and import review. */
+export interface WorkTypeView {
+  readonly code: string;
+  readonly title: string;
+  readonly category: WorkCategory;
+  readonly categoryTitle: string;
+  readonly serviceDurationSec: number;
+  readonly requiredSkill: 'local' | 'connection' | 'emergency';
 }
 
 export interface RequestView {
@@ -36,6 +77,8 @@ export interface RequestView {
   readonly requiredEquipment: EquipmentType | null;
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
+  readonly workCategory?: WorkCategory;
+  readonly receivedAt?: number | null;
   readonly requiredSkill: string;
   readonly normProfileCode?: string;
   readonly normativeTravelDurationSec?: number;
@@ -181,7 +224,13 @@ export interface EngineerDayView {
 
 export interface PlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff' | 'delivery' | 'office_pickup';
+  readonly logistics?: {
+    readonly logistics_id: string;
+    readonly kind: 'donor_delivery' | 'office_pickup';
+    readonly request_id: string;
+    readonly equipment_type: 'router' | 'set_top_box' | 'smart_speaker';
+  } | null;
   /** Router handoff metadata is snake_case to match the core result contract. */
   readonly handoff?: {
     readonly handoff_id: string;
@@ -327,6 +376,7 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedPriorityVersion?: string;
   readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
@@ -377,6 +427,8 @@ export interface DispatchPlanResponse {
 }
 
 export interface DashboardSnapshot {
+  /** New ordinary arrivals stay unassigned without automatic replanning; default false. */
+  readonly ordinaryReplanningDisabled?: boolean;
   readonly workDate: string;
   readonly timeZone: 'Europe/Moscow';
   readonly nowAt: number;
@@ -536,6 +588,85 @@ export interface PolicyComparisonResponse {
 
 export type DataUploadMode = 'new_region' | 'append_requests';
 
+/** Canonical columns recognised by the tabular import review; indices are zero-based. */
+export type TabularField =
+  | 'externalId'
+  | 'addressText'
+  | 'lat'
+  | 'lon'
+  | 'workType'
+  | 'workCategory'
+  | 'duration'
+  | 'windowStart'
+  | 'windowEnd'
+  | 'priority'
+  | 'requiredSkill'
+  | 'brigade'
+  | 'transportType'
+  | 'requiredTransport';
+
+/** Bounded source bytes and explicit parsing choices; analysis never imports business data. */
+export interface TabularFileInput {
+  readonly fileName: string;
+  readonly payloadBase64: string;
+  readonly sheet?: number;
+  readonly encoding?: 'auto' | 'utf8' | 'windows1251' | 'utf16le';
+  readonly delimiter?: 'auto' | ',' | ';' | '\t' | '|';
+  readonly headerRow?: number;
+}
+
+/** Source rows retain parsed record numbers for diagnostics and explicit correction. */
+export interface TabularAnalysis {
+  readonly sourceHash: string;
+  readonly format: 'csv' | 'tsv' | 'xlsx';
+  readonly encoding: string;
+  readonly delimiter: string | null;
+  readonly sheetNames: string[];
+  readonly selectedSheet: number;
+  readonly headerRow: number;
+  readonly headers: string[];
+  readonly rows: Array<{ readonly rowNumber: number; readonly values: string[] }>;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly missing: Array<{ readonly field: TabularField; readonly count: number }>;
+  readonly officeAddress: string | null;
+  readonly notices: string[];
+  readonly durationUnit: 'minutes' | 'seconds';
+}
+
+/** Dispatcher-approved missing-value defaults and cell corrections; no silent row exclusions. */
+export interface TabularCompletionOptions {
+  readonly mode: DataUploadMode;
+  readonly region: string;
+  readonly workDate: string;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly defaults: Partial<Record<TabularField, string>>;
+  readonly durationUnit: 'minutes' | 'seconds';
+  readonly depot: { readonly addressText: string; readonly lat?: number; readonly lon?: number };
+  readonly engineers: {
+    readonly count: number;
+    readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+    readonly skills: Array<'local' | 'connection' | 'emergency'>;
+    readonly shiftStart: string;
+    readonly shiftEnd: string;
+  };
+  readonly edits: Array<{
+    readonly rowNumber: number;
+    readonly field: TabularField;
+    readonly value: string;
+  }>;
+}
+
+/** Either a complete canonical package or actionable cell errors; neither outcome applies a plan. */
+export interface TabularConversion {
+  readonly file: DataUploadFile | null;
+  readonly issues: Array<{
+    readonly rowNumber: number | null;
+    readonly field: TabularField | 'depot' | 'engineers' | 'workDate';
+    readonly message: string;
+  }>;
+  readonly notices: string[];
+}
+
 export interface DataUploadRequest {
   readonly externalId: string;
   readonly addressText: string;
@@ -549,6 +680,10 @@ export interface DataUploadRequest {
   readonly requiredTransport?: 'car' | 'walk' | 'bike' | 'transit';
   readonly requiredEquipment?: EquipmentType;
   readonly workType?: string;
+  /** Required for an unknown named work type; known types use the canonical catalogue. */
+  readonly workCategory?: WorkCategory;
+  /** Actual occurrence/receipt in source time; absent means known from the day's start. */
+  readonly receivedAt?: number;
 }
 
 export interface DataUploadEngineer {

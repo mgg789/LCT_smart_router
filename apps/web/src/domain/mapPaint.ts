@@ -2,6 +2,8 @@
 export const MAP_INK = '#272930';
 export const MAP_MUTED = '#838383';
 export const MAP_BEE = '#FFC72C';
+/** Brand emergency color, matching the figma-danger UI token. */
+export const MAP_EMERGENCY = '#E23B3B';
 export const MAP_CANVAS = '#F1F1F1';
 export const MAP_LUNCH_STROKE = '#EC6A26';
 export const MAP_LUNCH_FILL = '#E2B6A5';

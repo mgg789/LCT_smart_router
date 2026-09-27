@@ -4,6 +4,8 @@ import type { HandoffView, LiveRouteProgress } from '../api/live';
 import { DayMap } from '../components/DayMap';
 import type { RegionSelection } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
+import { t } from '../i18n';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import {
   type EngineerCard,
@@ -12,12 +14,17 @@ import {
   routeStopStatusLabel,
   truncateEnd,
 } from './fixtures';
+import { useManualLunchEdit } from './ManualPlanning';
 import { PlanHistoryMap } from './PlanHistoryMap';
+import type { PlanHistorySelection } from './PlanHistorySelector';
 import { FigmaText } from './primitives';
 import { RegionSwitch } from './RegionSwitch';
 import { routeProgressMarker } from './routeProgress';
 import { WeatherBadge } from './WeatherBadge';
 
+const ROUTE_CARD_LEFT = 623;
+const ROUTE_CARD_TOP = 768;
+const ROUTE_CARD_WIDTH = 751;
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
 const ROUTE_DOT_SIZE = 20;
@@ -29,9 +36,8 @@ const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 export function MapCard({
   snapshot,
   previousPlan,
-  canRestore,
-  restoreBusy,
-  onRestore,
+  historyOpen,
+  historySelection,
   selectedEngineerId,
   selectedRequestId,
   progressByEngineer,
@@ -50,9 +56,8 @@ export function MapCard({
 }: {
   snapshot: ReturnType<typeof useDashboard>['snapshot'];
   previousPlan: ReturnType<typeof useDashboard>['previousPlan'];
-  canRestore: boolean;
-  restoreBusy: boolean;
-  onRestore: () => void;
+  historyOpen: boolean;
+  historySelection: PlanHistorySelection;
   selectedEngineerId: string | null;
   selectedRequestId: string | null;
   progressByEngineer: NonNullable<Parameters<typeof DayMap>[0]['progressByEngineer']>;
@@ -80,9 +85,8 @@ export function MapCard({
         {snapshot ? (
           <PlanHistoryMap
             previous={previousPlan}
-            canRestore={canRestore}
-            busy={restoreBusy}
-            onRestore={onRestore}
+            historyOpen={historyOpen}
+            historySelection={historySelection}
             snapshot={snapshot}
             selectedEngineerId={selectedEngineerId}
             selectedRequestId={selectedRequestId}
@@ -93,7 +97,7 @@ export function MapCard({
           />
         ) : (
           <motion.img
-            alt="Карта Москвы"
+            alt={t('figma-dashboard.MapRoute.80abf50de8')}
             src={FIGMA_ASSETS.map}
             className="absolute inset-0 size-full max-w-none object-cover"
             initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
@@ -132,6 +136,8 @@ export function RouteCard({
   handoffs: readonly HandoffView[];
   engineerNames: ReadonlyMap<string, string>;
 }) {
+  // Named apart from the drag delta below, which is also called `dx`.
+  const { dx: spareX, dy: spareY } = useArtboardStretch();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
   const liveMarker = routeProgressMarker(engineer.stops, progress);
@@ -234,9 +240,14 @@ export function RouteCard({
 
   return (
     <motion.section
-      className={`absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white ${
+      className={`absolute h-[279px] overflow-hidden rounded-[20px] bg-white ${
         grabbing ? 'cursor-grabbing select-none' : thumb.visible ? 'cursor-grab' : ''
       }`}
+      style={{
+        left: ROUTE_CARD_LEFT,
+        top: ROUTE_CARD_TOP + spareY,
+        width: ROUTE_CARD_WIDTH + spareX,
+      }}
       initial={motionOn ? { opacity: 0, y: 20 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={motionOn ? { opacity: 0, y: 28 } : undefined}
@@ -258,9 +269,10 @@ export function RouteCard({
         >
           <FigmaText
             className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
-            title={`Маршрут ${engineer.name}`}
+            title={t('figma-dashboard.MapRoute.d097c7ece9', { value0: engineer.name })}
           >
-            Маршрут {truncateEnd(engineer.name, 22)}
+            {t('figma-dashboard.MapRoute.7a9d2bb1c1')}
+            {truncateEnd(engineer.name, 22)}
           </FigmaText>
           <FigmaText className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {engineer.routeUpdated}
@@ -294,6 +306,7 @@ export function RouteCard({
                   <RouteStopTopic
                     key={`${engineer.id}-${stop.requestId ?? stop.place}-${stop.time}`}
                     stop={stop}
+                    engineerId={engineer.id}
                     index={index}
                     motionOn={motionOn}
                     onSelectRequest={(requestId) => {
@@ -314,11 +327,11 @@ export function RouteCard({
       {selectedHandoff ? (
         <div className="absolute left-[30px] right-[30px] top-[158px] z-20 rounded-[16px] border-2 border-[#2563EB] bg-white px-[16px] py-[10px] text-[14px] text-figma-ink shadow-lg">
           <div className="flex items-center justify-between gap-3">
-            <strong>Передача оборудования</strong>
+            <strong>{t('figma-dashboard.MapRoute.31f207a99a')}</strong>
             <button
               type="button"
               onClick={() => setSelectedHandoff(null)}
-              aria-label="Закрыть детали передачи"
+              aria-label={t('figma-dashboard.MapRoute.c4ac1a7833')}
             >
               ×
             </button>
@@ -338,25 +351,31 @@ export function RouteCard({
 
 function RouteStopTopic({
   stop,
+  engineerId,
   index,
   motionOn,
   onSelectRequest,
   onSelectHandoff,
 }: {
   stop: RouteStop;
+  engineerId: string;
   index: number;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
   onSelectHandoff: (handoffId: string) => void;
 }) {
-  const clickable = Boolean(stop.requestId || stop.handoffId);
+  const editLunch = useManualLunchEdit(engineerId);
+  const clickable = Boolean(
+    stop.requestId || stop.handoffId || (stop.kind === 'lunch' && editLunch),
+  );
   const handoff = stop.kind === 'handoff';
   return (
     <motion.button
       type="button"
       disabled={!clickable}
       onClick={() => {
-        if (stop.handoffId) onSelectHandoff(stop.handoffId);
+        if (stop.kind === 'lunch' && editLunch) editLunch();
+        else if (stop.handoffId) onSelectHandoff(stop.handoffId);
         else if (stop.requestId) onSelectRequest(stop.requestId);
       }}
       className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
@@ -366,7 +385,7 @@ function RouteStopTopic({
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB]' : stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
+        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB]' : stop.failed || stop.status === t('figma-dashboard.MapRoute.8a09723017') ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
@@ -377,14 +396,14 @@ function RouteStopTopic({
       </p>
       <FigmaText
         className={`absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] ${
-          stop.failed || stop.status === 'отменено'
+          stop.failed || stop.status === t('figma-dashboard.MapRoute.8a09723017')
             ? 'text-figma-cancel uppercase'
             : isCompletedStop(stop.status)
               ? 'text-figma-done'
               : 'text-figma-hint'
         }`}
       >
-        {handoff ? 'ПЕРЕДАЧА' : routeStopStatusLabel(stop.status)}
+        {handoff ? t('figma-dashboard.MapRoute.a9ec55ec71') : routeStopStatusLabel(stop.status)}
       </FigmaText>
     </motion.button>
   );
@@ -392,9 +411,13 @@ function RouteStopTopic({
 
 function handoffItemsLabel(items: HandoffView['items']): string {
   const labels = [
-    items.router ? `роутер ×${items.router}` : null,
-    items.set_top_box ? `ТВ-приставка ×${items.set_top_box}` : null,
-    items.smart_speaker ? `умная колонка ×${items.smart_speaker}` : null,
+    items.router ? t('figma-dashboard.MapRoute.1e9031add0', { value0: items.router }) : null,
+    items.set_top_box
+      ? t('figma-dashboard.MapRoute.ec5d45a6b4', { value0: items.set_top_box })
+      : null,
+    items.smart_speaker
+      ? t('figma-dashboard.MapRoute.c2d1794b26', { value0: items.smart_speaker })
+      : null,
   ].filter((item): item is string => item !== null);
-  return labels.join(', ') || 'Оборудование не указано';
+  return labels.join(', ') || t('figma-dashboard.MapRoute.3c5ed8e6d0');
 }

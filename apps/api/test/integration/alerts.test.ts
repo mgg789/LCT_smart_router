@@ -1,3 +1,7 @@
+import {
+  isWindowConfirmationRequired,
+  requireWindowConfirmation,
+} from '../../src/orchestrator/requests/window-confirmation';
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -83,6 +87,141 @@ describe('dispatcher alert lifecycle', () => {
     await prisma.$disconnect();
     mock.timers.reset();
     await app?.close();
+  });
+
+  it('finishes a requested AUTO resolution before the policy warning expires once AUTO is applied', async () => {
+    const previous = await prisma.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+    const now = Math.floor(Date.now() / 1000);
+    const plan = await prisma.appliedPlan.create({
+      data: { origin: 'auto', planAsOf: BigInt(now), appliedAt: BigInt(now) },
+    });
+    const id = randomUUID();
+    ids.push(id);
+    try {
+      await prisma.appliedPlanCurrent.upsert({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', planId: plan.id, updatedAt: BigInt(now) },
+        update: { planId: plan.id },
+      });
+      await prisma.alert.create({
+        data: {
+          id,
+          dedupKey: `system:plan_degraded:policy:${id}`,
+          code: 'plan_degraded',
+          severity: 'warning',
+          engineerIds: [],
+          requestIds: [],
+          reasons: { expiresAt: now + 86400 },
+          createdAt: BigInt(now),
+          workDate: date,
+          resolutionAction: 'restore_auto',
+        },
+      });
+      await alerts.list(date);
+      const resolved = await prisma.alert.findUniqueOrThrow({ where: { id } });
+      assert.notEqual(resolved.resolvedAt, null);
+      assert.equal(resolved.resolutionAction, 'restore_auto');
+    } finally {
+      if (previous)
+        await prisma.appliedPlanCurrent.update({
+          where: { id: 'singleton' },
+          data: { planId: previous.planId },
+        });
+      else await prisma.appliedPlanCurrent.deleteMany({ where: { planId: plan.id } });
+      await prisma.appliedPlan.delete({ where: { id: plan.id } });
+    }
+  });
+
+  it('requires a revision-bound confirmation to replace request priority and releases only the selected hold', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const key = `policy.request-priority:${date}`;
+    await prisma.appState.deleteMany({ where: { key } });
+    const rows: Array<{ request: { id: string }; issue: { id: string } }> = [];
+    for (let index = 0; index < 2; index += 1) {
+      const request = await prisma.request.create({
+        data: {
+          arrivalOrder: 30000 + index,
+          addressText: 'Priority regression',
+          lat: 55.75,
+          lon: 37.6,
+          needsGeocoding: false,
+          normProfileCode: 'local',
+          normativeTravelDurationSec: 600,
+          technicalDurationSec: 600,
+          documentationDurationSec: 300,
+          serviceDurationSec: 900,
+          windowStartAt: BigInt(now),
+          windowEndAt: BigInt(now + 7200),
+          requiredSkill: 'local',
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          routingDeferredUntil: BigInt(now + 86400),
+          origin: 'manual',
+          createdAt: BigInt(now),
+          updatedAt: BigInt(now),
+        },
+      });
+      requestIds.push(request.id);
+      const issue = await prisma.alert.create({
+        data: {
+          code: 'unassigned',
+          severity: 'error',
+          engineerIds: [],
+          requestIds: [request.id],
+          reasons: [],
+          createdAt: BigInt(now),
+          workDate: date,
+        },
+      });
+      ids.push(issue.id);
+      rows.push({ request, issue });
+    }
+    const resolve = async (index: number, version?: string) => {
+      const operationId = randomUUID();
+      opIds.push(operationId);
+      const row = rows[index];
+      assert.ok(row);
+      const input = {
+        action: 'prioritize' as const,
+        ...(version ? { expectedPriorityVersion: version } : {}),
+      };
+      return operations.execute(
+        { operationId, actor, action: 'alert.resolve', targetRef: row.issue.id, payload: input },
+        (context) => alerts.resolve(context, row.issue.id, input),
+      );
+    };
+    try {
+      await resolve(0);
+      const first = await alerts.priority(date);
+      assert.ok(first);
+      assert.equal(first.requestId, rows[0]?.request.id);
+      assert.equal(
+        (await prisma.request.findUniqueOrThrow({ where: { id: rows[0]?.request.id } }))
+          .routingDeferredUntil,
+        null,
+      );
+      assert.notEqual(
+        (await prisma.request.findUniqueOrThrow({ where: { id: rows[1]?.request.id } }))
+          .routingDeferredUntil,
+        null,
+      );
+      await assert.rejects(
+        resolve(1),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+      );
+      await resolve(1, first.version);
+      assert.equal((await alerts.priority(date))?.requestId, rows[1]?.request.id);
+      await assert.rejects(
+        resolve(0, first.version),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+      );
+      assert.equal(
+        (await prisma.alert.findUniqueOrThrow({ where: { id: rows[1]?.issue.id } })).resolvedAt,
+        null,
+      );
+    } finally {
+      await prisma.appState.deleteMany({ where: { key } });
+    }
   });
 
   it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
@@ -311,13 +450,27 @@ describe('dispatcher alert lifecycle', () => {
       },
     });
     ids.push(issue.id);
+    let windowChangeConfirmation: string | undefined;
+    try {
+      requireWindowConfirmation(actor, {
+        requestId: request.id,
+        version: request.version,
+        previousStartAt: Number(request.windowStartAt),
+        previousEndAt: Number(request.windowEndAt),
+        windowStartAt: Number(request.windowStartAt) + 86400,
+        windowEndAt: Number(request.windowEndAt) + 86400,
+      });
+    } catch (error) {
+      assert.ok(isWindowConfirmationRequired(error));
+      windowChangeConfirmation = String(error.details.confirmation);
+    }
     const invoke = () => {
       const operationId = randomUUID();
       opIds.push(operationId);
       return operations.execute(
         {
           operationId,
-          actor,
+          actor: { ...actor, windowChangeConfirmation },
           action: 'alert.resolve',
           targetRef: issue.id,
           payload: { action: 'reschedule' },
@@ -410,8 +563,32 @@ describe('dispatcher alert lifecycle', () => {
       windowStartAt: Number(now) + 600,
       windowEndAt: Number(now) + 1200,
     };
+    let windowChangeConfirmation: string | undefined;
+    await assert.rejects(
+      () =>
+        operations.execute(
+          { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+          (context) => alerts.resolve(context, first.id, input),
+        ),
+      (error: unknown) => {
+        assert.ok(isWindowConfirmationRequired(error));
+        windowChangeConfirmation = String(error.details.confirmation);
+        return true;
+      },
+    );
+    assert.equal(await prisma.operation.count({ where: { operationId } }), 0);
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).version,
+      request.version,
+    );
     await operations.execute(
-      { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+      {
+        operationId,
+        actor: { ...actor, windowChangeConfirmation },
+        action: 'alert.resolve',
+        targetRef: first.id,
+        payload: input,
+      },
       (context) => alerts.resolve(context, first.id, input),
     );
     const staleId = randomUUID();

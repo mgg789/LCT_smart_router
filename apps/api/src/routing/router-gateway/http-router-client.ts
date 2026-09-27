@@ -1,9 +1,12 @@
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
+import { routerFetch } from '../../common/observability/router-fetch';
 import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
   COMPARISON_STRATEGIES,
+  type LogisticsProposal,
+  type LogisticsProposalInput,
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
@@ -48,6 +51,24 @@ const predictCalibrationSchema = z.object({
         travel_multiplier: z.number(),
       }),
     ),
+    weather_multipliers: z
+      .array(
+        z.object({
+          region: z.string().min(1),
+          transport_type: z.enum(['car', 'walk', 'bike', 'transit']),
+          kind: z.enum(['rain', 'snow', 'storm']),
+          multiplier: z.number().min(0.5).max(3),
+          source: z.literal('learned'),
+          observations: z.number().int().nonnegative(),
+          days: z.number().int().nonnegative(),
+          baseline_travel_error: z.number().nonnegative(),
+          candidate_travel_error: z.number().nonnegative(),
+          baseline_brier: z.number().min(0).max(1),
+          candidate_brier: z.number().min(0).max(1),
+          validation_version: z.string().min(1),
+        }),
+      )
+      .default([]),
   }),
 });
 
@@ -246,6 +267,38 @@ export class HttpRouterClient extends RouterClient {
       edges: parsed.edges,
     };
   }
+  /** Validate a frozen-route equipment witness without publishing a new task. */
+  override async proposeLogistics(input: LogisticsProposalInput): Promise<LogisticsProposal> {
+    const raw = await this.fetchJson(
+      '/v1/logistics-proposal',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+      8000,
+    );
+    return z
+      .object({
+        status: z.enum(['available', 'none']),
+        router_context_version: z.string(),
+        proposal: z
+          .object({
+            kind: z.literal('donor_delivery'),
+            donor_engineer_id: z.string(),
+            at: z.number().int(),
+            location: z.object({ lat: z.number(), lon: z.number() }),
+            travel_delta_sec: z.number().int(),
+            distance_delta_m: z.number().int(),
+            wait_delta_sec: z.number().int(),
+            occupied_from_at: z.number().int(),
+            occupied_until_at: z.number().int(),
+          })
+          .nullable(),
+      })
+      .parse(raw);
+  }
+
   /** Uses canonical Router travel and scheduling, without publication side effects. */
   override async proposeWindow(input: WindowProposalInput): Promise<WindowProposal> {
     const raw = await this.fetchJson(
@@ -588,7 +641,7 @@ export class HttpRouterClient extends RouterClient {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     timeout.unref();
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await routerFetch(`${this.baseUrl}${path}`, {
         ...init,
         headers: { accept: 'application/json' },
         ...(init.headers

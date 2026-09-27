@@ -1,13 +1,14 @@
 import type { DashboardSnapshot, PlanRouteView, RequestView } from '../api/types';
+import { t } from '../i18n';
 
 export const ALL_REGIONS = 'all' as const;
 export type RegionSelection = typeof ALL_REGIONS | string;
 
 const REGION_STYLES: Record<string, { readonly label: string; readonly color: string }> = {
-  east: { label: 'Восточный округ', color: '#E5B900' },
-  southeast: { label: 'Юго-Восточный округ', color: '#159A8C' },
-  south_central: { label: 'Южный и Центральный округа', color: '#7C5CDB' },
-  moscow: { label: 'Москва', color: '#E5B900' },
+  east: { label: t('domain.regions.b3cdc8693c'), color: '#E5B900' },
+  southeast: { label: t('domain.regions.5daad636bd'), color: '#159A8C' },
+  south_central: { label: t('domain.regions.552107f09c'), color: '#7C5CDB' },
+  moscow: { label: t('domain.regions.eb63f79a22'), color: '#E5B900' },
 };
 
 const FALLBACK_PALETTE = ['#2B6CB0', '#C05621', '#2F855A', '#B83280', '#6B46C1', '#0F766E'];
@@ -26,7 +27,7 @@ export function regionStyle(region: string | null): {
   readonly color: string;
 } {
   if (!region) {
-    return { label: 'Регион не указан', color: '#7A7E83' };
+    return { label: t('domain.regions.8b8d3a265b'), color: '#7A7E83' };
   }
   return REGION_STYLES[region] ?? { label: humanizeRegion(region), color: hashColor(region) };
 }

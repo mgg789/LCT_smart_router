@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NAVIX — Руководство диспетчера</title>
+<style>
+  /* ==== NAVIX brand fonts (same as apps/web) ==== */
+  @font-face {
+    font-family: "Murs Gothic";
+    src: url("assets/fonts/mursgothic-widedark.otf") format("opentype");
+    font-weight: 800;
+    font-style: normal;
+  }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Medium.woff2") format("woff2"); font-weight: 500; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; font-style: normal; }
+  @font-face { font-family: "Inter"; src: url("assets/fonts/Inter-ExtraBold.woff2") format("woff2"); font-weight: 800; font-style: normal; }
+
+  :root {
+    --canvas: #f1f1f1;
+    --ink: #272930;
+    --bee: #ffc72c;
+    --muted: #727478;
+    --dim: #555555;
+    --card: #ffffff;
+    --line: rgba(39, 41, 48, 0.14);
+    --ok: #2f9e44;
+    --warn-bg: #fff3d6;
+    --bad: #e23b3b;
+  }
+
+  @page { size: A4; margin: 0; }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--canvas);
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    color: var(--ink);
+    font-size: 9.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    background: var(--canvas);
+    position: relative;
+    padding: 14mm 16mm 15mm 16mm;
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+  }
+  .page:last-child { page-break-after: auto; }
+  .page > * { flex: 0 0 auto; }
+
+  .kicker {
+    display: inline-block;
+    align-self: flex-start;
+    background: var(--bee);
+    color: var(--ink);
+    font-weight: 700;
+    font-size: 8pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border-radius: 999px;
+    padding: 2.2mm 4.5mm;
+  }
+  h1 {
+    font-weight: 800;
+    font-size: 19.5pt;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    margin: 4mm 0 0 0;
+  }
+  .lead {
+    font-size: 10pt;
+    font-weight: 500;
+    color: var(--dim);
+    margin: 3mm 0 0 0;
+    line-height: 1.5;
+  }
+  .murs { font-family: "Murs Gothic", "Inter", sans-serif; font-weight: 800; letter-spacing: 0.02em; }
+
+  .b-dark, .b-yellow {
+    display: inline-block;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 8.5pt;
+    padding: 1.9mm 5mm;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .b-dark { background: var(--ink); color: #fff; }
+  .b-yellow { background: var(--bee); color: var(--ink); }
+  .chip {
+    display: inline-block;
+    background: var(--ink); color: #fff;
+    font-size: 8pt; font-weight: 600;
+    border-radius: 999px; padding: 1.6mm 3.6mm;
+    white-space: nowrap;
+  }
+
+  .callout {
+    background: var(--card);
+    border-radius: 6mm;
+    padding: 4mm 5mm;
+    margin-top: 4mm;
+    border-left: 2mm solid var(--bee);
+    page-break-inside: avoid;
+  }
+  .callout .c-title { font-weight: 800; font-size: 9.5pt; margin: 0 0 1mm 0; }
+  .callout p { margin: 0; color: var(--dim); font-size: 9pt; }
+  .callout.dark { background: var(--ink); border-left-color: var(--bee); }
+  .callout.dark .c-title { color: var(--bee); }
+  .callout.dark p { color: rgba(255,255,255,0.88); }
+
+  .step { display: flex; gap: 4mm; margin-top: 4.2mm; page-break-inside: avoid; }
+  .step-num {
+    flex: 0 0 auto;
+    width: 9mm; height: 9mm;
+    background: var(--ink);
+    border-radius: 3mm;
+    color: var(--bee);
+    font-family: "Murs Gothic", "Inter", sans-serif;
+    font-size: 12pt;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .step-body { min-width: 0; }
+  .step-body .s-title { font-weight: 700; font-size: 10pt; }
+  .step-body p { margin: 0.7mm 0 0 0; color: var(--dim); font-size: 9pt; }
+
+  ul.app-list { list-style: none; margin: 3.5mm 0 0 0; padding: 0; }
+  ul.app-list li {
+    position: relative;
+    padding-left: 6mm;
+    margin-top: 2.8mm;
+    font-size: 9pt;
+    color: var(--ink);
+  }
+  ul.app-list li::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 1.6mm;
+    width: 2.8mm; height: 2.8mm;
+    border-radius: 1mm;
+    background: var(--bee);
+  }
+  ul.app-list li b { font-weight: 700; }
+  ul.app-list li .m { color: var(--dim); }
+
+  .card {
+    background: var(--card);
+    border-radius: 6mm;
+    padding: 4.5mm 5.5mm;
+    page-break-inside: avoid;
+  }
+
+  .cols { display: flex; gap: 7mm; }
+  .footer {
+    margin-top: auto;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.5pt;
+    font-weight: 500;
+    color: var(--muted);
+    padding-top: 5mm;
+  }
+  .footer .fnum { font-weight: 700; color: var(--ink); }
+
+  /* ==== UI mocks ==== */
+  .rail {
+    width: 34mm;
+    background: var(--ink);
+    border-radius: 5mm;
+    padding: 3mm 0;
+    display: flex; flex-direction: column; align-items: center; gap: 1.2mm;
+  }
+  .rail-item {
+    width: 28mm;
+    border-radius: 2.5mm;
+    color: rgba(255,255,255,0.75);
+    font-size: 7.5pt; font-weight: 600;
+    padding: 1.6mm 3mm;
+    text-align: center;
+  }
+  .rail-item.on { background: var(--bee); color: var(--ink); }
+
+  .switch {
+    flex: 0 0 auto;
+    width: 9.5mm; height: 5.2mm;
+    border-radius: 999px;
+    background: #d7d8da;
+    position: relative;
+  }
+  .switch::after {
+    content: "";
+    position: absolute; top: 0.6mm; left: 0.6mm;
+    width: 4mm; height: 4mm;
+    border-radius: 999px; background: #fff;
+  }
+  .switch.on { background: var(--bee); }
+  .switch.on::after { left: auto; right: 0.6mm; }
+
+  .switch-row {
+    display: flex; align-items: flex-start; gap: 3.5mm;
+    background: var(--card); border-radius: 4.5mm;
+    padding: 3mm 4mm; margin-top: 2.6mm;
+    page-break-inside: avoid;
+  }
+  .switch-row .sw-body { min-width: 0; }
+  .switch-row .sw-name { font-weight: 700; font-size: 9pt; }
+  .switch-row p { margin: 0.6mm 0 0 0; font-size: 8.5pt; color: var(--dim); line-height: 1.4; }
+
+  .radio-row {
+    display: flex; align-items: center; gap: 3mm;
+    background: var(--card); border-radius: 3.5mm;
+    padding: 2.4mm 3.5mm; margin-top: 1.8mm;
+    font-size: 9pt; font-weight: 600;
+    page-break-inside: avoid;
+  }
+  .radio-row .dot { width: 3.4mm; height: 3.4mm; border-radius: 999px; border: 0.55mm solid var(--ink); flex: 0 0 auto; }
+  .radio-row.sel { background: var(--ink); color: #fff; }
+  .radio-row.sel .dot { border-color: var(--bee); background: var(--bee); }
+  .radio-row .r-note { margin-left: auto; font-size: 7.5pt; font-weight: 500; color: var(--muted); }
+  .radio-row.sel .r-note { color: rgba(255,255,255,0.7); }
+
+  .tiles { display: flex; flex-wrap: wrap; gap: 2.6mm; margin-top: 3.5mm; }
+  .tile {
+    flex: 1 1 47mm;
+    background: var(--card); border-radius: 4.5mm;
+    padding: 3mm 3.5mm;
+    page-break-inside: avoid;
+  }
+  .tile .t-num { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 14pt; }
+  .tile .t-name { font-size: 8pt; font-weight: 600; color: var(--muted); margin-top: 0.5mm; }
+
+  .band {
+    display: inline-block;
+    border-radius: 999px;
+    font-size: 8pt; font-weight: 700;
+    padding: 1.4mm 3.6mm;
+    white-space: nowrap;
+  }
+  .band.green { background: #daffe6; color: #0a7347; }
+  .band.yellow { background: var(--bee); color: var(--ink); }
+  .band.red { background: #ffd9dc; color: #b2162c; }
+
+  .qa { page-break-inside: avoid; margin-top: 4.5mm; }
+  .qa .q { font-weight: 800; font-size: 10.5pt; display: flex; gap: 3mm; }
+  .qa .q .qm { font-family: "Murs Gothic", "Inter", sans-serif; color: var(--ink); font-size: 12pt; flex: 0 0 auto; }
+  .qa p { margin: 1.4mm 0 0 0; color: var(--dim); font-size: 9pt; padding-left: 8.5mm; }
+  .qa p b { color: var(--ink); }
+
+  .act-grid { display: flex; flex-wrap: wrap; gap: 2mm; margin-top: 3mm; }
+  .act {
+    background: var(--card); border-radius: 999px;
+    font-size: 8pt; font-weight: 600; color: var(--ink);
+    padding: 1.6mm 3.6mm;
+  }
+  .act.ai { background: var(--bee); }
+
+  .alert-mock {
+    background: var(--card); border-radius: 5mm;
+    padding: 3.5mm 4.5mm; margin-top: 3mm;
+    page-break-inside: avoid;
+  }
+  .alert-mock .a-title { font-weight: 800; font-size: 9.5pt; display: flex; align-items: center; gap: 3mm; }
+  .alert-mock p { margin: 1mm 0 0 0; font-size: 8.5pt; color: var(--dim); }
+
+  /* ==== cover ==== */
+  .cover-top { display: flex; align-items: center; gap: 3.5mm; }
+  .cover-top img { width: 9mm; height: 9mm; }
+  .cover-top .t { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11pt; letter-spacing: 0.06em; }
+  .cover-mid { margin-top: 32mm; display: flex; flex-direction: column; align-items: flex-start; }
+  .cover-logo { width: 30mm; height: 30mm; margin-left: 1mm; }
+  .cover-word { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 34pt; letter-spacing: 0.04em; margin-top: 8mm; }
+  .cover-title { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 40pt; line-height: 1.06; letter-spacing: 0.01em; margin-top: 2.5mm; max-width: 165mm; }
+  .cover-sub { font-size: 11pt; font-weight: 500; color: var(--dim); margin-top: 8mm; max-width: 132mm; line-height: 1.55; }
+  .cover-chips { display: flex; gap: 3mm; margin-top: 8mm; }
+  .cover-bottom { margin-top: auto; }
+  .stripes { display: flex; gap: 4.5mm; transform: rotate(-45deg); margin-left: -12mm; margin-bottom: 4mm; }
+  .stripes .bar { background: var(--ink); border-radius: 999px; }
+  .stripes .bar.y { background: var(--bee); }
+  .cover-note { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 4mm; font-size: 8.5pt; font-weight: 500; color: var(--muted); }
+
+  /* ==== TOC ==== */
+  .toc-row { display: flex; align-items: baseline; gap: 3mm; margin-top: 3.8mm; }
+  .toc-num { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11.5pt; color: var(--ink); width: 7.5mm; flex: 0 0 auto; }
+  .toc-name { font-weight: 600; font-size: 10.5pt; white-space: nowrap; }
+  .toc-dots { flex: 1 1 auto; border-bottom: 0.5mm dotted rgba(39,41,48,0.35); transform: translateY(-1mm); }
+  .toc-pg { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 11pt; }
+
+  .memo { display: flex; gap: 3.5mm; margin-top: 4.5mm; }
+  .memo-col { flex: 1 1 0; background: #fff; border-radius: 5.5mm; padding: 4mm 4.5mm; }
+  .memo-col .m-name { font-family: "Murs Gothic", "Inter", sans-serif; font-size: 10.5pt; color: var(--ink); }
+  .memo-col p { margin: 1.8mm 0 0 0; font-size: 8.6pt; color: var(--dim); line-height: 1.45; }
+
+  @media screen {
+    html { background: var(--canvas); }
+    body { display: flex; flex-direction: column; align-items: center; gap: 24px; padding: 24px 0; }
+    .page { box-shadow: 0 6px 32px rgba(39,41,48,0.18); transform-origin: top center; transform: scale(1); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================= PAGE 1 · COVER ================= -->
+<div class="page">
+  <div class="cover-top">
+    <img src="assets/logo-dark.png" alt="">
+    <span class="t">NAVIX</span>
+  </div>
+  <div class="cover-mid">
+    <img class="cover-logo" src="assets/logo-dark.png" alt="">
+    <div class="cover-word">NAVIX</div>
+    <div class="cover-title">Руководство диспетчера</div>
+    <p class="cover-sub">Инструкция для работы с дашбордом: план дня, политики, инженеры, алерты и AI-ассистент. Составлено так, чтобы можно было работать с первого дня.</p>
+    <div class="cover-chips">
+      <span class="chip">Для диспетчеров</span>
+      <span class="chip" style="background:#fff; color:var(--ink);">Выпуск 1.0 · сентябрь 2026</span>
+    </div>
+  </div>
+  <div class="cover-bottom">
+    <div class="stripes">
+      <span class="bar" style="width: 34mm; height: 7mm;"></span>
+      <span class="bar y" style="width: 62mm; height: 7mm;"></span>
+      <span class="bar" style="width: 46mm; height: 7mm;"></span>
+      <span class="bar" style="width: 18mm; height: 7mm;"></span>
+    </div>
+    <div class="cover-note">
+      <span>Дашборд диспетчера</span>
+      <span>navix · система умных маршрутов</span>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PAGE 2 · WELCOME + TOC ================= -->
+<div class="page">
+  <span class="kicker">Знакомство</span>
+  <h1>Добро пожаловать в NAVIX</h1>
+  <p class="lead">NAVIX — пульт диспетчера выездных инженеров. Система строит план дня, следит за движением инженеров по городу и вовремя поднимает алерт, когда решение лучше принять человеку.</p>
+  <p style="margin-top:3.5mm; color:var(--dim);">Это руководство написано для знакомства с дашбордом с нуля. Читать подряд не обязательно: разделы устроены так, чтобы открывать нужный по ходу смены. Сломать план случайным нажатием нельзя — рискованные шаги всегда просят подтверждения, а система объясняет последствия.</p>
+  <p style="margin-top:2.8mm; color:var(--dim);">Если что-то непонятно — спросите AI-ассистента на вкладке «AI». Он объяснит план, подскажет по алерту и поможет с действием.</p>
+
+  <div class="card" style="margin-top:5mm;">
+    <div style="font-weight:800; font-size:10pt;">Как читать это руководство</div>
+    <ul class="app-list" style="margin-top:2.6mm;">
+      <li>Кнопки и переключатели выглядят как в приложении: <span class="b-dark">Метрики плана</span>&nbsp;&nbsp;<span class="b-yellow">Решить с AI</span>, а свитчи — так: <span class="switch on" style="display:inline-block; vertical-align:middle;"></span></li>
+      <li>Заметки «Важно» и «Совет» — то, что стоит запомнить.</li>
+      <li>Названия разделов и кнопок совпадают с интерфейсом дословно.</li>
+    </ul>
+  </div>
+
+  <div style="font-weight:800; font-size:13pt; margin-top:7mm;">Содержание</div>
+  <div class="toc-row"><span class="toc-num">1</span><span class="toc-name">Что где на экране</span><span class="toc-dots"></span><span class="toc-pg">3</span></div>
+  <div class="toc-row"><span class="toc-num">2</span><span class="toc-name">Рабочий день диспетчера</span><span class="toc-dots"></span><span class="toc-pg">4</span></div>
+  <div class="toc-row"><span class="toc-num">3</span><span class="toc-name">Политики и настройки</span><span class="toc-dots"></span><span class="toc-pg">5</span></div>
+  <div class="toc-row"><span class="toc-num">4</span><span class="toc-name">Метрики плана и сравнение политик</span><span class="toc-dots"></span><span class="toc-pg">7</span></div>
+  <div class="toc-row"><span class="toc-num">5</span><span class="toc-name">Инженеры</span><span class="toc-dots"></span><span class="toc-pg">9</span></div>
+  <div class="toc-row"><span class="toc-num">6</span><span class="toc-name">Алерты</span><span class="toc-dots"></span><span class="toc-pg">10</span></div>
+  <div class="toc-row"><span class="toc-num">7</span><span class="toc-name">AI: Консультант и Агент</span><span class="toc-dots"></span><span class="toc-pg">12</span></div>
+  <div class="toc-row"><span class="toc-num">8</span><span class="toc-name">Добавить заявку, аварию, инженера, регион</span><span class="toc-dots"></span><span class="toc-pg">13</span></div>
+  <div class="toc-row"><span class="toc-num">9</span><span class="toc-name">Дополнительные возможности</span><span class="toc-dots"></span><span class="toc-pg">14</span></div>
+  <div class="toc-row"><span class="toc-num">10</span><span class="toc-name">Частые вопросы</span><span class="toc-dots"></span><span class="toc-pg">16</span></div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">2</span></div>
+</div>
+
+<!-- ================= PAGE 3 · SECTION 1 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 1</span>
+  <h1>Что где на экране</h1>
+  <p class="lead">Дашборд состоит из узкой панели-навигации слева, шапки сверху и рабочей области по центру. Разберём каждый элемент.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:0 0 34mm;">
+      <div class="rail">
+        <span class="rail-item on">План дня</span>
+        <span class="rail-item">Заявки</span>
+        <span class="rail-item">Инженеры</span>
+        <span class="rail-item">Алерты</span>
+        <span class="rail-item">Политики</span>
+        <span class="rail-item">Чаты</span>
+        <span class="rail-item">AI</span>
+      </div>
+      <div style="font-size:7.5pt; color:var(--muted); font-weight:500; text-align:center; margin-top:2.5mm;">Панель-навигация слева</div>
+    </div>
+    <div style="flex:1 1 0; min-width:0;">
+      <ul class="app-list" style="margin-top:0;">
+        <li><b>«План дня»</b> — главный экран: колонка инженеров, карта с маршрутами и детали выбранной заявки.</li>
+        <li><b>«Заявки»</b> — все заявки дня списком с окнами, адресами и статусами.</li>
+        <li><b>«Инженеры»</b> — «колесо» профилей: посмотреть, отредактировать, снять со смены.</li>
+        <li><b>«Алерты»</b> — ситуации, требующие вашего решения (раздел 6).</li>
+        <li><b>«Политики»</b> — сравнение стратегий планирования (раздел 4).</li>
+        <li><b>«Чаты»</b> — переписка по передаче дел между сменами.</li>
+        <li><b>«AI»</b> — ассистент в режимах «Консультант» и «Агент» (раздел 7).</li>
+        <li><b>Круглая кнопка внизу панели</b> — «Загрузить данные» с компьютера (раздел 9).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:4.5mm;">
+    <div style="font-weight:800; font-size:10pt;">Шапка справа сверху</div>
+    <ul class="app-list" style="margin-top:2.6mm;">
+      <li><b>«Политика: …»</b> — текущая политика планирования, по нажатию открывается выбор (раздел 3).</li>
+      <li><b>«Метрики плана»</b> — качество текущего плана (раздел 4).</li>
+      <li><b>«+»</b> — добавить заявку, инженера или регион (раздел 8).</li>
+      <li><b>Колокольчик</b> — показать уведомления дня.</li>
+      <li><b>Аватар</b> — меню пользователя: «Настройки», «Прошлый план», «Завершить день», «Выйти» и другие действия (раздел 9).</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <div class="c-title">Приветственный экран</div>
+    <p>При запуске дашборд встречает тёмным экраном NAVIX с датой и числом заявок. Нажмите <b>«Начать рабочий день»</b> — и смена открыта.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">3</span></div>
+</div>
+
+<!-- ================= PAGE 4 · SECTION 2 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 2</span>
+  <h1>Рабочий день диспетчера</h1>
+  <p class="lead">Смена состоит из шести повторяющихся действий. Всё остальное дашборд делает сам.</p>
+
+  <div class="cols" style="margin-top:2mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="step" style="margin-top:0;">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="s-title">Выйдите на смену</div>
+          <p>Нажмите <b>«Начать рабочий день»</b> на приветственном экране. Новый календарный день — новый экран приветствия.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="s-title">Дождитесь плана</div>
+          <p>Маршруты считаются автоматически. Пока идёт расчёт, дашборд показывает «Пересчитываем маршруты», готовый план — тостом «План перестроился».</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="s-title">Проверьте выход инженеров</div>
+          <p>В колонке слева у каждого инженера виден статус выхода: «ВЫШЕЛ», «ожидаем выхода», «НЕ ВЫШЕЛ». Раздел 5 расскажет, что с этим делать.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="s-title">Решайте алерты</div>
+          <p>Открытые ситуации собираются во вкладке «Алерты». Аварии перестраивают план сами; остальное ждёт вашего решения (раздел 6).</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <div class="s-title">Следите за продвижением</div>
+          <p>Карточки инженеров показывают прогресс-бар дня и счётчик «выполнено X из Y», на карте видно движение по маршруту в реальном времени.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <div class="s-title">Сверяйтесь с метриками</div>
+          <p>Кнопка <b>«Метрики плана»</b> показывает надёжность плана на текущий момент (раздел 4). В конце дня — «Завершить день» с итогами (раздел 9).</p>
+        </div>
+      </div>
+    </div>
+    <div style="flex:0 0 72mm; padding-top:1mm;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Статусы инженера в колонке</div>
+        <div style="display:flex; flex-wrap:wrap; gap:2mm; margin-top:2.8mm;">
+          <span class="chip">в работе · 4</span>
+          <span class="chip" style="background:#d7d8da; color:var(--ink);">обед</span>
+          <span class="chip" style="background:#d7d8da; color:var(--ink);">техперерыв</span>
+          <span class="chip" style="background:#daffe6; color:#0a7347;">передача</span>
+          <span class="chip" style="background:#d7d8da; color:var(--ink);">не на смене</span>
+        </div>
+        <p style="margin:2.8mm 0 0 0; font-size:8.5pt; color:var(--dim);">Статус меняется автоматически по отметкам инженера в его приложении. Под именем виден маршрут: «12 заявок · 46 км».</p>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Совет</div>
+        <p>Дата и часы в заголовке дашборда — московское время, обновляются сами. Настраивать их не нужно.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">4</span></div>
+</div>
+
+<!-- ================= PAGE 5 · SECTION 3, POLICIES ================= -->
+<div class="page">
+  <span class="kicker">Раздел 3</span>
+  <h1>Политики и настройки</h1>
+  <p class="lead">Политика — это правило, по которому система раскладывает заявки по инженерам. План можно построить быстрее для клиента, дешевле для компании или бережнее к обещанным окнам.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:0 0 76mm;">
+      <div class="card" style="padding:3.5mm 4mm;">
+        <div style="font-weight:800; font-size:9.5pt; margin-bottom:2mm;">Выбери свою политику</div>
+        <div class="radio-row"><span class="dot"></span>Дешевле</div>
+        <div class="radio-row sel"><span class="dot"></span>Быстрее до клиента<span class="r-note">текущая</span></div>
+        <div class="radio-row"><span class="dot"></span>Бережнее к окнам</div>
+        <div class="radio-row"><span class="dot"></span>Ровнее загрузка</div>
+        <div class="radio-row"><span class="dot"></span>Короче пробег</div>
+        <div class="radio-row"><span class="dot"></span>Полное покрытие</div>
+        <div class="radio-row"><span class="dot"></span>Задать свою<span class="r-note">моя политика</span></div>
+      </div>
+      <div style="font-size:7.5pt; color:var(--muted); font-weight:500; text-align:center; margin-top:2.5mm;">Панель «Политика: …» в шапке</div>
+    </div>
+    <div style="flex:1 1 0; min-width:0;">
+      <ul class="app-list" style="margin-top:0;">
+        <li><b>«Дешевле»</b> — экономит ресурсы: плотнее группирует заявки и бережёт пробег.</li>
+        <li><b>«Быстрее до клиента»</b> — минимальное время до клиента, даже если план выйдет дороже.</li>
+        <li><b>«Бережнее к окнам»</b> — держит обещанные окна: меньше всего опозданий.</li>
+        <li><b>«Ровнее загрузка»</b> — распределяет работу по инженерам равномерно, без перегруза.</li>
+        <li><b>«Короче пробег»</b> — минимизирует суммарные километры по всем маршрутам.</li>
+        <li><b>«Полное покрытие»</b> — подключает резервных инженеров, чтобы назначить максимум заявок.</li>
+        <li><b>«Задать свою»</b> — личная политика через AI-ассистента (как её создать — в разделе 10).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout dark">
+    <div class="c-title">Важно</div>
+    <p>Смена политики пересчитывает план. Если новый план получается хуже текущего, дашборд покажет окно «Станет хуже» — и применит изменение только после «Всё равно применить».</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">5</span></div>
+</div>
+
+<!-- ================= PAGE 6 · SECTION 3, SWITCHES ================= -->
+<div class="page">
+  <span class="kicker">Раздел 3 · продолжение</span>
+  <h1>Свитчи: тонкие настройки плана</h1>
+  <p class="lead">В той же панели «Политика: …» под списком стратегий находятся переключатели. Они работают вместе с любой политикой. При наведении на свитч появляется подсказка.</p>
+
+  <div class="switch-row">
+    <span class="switch on"></span>
+    <div class="sw-body"><div class="sw-name">Рассчитать обеды</div><p>Маршрут учитывает обеденные перерывы инженеров. Выключено — обед в план не добавляется.</p></div>
+  </div>
+  <div class="switch-row">
+    <span class="switch on"></span>
+    <div class="sw-body"><div class="sw-name">Прогнозировать пробки</div><p>Время дороги считается с прогнозом пробок на момент поездки. Выключено — без прогнозного изменения трафика.</p></div>
+  </div>
+  <div class="switch-row">
+    <span class="switch"></span>
+    <div class="sw-body"><div class="sw-name">Маршруты с метро</div><p>Разрешает учитывать метро в пеших маршрутах. Без этого используются только наземные варианты.</p></div>
+  </div>
+  <div class="switch-row">
+    <span class="switch on"></span>
+    <div class="sw-body"><div class="sw-name">Передача оборудования</div><p>Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки.</p></div>
+  </div>
+  <div class="switch-row">
+    <span class="switch"></span>
+    <div class="sw-body"><div class="sw-name">Строгое время</div><p>Включено — без допусков к окну заявки и концу смены. Выключено — применяются настроенные допуски опоздания и последней заявки (раздел 9, «Допуски и смены»).</p></div>
+  </div>
+  <div class="switch-row">
+    <span class="switch"></span>
+    <div class="sw-body"><div class="sw-name">Перестройка по обычным</div><p>Выключено — любая новая заявка сразу запускает перестройку. Включено — обычные заявки ждут решения в алертах, аварии по-прежнему перестраивают план сами.</p></div>
+  </div>
+
+  <div class="callout">
+    <div class="c-title">Внизу панели — «Ручное управление»</div>
+    <p>Кнопка переключает дашборд в ручной режим, где назначения и окна решает диспетчер. Как это устроено — в разделе 9.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">6</span></div>
+</div>
+
+<!-- ================= PAGE 7 · SECTION 4, METRICS ================= -->
+<div class="page">
+  <span class="kicker">Раздел 4</span>
+  <h1>Метрики плана</h1>
+  <p class="lead">Кнопка <b>«Метрики плана»</b> в шапке показывает, насколько надёжен текущий план. Проверка ничего не меняет — это «репетиция дня» с разным трафиком и длительностью работ.</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="t-num">1</div><div class="t-name">Без назначения</div></div>
+    <div class="tile"><div class="t-num">12</div><div class="t-name">Инженеры в маршруте</div></div>
+    <div class="tile"><div class="t-num">348 км</div><div class="t-name">Пробег</div></div>
+    <div class="tile"><div class="t-num">41 ч</div><div class="t-name">В пути</div></div>
+    <div class="tile"><div class="t-num">2</div><div class="t-name">Ожидаемые опоздания</div></div>
+    <div class="tile"><div class="t-num">18 мин</div><div class="t-name">Худшая задержка</div></div>
+  </div>
+
+  <div class="cols" style="margin-top:4mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Светофор надёжности</div>
+        <div style="margin-top:2.6mm;"><span class="band green">План надёжный</span><p style="margin:1.2mm 0 0 0; font-size:8.5pt; color:var(--dim);">Опоздания редки: можно работать спокойно.</p></div>
+        <div style="margin-top:2.6mm;"><span class="band yellow">Можно работать</span><p style="margin:1.2mm 0 0 0; font-size:8.5pt; color:var(--dim);">Есть единичные риски — держите алерты под контролем.</p></div>
+        <div style="margin-top:2.6mm;"><span class="band red">Высокий риск</span><p style="margin:1.2mm 0 0 0; font-size:8.5pt; color:var(--dim);">В типичный день опоздает заметная часть заявок. Что делать — в разделе 10.</p></div>
+      </div>
+    </div>
+    <div style="flex:0 0 74mm;">
+      <ul class="app-list" style="margin-top:0;">
+        <li><b>«Как улучшить»</b> — под светофором: конкретные заявки, которые опаздывают чаще всего, и политика, которая им поможет.</li>
+        <li><b>«Объяснить с AI»</b> — ассистент прокомментирует оценку человеческим языком.</li>
+        <li><b>«Оптимизировать»</b> — платформа сама выберет подходящую политику и применит её.</li>
+        <li><b>«Сравнить политики»</b> — переносит в сравнение стратегий (следующая страница).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">7</span></div>
+</div>
+
+<!-- ================= PAGE 8 · SECTION 4, COMPARISON ================= -->
+<div class="page">
+  <span class="kicker">Раздел 4 · продолжение</span>
+  <h1>Сравнение политик</h1>
+  <p class="lead">Не уверены, какая политика лучше для сегодняшнего набора заявок? Прогоните одинаковый день под разными стратегиями и сравните результаты.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="step" style="margin-top:0;">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="s-title">Откройте сравнение</div>
+          <p>Через вкладку «Политики» слева или кнопку «Сравнить политики» в метриках плана.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="s-title">Нажмите «Сравнить»</div>
+          <p>Система посчитает одинаковые заявки и дорожные условия под каждой политикой. Повторный запуск — кнопка «Пересчитать».</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="s-title">Изучите три вида</div>
+          <p>«Обзор» — главные выводы; «Таблица» — все показатели по колонкам; «Карта» — маршруты всех стратегий на одной карте.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="c-title">Безопасно</div>
+        <p>«Просмотр не меняет рабочий план»: сравнение — это песочница. Активная политика и текущие маршруты остаются как были.</p>
+      </div>
+    </div>
+    <div style="flex:0 0 74mm;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">На «Обзоре» видно</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Больше назначений»</b> — какая политика назначит больше заявок.</li>
+          <li><b>«Больше заявок в срок»</b> — где меньше опозданий.</li>
+          <li><b>«Минимум дороги на заявку»</b> — где дешевле логистика.</li>
+        </ul>
+        <p style="margin:2.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">Полоски сравниваются с базовой FIFO — стратегией «по очереди поступления», она нужна только как точка отсчёта.</p>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Совет</div>
+        <p>В «Таблице» лучшие значения подсвечены зелёным. Если у политики другой состав инженеров — сравнивайте показатели «на заявку», они честнее.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">8</span></div>
+</div>
+
+<!-- ================= PAGE 9 · SECTION 5 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 5</span>
+  <h1>Инженеры</h1>
+  <p class="lead">Вкладка «Инженеры» — досье на каждого: карточки выстроены «колесом», в центре — выбранный инженер.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Как крутить колесо</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>Стрелки ← и →</b> на клавиатуре; удерживайте — колесо крутится быстрее.</li>
+          <li><b>Колесо мыши</b> над карточками.</li>
+          <li><b>Перетаскивание</b> мышью по дуге и <b>клик</b> по боковой карточке.</li>
+          <li><b>Поиск «Найти инженера»</b> — колесо само повернётся к совпадению.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:3.5mm;">
+        <div style="font-weight:800; font-size:9.5pt;">Что можно изменить</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>Почту</b> — если не привязана, строка покажет «Почта не привязана».</li>
+          <li><b>Транспорт и регион</b> — строки «Транспорт» и «Регион» в досье.</li>
+          <li><b>Смену</b> — «Снять со смены» / «Вернуть на смену».</li>
+          <li><b>Профиль</b> — «Удалить» в два шага, с подтверждением.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="flex:0 0 76mm;">
+      <div class="card" style="padding:4mm 4.5mm;">
+        <div style="display:flex; align-items:center; gap:3mm;">
+          <span class="murs" style="font-size:13pt;">Ирина Соколова</span>
+          <span class="chip" style="margin-left:auto;">в работе · 4</span>
+        </div>
+        <div style="height:2.2mm; background:#ededed; border-radius:999px; margin-top:2.6mm;"><div style="width:38%; height:100%; background:var(--bee); border-radius:999px;"></div></div>
+        <div style="display:flex; justify-content:space-between; font-size:8pt; color:var(--muted); font-weight:500; margin-top:1.6mm;"><span>выполнено 5 из 13</span><span>46 км</span></div>
+        <div style="display:flex; flex-wrap:wrap; gap:1.8mm; margin-top:2.6mm;">
+          <span class="chip" style="background:#f4f6f8; color:var(--ink);">Локальные работы</span>
+          <span class="chip" style="background:#f4f6f8; color:var(--ink);">Подключение</span>
+          <span class="chip" style="background:#f4f6f8; color:var(--ink);">Авто</span>
+        </div>
+        <p style="margin:2.4mm 0 0 0; font-size:8.5pt; color:var(--dim);">mschail@yandex.ru · Регион: Москва</p>
+        <p style="margin:1.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">Следующая: Заявка № 1184 · клиент «Окская, 32»</p>
+      </div>
+      <div style="font-size:7.5pt; color:var(--muted); font-weight:500; text-align:center; margin-top:2.5mm;">Карточка инженера: день, навыки, следующий визит</div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Совет</div>
+        <p>Навыки инженера («Локальные работы», «Подключение», «Авария») задаются при создании и влияют на то, какие заявки система ему доверит.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">9</span></div>
+</div>
+
+<!-- ================= PAGE 10 · SECTION 6, ALERTS ================= -->
+<div class="page">
+  <span class="kicker">Раздел 6</span>
+  <h1>Алерты: что и когда появляется</h1>
+  <p class="lead">Алерт — это ситуация, которую система не решает молча: она объясняет причину и предлагает варианты. Открытые алерты живут во вкладке «Алерты», самые срочные помечены бейджем «Срочная».</p>
+
+  <div class="cols" style="margin-top:2.5mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Требуют решения</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Риск времени»</b> — визит может не влезть в срок или техперерыв затянулся.</li>
+          <li><b>«Заявка № … без назначения»</b> — систему никто не устроил: нет навыка, транспорта или окна.</li>
+          <li><b>«Не вышел на смену»</b> — инженер не отметился к началу смены.</li>
+          <li><b>«Инженер задержался и не отмечается»</b>&nbsp;— давно нет отметок на точке.</li>
+          <li><b>«Конфликт с обедом»</b> — обед не влезает в расписание.</li>
+          <li><b>«План стал хуже: требуется решение»</b> — после события план потерял в качестве.</li>
+          <li><b>«Ручной план требует проверки»</b> — проверьте свои ручные правки.</li>
+        </ul>
+      </div>
+    </div>
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Просто сообщают</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Инженер вышел на линию»</b> и <b>«Инженер завершил день»</b> — начало и конец работы.</li>
+          <li><b>«План перестроился»</b> — план обновился после события.</li>
+          <li><b>«Остались нерешённые алерты»</b> — напоминание в конце дня.</li>
+        </ul>
+        <p style="margin:2.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">Эти карточки уходят в раздел «Уведомления» ниже алертов — их можно скрыть или очистить.</p>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Про аварии</div>
+        <p>Аварийная заявка сама направляется первой свободной бригаде и перестраивает план — отдельного решения не требует. Остальные новые заявки тоже перестраивают план, если не включён свитч «Перестройка по обычным».</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout dark">
+    <div class="c-title">Время на раздумья есть</div>
+    <p>Первые минуты после появления алерта не идут в счёт скорости решения: можно спокойно открыть заявку и разобраться. Но чем быстрее решение, тем выше итоговая оценка дня (раздел 9, «Итоги дня и месяца»).</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">10</span></div>
+</div>
+
+<!-- ================= PAGE 11 · SECTION 6, RESOLVING ================= -->
+<div class="page">
+  <span class="kicker">Раздел 6 · продолжение</span>
+  <h1>Как разруливать алерты</h1>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:0 0 74mm;">
+      <div class="alert-mock">
+        <div class="a-title">Не вышел на смену <span class="chip" style="background:#ffd9dc; color:#b2162c; margin-left:auto;">Срочная</span></div>
+        <p>Причина: инженер не отметил выход к началу смены.</p>
+        <div style="display:flex; gap:2mm; margin-top:2.6mm; flex-wrap:wrap;">
+          <span class="act">К заявке</span>
+          <span class="act">Продлить ожидание</span>
+          <span class="act">Написать и снять</span>
+          <span class="act ai">Решить с AI</span>
+        </div>
+      </div>
+      <div style="font-size:7.5pt; color:var(--muted); font-weight:500; text-align:center; margin-top:2.5mm;">Карточка алерта: причина, срок и доступные действия</div>
+      <div class="card" style="margin-top:3.5mm;">
+        <div style="font-weight:800; font-size:9.5pt;">Решить всё сразу</div>
+        <p style="margin:2mm 0 0 0; font-size:8.5pt; color:var(--dim);">Вверху вкладки есть сдвижной переключатель <b>«Решить все с AI»</b>: потяните его вправо — платформенный AI последовательно разберёт видимые алерты, подсвечивая каждое решение. Каждое по-прежнему разрешено правилами системы.</p>
+      </div>
+    </div>
+    <div style="flex:1 1 0; min-width:0;">
+      <ul class="app-list" style="margin-top:0;">
+        <li><b>Прочитайте причину</b> — карточка всегда начинается со строки «Причина:&nbsp;…» и показывает дедлайн «Результат в&nbsp;…».</li>
+        <li><b>«К заявке»</b> — открыть детали заявки, не теряя алерт.</li>
+        <li><b>Выберите действие</b> — система показывает только допустимые для этой ситуации. У каждого действия подсказка: «Что произойдёт», «Плюсы», «Минусы».</li>
+        <li><b>Заполните форму</b> — для части действий нужно окно, инженер, причина или сообщение; кнопка «Применить решение».</li>
+        <li><b>«Решить с AI»</b> — ассистент выберет допустимое действие за вас; решение помечается как «Решено с AI автоматически».</li>
+      </ul>
+      <div class="card" style="margin-top:3.5mm;">
+        <div style="font-weight:800; font-size:9.5pt;">Частые действия</div>
+        <div class="act-grid">
+          <span class="act">На завтра</span>
+          <span class="act">Сменить окно</span>
+          <span class="act">Добавить инженера</span>
+          <span class="act">Сохранить план</span>
+          <span class="act">Оставить как есть</span>
+          <span class="act">Вернуть AUTO</span>
+          <span class="act">Убрать обед</span>
+          <span class="act">Написать инженеру</span>
+          <span class="act">Снять со смены</span>
+          <span class="act">Продлить ожидание</span>
+          <span class="act">Сделать пассивным</span>
+          <span class="act">Приоритет</span>
+        </div>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">«Станет хуже»</div>
+        <p>Если решение ухудшает план (добавляет опоздания или незакрытые заявки), появится окно с объяснением: «Отмена» или «Всё равно применить».</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">11</span></div>
+</div>
+
+<!-- ================= PAGE 12 · SECTION 7 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 7</span>
+  <h1>AI: Консультант и Агент</h1>
+  <p class="lead">Вкладка «AI» — ассистент, который видит смену: план, инженеров, алерты. У него два режима, переключаются сверху чата.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="display:flex; gap:2.5mm;">
+          <span class="b-dark">Консультант</span>
+          <span class="b-yellow">Агент</span>
+        </div>
+        <ul class="app-list" style="margin-top:2.8mm;">
+          <li><b>«Консультант»</b> — отвечает на вопросы и объясняет: почему заявка назначена именно так, что влияет на план, чем отличаются политики. Ничего не меняет.</li>
+          <li><b>«Агент»</b> — готовит операции: переносит окна, закрывает алерты, выбирает политику, ставит техперерыв, снимает инженера со смены, закрывает день. Перед применением показывает, что собирается сделать.</li>
+        </ul>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Гуард для рискованных шагов</div>
+        <p>Если действие помечено как рисковое, ассистент спросит: «Гуард пометил это действие как рисковое!» с кнопками «Отклонить» и «Разрешить». Решение всегда за вами.</p>
+      </div>
+    </div>
+    <div style="flex:0 0 76mm;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Где ещё работает AI</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Решить с AI»</b> и <b>«Решить все с AI»</b>&nbsp;— разбор алертов (раздел 6).</li>
+          <li><b>«Объяснить с AI»</b> — комментарий к оценке в метриках плана.</li>
+          <li><b>«Моя политика»</b> — ассистент собирает вашу личную политику (раздел 10).</li>
+        </ul>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Ограничения — честно</div>
+        <p>У чата есть дневной лимит сообщений: когда он кончается, ассистент напишет «Лимит сообщений на сегодня исчерпан» и подскажет, когда обновится. Объяснения по карточкам доступны без счётчика. Разбор алертов и оптимизация выполняются платформенным AI — он также ограничен допустимыми действиями и не делает ничего мимо правил.</p>
+      </div>
+      <div class="callout" style="margin-top:3mm;">
+        <div class="c-title">Оцените ответ</div>
+        <p>Под каждым ответом есть кнопки «Полезно» / «Не полезно» — это помогает ассистенту становиться точнее.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">12</span></div>
+</div>
+
+<!-- ================= PAGE 13 · SECTION 8 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 8</span>
+  <h1>Добавить заявку, аварию, инженера, регион</h1>
+  <p class="lead">Кнопка «+» в шапке открывает окно «Добавить» с тремя вкладками.</p>
+
+  <div class="cols" style="margin-top:3mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Вкладка «Заявка»</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>Тип работ</b> — «Подключение», «Ремонт / Дозаказ», «Локальные работы» или «Авария».</li>
+          <li><b>Окно</b> — «Начало окна» и «Конец окна» для обычных заявок.</li>
+          <li><b>Адрес</b> — начните вводить и выберите подсказку или поставьте точку на карте.</li>
+        </ul>
+        <p style="margin:2.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">У аварии окно не спрашивают: система ставит его сама и направляет заявку первой свободной бригаде. После создания — «Заявка создана и попала в план дня».</p>
+      </div>
+      <div class="card" style="margin-top:3.5mm;">
+        <div style="font-weight:800; font-size:9.5pt;">Вкладка «Инженер»</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Имя»</b> и <b>«Транспорт»</b> — Авто, Пешком или Велосипед.</li>
+          <li><b>«Навыки»</b> — хотя бы один: Локальные работы, Подключение, Авария.</li>
+          <li><b>«Регион»</b> и <b>«Адрес офиса»</b> — офис это точка старта маршрута.</li>
+          <li><b>«Email (необязательно)»</b> — можно добавить позже в досье.</li>
+        </ul>
+        <p style="margin:2.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">Новый инженер сразу ставится в смену: «Профиль инженера создан и поставлен в смену».</p>
+      </div>
+    </div>
+    <div style="flex:0 0 76mm;">
+      <div class="card">
+        <div style="font-weight:800; font-size:9.5pt;">Вкладка «Регион»</div>
+        <ul class="app-list" style="margin-top:2.4mm;">
+          <li><b>«Название региона»</b> — например, «Москва · ЮВ».</li>
+          <li><b>«Адрес офиса»</b> — точка на карте; рядом отмечены существующие офисы.</li>
+        </ul>
+        <p style="margin:2.6mm 0 0 0; font-size:8.5pt; color:var(--dim);">Регион создаётся без заявок и инженеров. Новые заявки будут относиться к ближайшему офису.</p>
+      </div>
+      <div class="callout" style="margin-top:3.5mm;">
+        <div class="c-title">Авария — это заявка</div>
+        <p>Аварийные заявки планируются вне очереди: система не подтверждает с ними обычные окна и сразу включает их в маршруты. Создавайте аварию той же кнопкой «+».</p>
+      </div>
+      <div class="callout" style="margin-top:3mm;">
+        <div class="c-title">Совет</div>
+        <p>Ошиблись в адресе или окне? Заявку можно поправить в ручном режиме (раздел 9) или через алерт «Сменить окно».</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">13</span></div>
+</div>
+
+<!-- ================= PAGE 14 · SECTION 9, EXTRA 1 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 9 · Дополнительные возможности</span>
+  <h1>Ручной режим, diff плана и прошлый план</h1>
+
+  <div style="font-weight:800; font-size:12pt; margin-top:4mm;">Режим Manual</div>
+  <p style="margin:2mm 0 0 0; color:var(--dim);">Обычно план строит система. Если нужно вмешаться — нажмите <b>«Ручное управление»</b> внизу панели политик или «Приоритеты» в меню пользователя. Система спросит причину («Почему требуется вмешательство диспетчера») и откроет ручные инструменты: назначение <b>«Исполнитель»</b> у заявки, кнопка <b>«Изменить окно»</b>, правки обедов и смен. Важность решений задаётся в списке <b>«Приоритеты решений»</b>: перетащите главное вверх и нажмите «Применить порядок». Вернуться — кнопкой <b>«Автоматическое управление»</b>: алгоритм продолжит перестраивать маршруты сам.</p>
+
+  <div style="font-weight:800; font-size:12pt; margin-top:5.5mm;">Diff плана: «Что изменилось»</div>
+  <p style="margin:2mm 0 0 0; color:var(--dim);">После каждой перестройки дашборд показывает карточку «Перепланирование завершено» с цифрами до и после: <b>«Назначено»</b>, <b>«Без назначения»</b>, <b>«Передано»</b> (между инженерами), <b>«Сдвинуто»</b> (окна), <b>«Пробег, км»</b> и <b>«Инженеры»</b>. Если новая версия не нравится — кнопка <b>«Вернуть прежний план»</b>, пока это возможно. Карточку можно закрыть («Понятно») и позже открыть тостом «Подробнее».</p>
+
+  <div style="font-weight:800; font-size:12pt; margin-top:5.5mm;">«Прошлый план»: откат вручную</div>
+  <div class="cols" style="margin-top:2mm;">
+    <div style="flex:1 1 0; min-width:0;">
+      <p style="margin:0; color:var(--dim);">В меню пользователя есть пункт <b>«Прошлый план»</b>. Откроется выбор версии: <b>«До · …»</b> — предыдущая, <b>«После · …»</b> — текущая, кнопка <b>«Выбрать этот»</b> применяет показанную версию. Пока выбор не сделан, доска закрыта защитной вуалью.</p>
+    </div>
+    <div style="flex:0 0 64mm;">
+      <div class="callout" style="margin-top:0;">
+        <div class="c-title">Если откат недоступен</div>
+        <p>Система объяснит причину — например: «В предыдущем плане есть визиты, время начала которых уже прошло». Тогда верните автоматический план.</p>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">14</span></div>
+</div>
+
+<!-- ================= PAGE 15 · SECTION 9, EXTRA 2 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 9 · продолжение</span>
+  <h1>Данные, свой агент, допуски и итоги</h1>
+
+  <div style="font-weight:800; font-size:11.5pt; margin-top:3.5mm;">Загрузка данных с компьютера</div>
+  <p style="margin:1.8mm 0 0 0; color:var(--dim);">Круглая кнопка внизу левой панели — <b>«Загрузить данные»</b>. Перетащите файл JSON, CSV, TSV или XLSX (таблица — до 6 МБ). Для таблиц пройдёте «Проверку таблицы»: кодировка, разделитель, сопоставление колонок и явные значения для пропусков. Затем «Проверка данных» покажет находки — «Загрузить так» импортирует как есть, «Вернуться» отменит. Режимы: <b>«Новый регион»</b> или <b>«Дополнить заявки»</b>. Там же: <b>«Дорожные данные OSRM»</b> (JSON или gzip, профиль car) и кнопка <b>«Использовать сет из ТЗ»</b> — официальный демо-набор.</p>
+
+  <div style="font-weight:800; font-size:11.5pt; margin-top:4.5mm;">Подключите своего AI-агента (MCP)</div>
+  <p style="margin:1.8mm 0 0 0; color:var(--dim);">Настройки → вкладка <b>«AI»</b> → раздел <b>«MCP-сервер дашборда»</b>. Включите «Активировать MCP-сервер», задайте «MCP-пароль» (кнопка «Сгенерировать» предложит надёжный) и скачайте <b>«Скачать setup.md»</b>&nbsp;— в нём инструкция для вашего агента. Пока внешний агент работает, в шапке мигает робот: он следит за обстановкой и может разбирать алерты за диспетчера. Подтверждаемые человеком действия, например сброс дня, агенту недоступны.</p>
+
+  <div style="font-weight:800; font-size:11.5pt; margin-top:4.5mm;">Настройка допусков и смены</div>
+  <p style="margin:1.8mm 0 0 0; color:var(--dim);">Настройки → <b>«Общее»</b>: «Начало дня» и «Конец дня», «Допустимое опоздание, мин». Дальше пороги предупреждений — «Невыход, мин», «Опоздание инженера, мин», «Риск окна, мин», «Повтор alert, мин»: до этих значений система только предупреждает. После них — пересчёт: «Ранний финиш, мин», «Переработка на точке, мин», «Буфер доступа, мин». И «Максимум оборудования с собой» по видам транспорта. Допуски работают, когда свитч «Строгое время» выключен.</p>
+
+  <div style="font-weight:800; font-size:11.5pt; margin-top:4.5mm;">Итоги дня и месяца</div>
+  <p style="margin:1.8mm 0 0 0; color:var(--dim);">Меню пользователя → <b>«Завершить день»</b> (для подтверждения введите слово «ЗАВЕРШИТЬ»). Откроется окно итогов: оценка <b>«Качество управления»</b> из 100 — «Алерты · 70%» и «Выбор политики · 30%», счётчики «Выполнено с отметкой», «Алертов решено», список «Команда за день» и блок «Передаём следующей смене» с заявками на завтра. Кнопка <b>«Сохранить результат и завершить день»</b> закрывает смену. Переключатель «Месяц» показывает «Итоги месяца». Для подтверждений система всегда просит ввести слово вручную — вставить его нельзя.</p>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">15</span></div>
+</div>
+
+<!-- ================= PAGE 16 · SECTION 10, QA 1 ================= -->
+<div class="page">
+  <span class="kicker">Раздел 10 · Частые вопросы</span>
+  <h1>Вопросы и ответы</h1>
+
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Как посмотреть другой регион?</div>
+    <p>На карте слева сверху есть белая пилюля с названием региона. Нажмите её и выберите нужный из списка&nbsp;— есть вариант <b>«Все регионы»</b>. Выбор фильтрует карту и колонку инженеров.</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Что такое «Моя политика»?</div>
+    <p>Это ваша личная политика планирования. В списке политик выберите <b>«Задать свою»</b> и нажмите <b>«Перейти в AI»</b> — расскажите ассистенту, что для вас важно, он уточнит приоритеты и сохранит политику. Навыки, безопасность и обязательные ограничения при этом сохраняются. Готовая политика появится в общем списке под своим названием.</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Как листать инженеров в «колесе»?</div>
+    <p>Стрелками <b>←</b> и <b>→</b> на клавиатуре (удерживайте — колесо ускорится), <b>колесиком мыши</b> над карточками, перетаскиванием по дуге или кликом по боковой карточке. Подсказка со стрелками появится сама, если панель простаивает. Быстрее всего — поиск «Найти инженера».</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Что делать, если инженер не вышел на смену?</div>
+    <p>Придёт алерт <b>«Не вышел на смену»</b>. Варианты: <b>«Продлить ожидание»</b> — дать ещё 15 минут; <b>«Написать и снять»</b> — отправить сообщение и снять со смены; <b>«Снять со смены»</b>; <b>«Добавить инженера»</b> — подключить замену. Действуйте по ситуации: система подскажет плюсы и минусы каждого шага в подсказке действия.</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Метрики плана пишут «Высокий риск» — что делать?</div>
+    <p>Это красная полоса светофора: в типичный день опоздает заметная часть заявок. Откройте блок <b>«Как улучшить»</b> — там перечислены самые уязвимые заявки. Обычно помогает политика <b>«Бережнее к окнам»</b> или <b>«Быстрее до клиента»</b>, кнопка <b>«Оптимизировать»</b> или сравнение политик (раздел 4). Помните: проверка ничего не меняет, пока вы сами не примените решение.</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>Что делать, если что-то не работает?</div>
+    <p>Напишите ассистенту на вкладке <b>«AI»</b>, что хотите обратиться в поддержку, и опишите проблему: что случилось, на каком экране и что вы делали перед этим. Ассистент поможет на месте и передаст сообщение в поддержку сервиса. Мы читаем каждое обращение&nbsp;— пишите даже про мелочи.</p>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">16</span></div>
+</div>
+
+<!-- ================= PAGE 17 · SECTION 10, QA 2 + FINAL ================= -->
+<div class="page">
+  <span class="kicker">Раздел 10 · продолжение</span>
+  <h1>Вопросы и ответы</h1>
+
+  <div class="qa" style="margin-top:3mm;">
+    <div class="q"><span class="qm">?</span>Как завершить день досрочно, начать его заново или сбросить данные?</div>
+    <p>Всё в меню пользователя (аватар в шапке). <b>«Завершить день»</b> — закрыть смену с итогами, введите слово «ЗАВЕРШИТЬ». <b>«День заново»</b> — вернуть исходный демо-набор и вернуться к приветствию, слово «ЗАНОВО». <b>«Сбросить данные»</b> — заменить текущий день исходным набором, слово «СБРОС». «День заново» и «Сбросить данные» доступны на демо-стенде; на рабочем контуре эти действия закрыты.</p>
+  </div>
+  <div class="qa">
+    <div class="q"><span class="qm">?</span>AI ограничен?</div>
+    <p>Да, и это честно. У <b>чата</b> есть дневной лимит сообщений — когда он кончится, ассистент сообщит и покажет время обновления. <b>Объяснения</b> на карточках включаются кнопкой «Объяснить с AI». <b>Разбор алертов и оптимизация</b> выполняются платформенным AI кнопками «Решить с AI», «Решить все с AI» и «Оптимизировать» — только из списка допустимых действий. Рискованные шаги всегда проходят через гуард с подтверждением.</p>
+  </div>
+
+  <div style="font-weight:800; font-size:13pt; margin-top:7mm;">Памятка смены</div>
+  <div class="memo">
+    <div class="memo-col">
+      <div class="m-name">Утро</div>
+      <p>«Начать рабочий день» → проверить выход инженеров → взглянуть в «Метрики плана».</p>
+    </div>
+    <div class="memo-col">
+      <div class="m-name">День</div>
+      <p>Решать алерты по мере появления, следить за продвижением и diff-карточками перестроек.</p>
+    </div>
+    <div class="memo-col">
+      <div class="m-name">Вечер</div>
+      <p>«Завершить день» → итоги и оценка качества → передать следующей смене заявки на завтра.</p>
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; align-items:center; margin-top:9mm;">
+    <img src="assets/logo-dark.png" alt="" style="width:12mm; height:12mm;">
+    <div class="murs" style="font-size:21pt; margin-top:3mm;">Хорошей смены!</div>
+    <div style="font-size:8.5pt; font-weight:500; color:var(--muted); margin-top:1.5mm;">Команда NAVIX</div>
+  </div>
+  <div class="footer"><span>NAVIX · Руководство диспетчера</span><span class="fnum">17</span></div>
+</div>
+
+</body>
+</html>

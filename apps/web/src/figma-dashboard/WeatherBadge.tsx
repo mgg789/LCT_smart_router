@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { type DispatchWeather, loadDispatchWeather } from '../api/client';
+import { t } from '../i18n';
 import { TintIcon } from './TintIcon';
 
 const ICONS: Record<DispatchWeather['kind'], string> = {
@@ -64,13 +65,15 @@ export function WeatherBadge({ token }: { token: string | null }) {
   const degrees = weather.temperatureC === null ? null : `${Math.round(weather.temperatureC)}°`;
   const factor =
     weather.trafficMultiplier > 1
-      ? ` Сейчас он ×${String(weather.trafficMultiplier).replace('.', ',')}.`
-      : ' Сейчас погода его не поднимает.';
+      ? t('figma-dashboard.WeatherBadge.b3518cbed6', {
+          value0: String(weather.trafficMultiplier).replace('.', ','),
+        })
+      : t('figma-dashboard.WeatherBadge.fb87e999dc');
 
   return (
     // Hover/focus tooltip container: focus handlers already cover the keyboard path,
     // and the text itself is plain content of the element.
-    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip reveal on hover and focus
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: tooltip reveal on hover and focus
     <div
       className="absolute right-[16px] top-[16px] z-30"
       onMouseEnter={() => setHovering(true)}
@@ -97,8 +100,9 @@ export function WeatherBadge({ token }: { token: string | null }) {
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
             {weather.label}
-            {degrees ? `, ${degrees}` : ''}. Погодный коэффициент учитывается при расчёте времени в
-            пути.{factor}
+            {degrees ? `, ${degrees}` : ''}
+            {t('figma-dashboard.WeatherBadge.638a054330')}
+            {factor}
           </motion.p>
         ) : null}
       </AnimatePresence>

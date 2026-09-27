@@ -92,6 +92,12 @@ export class EngineerController {
     @Body(zodBody(liveActionSchema)) dto: LiveActionDto,
   ): Promise<EngineerLiveView> {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    const equipmentTransfersEnabled =
+      this.router.isConfigured() &&
+      dto.kind === 'problem' &&
+      dto.problemKind === 'missing_equipment'
+        ? (await this.router.getTechnicalSettings()).equipmentTransfersEnabled === true
+        : false;
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -100,7 +106,7 @@ export class EngineerController {
         targetRef: engineer.id,
         payload: dto,
       },
-      async (context) => this.live.act(context, engineer.id, dto),
+      async (context) => this.live.act(context, engineer.id, dto, equipmentTransfersEnabled),
     );
     return outcome.result;
   }

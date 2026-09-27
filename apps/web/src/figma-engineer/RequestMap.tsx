@@ -1,7 +1,8 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { LOCAL_MAP_BOUNDS, localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { t } from '../i18n';
 
 /** Real request coordinates on the shared offline-capable street map. */
 export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
@@ -11,7 +12,7 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
     if (!container.current) return;
     let map: maplibregl.Map | undefined;
     let stopWatching: (() => void) | undefined;
-    let local = !navigator.onLine;
+    let local = !browserMapOnline();
     const outsideCoverage =
       lon < LOCAL_MAP_BOUNDS[0] ||
       lon > LOCAL_MAP_BOUNDS[2] ||
@@ -25,6 +26,12 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
     };
     const online = () => {
       if (!map) return;
+      if (!browserMapOnline()) {
+        local = true;
+        setUnavailable(outsideCoverage);
+        map.setStyle(localMapStyle());
+        return;
+      }
       local = false;
       setUnavailable(false);
       map.setStyle(ONLINE_MAP_STYLE);
@@ -73,11 +80,11 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
         ref={container}
         className="absolute inset-0"
         style={{ position: 'absolute' }}
-        aria-label="Местоположение заявки"
+        aria-label={t('figma-engineer.RequestMap.a7064a6082')}
       />
       {unavailable ? (
         <p role="status" className="absolute left-2 top-2 rounded bg-white p-2 text-figma-ink">
-          Карта недоступна. Адрес и навигация доступны ниже.
+          {t('figma-engineer.RequestMap.4e511b716d')}
         </p>
       ) : null}
     </>

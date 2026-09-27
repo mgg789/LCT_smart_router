@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { WORK_TYPE_CODES } from '../../orchestrator/requests';
+import { WORK_TYPE_CODES } from '../../orchestrator/requests/work-type.catalog';
 
 /**
  * Request shapes for the request lifecycle.

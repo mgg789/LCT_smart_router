@@ -1,4 +1,5 @@
 import { moscowWorkDate } from '../figma-dashboard/welcomeDay';
+import { t } from '../i18n';
 import { moscowAt } from '../lib/time';
 import { CLIENT_ASSETS } from './assets';
 
@@ -8,12 +9,13 @@ export type ClientMapPoint = { lat: number; lon: number };
 export const CLIENT_MAP_CENTER: ClientMapPoint = { lat: 55.7558, lon: 37.6173 };
 
 export const CLIENT_PROBLEMS = [
-  'Интернет не работает',
-  'Починить роутер',
-  'IP-телефония',
-  'Подключение офиса',
-  'Настроить Wi-Fi',
-  'Другое...',
+  t('figma-client.clientPreview.b8cbf459a0'),
+  t('figma-client.clientPreview.8cee3a62c8'),
+  t('figma-client.clientPreview.960f7ce099'),
+  t('figma-client.clientPreview.f8599c507b'),
+  t('figma-client.clientPreview.267805bd26'),
+  t('figma-client.clientPreview.e09724bd14'),
+  t('figma-client.clientPreview.758359c6d8'),
 ] as const;
 
 export type ClientProblem = (typeof CLIENT_PROBLEMS)[number];
@@ -26,12 +28,16 @@ export const CLIENT_PROBLEM_WORK: Record<
   ClientProblem,
   { workType: string; requiredEquipment?: 'router' }
 > = {
-  'Интернет не работает': { workType: 'no_link' },
-  'Починить роутер': { workType: 'router_replacement', requiredEquipment: 'router' },
-  'IP-телефония': { workType: 'information' },
-  'Подключение офиса': { workType: 'connection_request' },
-  'Настроить Wi-Fi': { workType: 'cable_work' },
-  'Другое...': { workType: 'information' },
+  [t('figma-client.clientPreview.b8cbf459a0')]: { workType: 'outage' },
+  [t('figma-client.clientPreview.8cee3a62c8')]: { workType: 'no_link' },
+  [t('figma-client.clientPreview.960f7ce099')]: {
+    workType: 'router_replacement',
+    requiredEquipment: 'router',
+  },
+  [t('figma-client.clientPreview.f8599c507b')]: { workType: 'information' },
+  [t('figma-client.clientPreview.267805bd26')]: { workType: 'connection_request' },
+  [t('figma-client.clientPreview.e09724bd14')]: { workType: 'cable_work' },
+  [t('figma-client.clientPreview.758359c6d8')]: { workType: 'information' },
 };
 
 export type ClientScreenId = 'new' | 'list' | 'support' | 'sent';
@@ -56,6 +62,7 @@ export interface ClientRequestView {
   office: string | null;
   company: string;
   workTypeTitle: string;
+  workCategory?: 'emergency' | 'connection' | 'service';
   problemTitle: string;
   description: string;
   durationSec: number;
@@ -71,6 +78,8 @@ export interface ClientRequestView {
 
 export interface ClientRequestDraft {
   problem: ClientProblem | '';
+  workType?: string;
+  workTypeTitle?: string;
   contactName: string;
   address: string;
   windowStart: string;
@@ -101,7 +110,7 @@ export const CLIENT_PROFILE = {
 } as const;
 
 export const EMPTY_CLIENT_DRAFT: ClientRequestDraft = {
-  problem: 'Интернет не работает',
+  problem: t('figma-client.clientPreview.8cee3a62c8'),
   contactName: '',
   address: '',
   windowStart: '12:00',
@@ -117,17 +126,17 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     startAt: moscowAt(WORK_DATE, 12, 20),
     windowStartAt: moscowAt(WORK_DATE, 12, 0),
     windowEndAt: moscowAt(WORK_DATE, 14, 0),
-    addressText: 'ул. Таганская, 24',
-    office: 'офис 302',
-    company: 'ООО “Горизонт”',
-    workTypeTitle: 'Подключение офиса',
-    problemTitle: 'Подключение интернета',
-    description: 'Здесь описание проблемы',
+    addressText: t('figma-client.clientPreview.68669d377e'),
+    office: t('figma-client.clientPreview.1184a1144f'),
+    company: t('figma-client.clientPreview.262e8dbb00'),
+    workTypeTitle: t('figma-client.clientPreview.267805bd26'),
+    problemTitle: t('figma-client.clientPreview.9fa84e238b'),
+    description: t('figma-client.clientPreview.8816ab3672'),
     durationSec: 45 * 60,
     status: 'en_route',
-    statusLabel: 'в пути',
-    engineerName: 'Алексей Соколов',
-    engineerEtaLabel: 'ваш инженер приедет к 12:20',
+    statusLabel: t('figma-client.clientPreview.7376f1d753'),
+    engineerName: t('figma-client.clientPreview.05f56c34dd'),
+    engineerEtaLabel: t('figma-client.clientPreview.b586663cf5'),
     engineerPortrait: CLIENT_ASSETS.portrait,
     lat: 55.7415,
     lon: 37.6536,
@@ -139,15 +148,15 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     startAt: moscowAt(WORK_DATE, 9, 17),
     windowStartAt: moscowAt(WORK_DATE, 9, 0),
     windowEndAt: moscowAt(WORK_DATE, 10, 20),
-    addressText: 'Офис - ул. Лесная, 7',
+    addressText: t('figma-client.clientPreview.cf9424ded9'),
     office: null,
-    company: 'ООО “Горизонт”',
-    workTypeTitle: 'Замена роутера',
-    problemTitle: 'Замена роутера',
-    description: 'Роутер заменён, связь восстановлена.',
+    company: t('figma-client.clientPreview.262e8dbb00'),
+    workTypeTitle: t('figma-client.clientPreview.1e0fd1a7f5'),
+    problemTitle: t('figma-client.clientPreview.1e0fd1a7f5'),
+    description: t('figma-client.clientPreview.dd0c545a81'),
     durationSec: 45 * 60,
     status: 'done',
-    statusLabel: 'выполнена',
+    statusLabel: t('figma-client.clientPreview.5dd74fb765'),
     engineerName: null,
     engineerEtaLabel: null,
     engineerPortrait: null,
@@ -161,15 +170,15 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     startAt: moscowAt(WORK_DATE, 9, 17),
     windowStartAt: moscowAt(WORK_DATE, 9, 0),
     windowEndAt: moscowAt(WORK_DATE, 10, 20),
-    addressText: 'Офис - ул. Лесная, 7',
+    addressText: t('figma-client.clientPreview.cf9424ded9'),
     office: null,
-    company: 'ООО “Горизонт”',
-    workTypeTitle: 'Замена роутера',
-    problemTitle: 'Замена роутера',
-    description: 'Роутер заменён, связь восстановлена.',
+    company: t('figma-client.clientPreview.262e8dbb00'),
+    workTypeTitle: t('figma-client.clientPreview.1e0fd1a7f5'),
+    problemTitle: t('figma-client.clientPreview.1e0fd1a7f5'),
+    description: t('figma-client.clientPreview.dd0c545a81'),
     durationSec: 45 * 60,
     status: 'done',
-    statusLabel: 'выполнена',
+    statusLabel: t('figma-client.clientPreview.5dd74fb765'),
     engineerName: null,
     engineerEtaLabel: null,
     engineerPortrait: null,
@@ -215,12 +224,13 @@ export function isActualClientRequest(input: {
 
 /** Russian status the customer sees. Pending is still «not assigned». */
 export function clientStatusLabel(input: { lifecycle: string; assignmentState: string }): string {
-  if (input.lifecycle === 'in_progress') return 'В работе';
-  if (input.lifecycle === 'completed') return 'Выполнена';
-  if (input.lifecycle === 'cancelled') return 'Отменена';
-  if (input.lifecycle === 'submitted' && input.assignmentState === 'assigned') return 'Назначена';
-  if (input.lifecycle === 'submitted') return 'Не назначена';
-  return 'Черновик';
+  if (input.lifecycle === 'in_progress') return t('figma-client.clientPreview.59a28f1b11');
+  if (input.lifecycle === 'completed') return t('figma-client.clientPreview.6b5c7b568c');
+  if (input.lifecycle === 'cancelled') return t('figma-client.clientPreview.86b78af7c2');
+  if (input.lifecycle === 'submitted' && input.assignmentState === 'assigned')
+    return t('figma-client.clientPreview.c5497186c4');
+  if (input.lifecycle === 'submitted') return t('figma-client.clientPreview.ae6bef78e3');
+  return t('figma-client.clientPreview.65fd24f1cb');
 }
 
 /**
@@ -229,16 +239,20 @@ export function clientStatusLabel(input: { lifecycle: string; assignmentState: s
  * pressable either way: a disabled control looks like a dead click.
  */
 export function clientSubmitHint(draft: ClientRequestDraft): string | null {
-  if (draft.problem === '') return 'Выберите, что случилось.';
-  if (draft.contactName.trim().length === 0) return 'Укажите ФИО.';
-  if (draft.address.trim().length === 0) return 'Укажите адрес.';
-  if (!draft.email.trim().includes('@')) return 'Укажите почту.';
-  if (draft.point === null) return 'Отметьте точку на карте или выберите адрес из подсказок.';
-  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd)) return 'Укажите окно визита.';
+  if (draft.problem === '') return t('figma-client.clientPreview.ddf58dd1f1');
+  if (draft.contactName.trim().length === 0) return t('figma-client.clientPreview.07b2af9a63');
+  if (draft.address.trim().length === 0) return t('figma-client.clientPreview.2e8eeeba33');
+  if (!draft.email.trim().includes('@')) return t('figma-client.clientPreview.e8a6ee4d15');
+  if (draft.point === null) return t('figma-client.clientPreview.5ae986d034');
+  const selectedWork = draft.workType ?? CLIENT_PROBLEM_WORK[draft.problem]?.workType;
+  if (!selectedWork) return t('figma-client.clientPreview.ddf58dd1f1');
+  if (selectedWork === 'outage') return null;
+  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd))
+    return t('figma-client.clientPreview.fd36a0e987');
   const [startHour, startMinute] = parseClock(draft.windowStart);
   const [endHour, endMinute] = parseClock(draft.windowEnd);
   if (endHour * 60 + endMinute <= startHour * 60 + startMinute) {
-    return 'Окно «до» должно быть позже «с».';
+    return t('figma-client.clientPreview.acecd42ac6');
   }
   return null;
 }
@@ -273,7 +287,7 @@ export function draftFromStory(text: string, current: ClientRequestDraft): Clien
     .find((line) => STORY_ADDRESS.test(line) && !STORY_EMAIL.test(line));
   const problem =
     CLIENT_PROBLEMS.find((item) => source.toLowerCase().includes(item.toLowerCase().slice(0, 6))) ??
-    (source.length > 0 ? 'Другое...' : current.problem);
+    (source.length > 0 ? t('figma-client.clientPreview.758359c6d8') : current.problem);
   return {
     ...current,
     email,
@@ -311,14 +325,22 @@ export function clientPrepareBody(
   const addressText = draft.address.trim();
   const email = draft.email.trim();
   if (contactName.length === 0 || addressText.length === 0 || !email.includes('@')) return null;
-  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd) || draft.point === null) return null;
+  const work = draft.workType ? { workType: draft.workType } : CLIENT_PROBLEM_WORK[problem];
+  if (!work) return null;
+  const emergency = work.workType === 'outage';
+  if (
+    draft.point === null ||
+    (!emergency && (!isClock(draft.windowStart) || !isClock(draft.windowEnd)))
+  )
+    return null;
   const [startHour, startMinute] = parseClock(draft.windowStart);
   const [endHour, endMinute] = parseClock(draft.windowEnd);
   const workDate = moscowWorkDate(nowMs);
-  const windowStartAt = moscowAt(workDate, startHour, startMinute);
-  const windowEndAt = moscowAt(workDate, endHour, endMinute);
+  const windowStartAt = emergency
+    ? Math.floor(nowMs / 1000)
+    : moscowAt(workDate, startHour, startMinute);
+  const windowEndAt = emergency ? windowStartAt + 100 * 60 : moscowAt(workDate, endHour, endMinute);
   if (windowEndAt <= windowStartAt) return null;
-  const work = CLIENT_PROBLEM_WORK[problem];
   return {
     contactName,
     addressText,
@@ -328,8 +350,8 @@ export function clientPrepareBody(
     ...(work.requiredEquipment === undefined ? {} : { requiredEquipment: work.requiredEquipment }),
     windowStartAt,
     windowEndAt,
-    urgent: false,
-    problemText: problem,
+    urgent: emergency,
+    problemText: draft.workTypeTitle ?? problem,
   };
 }
 
@@ -381,12 +403,12 @@ export function requestFromDraft(
     addressText: draft.address.trim(),
     office: null,
     company: '',
-    workTypeTitle: draft.problem || 'Новая заявка',
-    problemTitle: draft.problem || 'Новая заявка',
-    description: 'Заявка отправлена. Описание появится после разбора диспетчером.',
+    workTypeTitle: draft.problem || t('figma-client.clientPreview.ee5790e7f4'),
+    problemTitle: draft.problem || t('figma-client.clientPreview.ee5790e7f4'),
+    description: t('figma-client.clientPreview.44d0d08b93'),
     durationSec: 45 * 60,
     status: 'planned',
-    statusLabel: 'принята',
+    statusLabel: t('figma-client.clientPreview.871339b14c'),
     engineerName: null,
     engineerEtaLabel: null,
     engineerPortrait: null,

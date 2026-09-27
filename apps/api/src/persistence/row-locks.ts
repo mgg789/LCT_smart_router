@@ -41,6 +41,13 @@ export async function lockLiveWorkdays(tx: Tx): Promise<void> {
   await tx.$queryRaw`SELECT id FROM live_workdays FOR UPDATE`;
 }
 
+/** Serializes reset against background calibration writes and delayed archive fetches. */
+export async function lockWorkingSetGeneration(tx: Tx): Promise<void> {
+  await tx.$executeRaw`INSERT INTO app_state (key, value, updated_at)
+    VALUES ('generation', '1'::jsonb, 0) ON CONFLICT (key) DO NOTHING`;
+  await tx.$queryRaw`SELECT key FROM app_state WHERE key = 'generation' FOR UPDATE`;
+}
+
 /** Serialises alert detection, resolution and day closure for the transaction lifetime. */
 export async function lockAlertQueue(tx: Tx): Promise<void> {
   // Keep the same lock order as Router result acceptance. Alert actions may publish a

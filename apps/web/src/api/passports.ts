@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 import { requestJson } from './client';
 
 /** Connection technologies recorded by an engineer, independent of request work type. */
 export const CONNECTION_TYPES = {
-  fiber: 'Оптика',
+  fiber: t('api.passports.acd719de1e'),
   ethernet: 'Ethernet',
   dsl: 'DSL',
-  radio: 'Радиоканал',
-  other: 'Другое',
+  radio: t('api.passports.43e320d1c1'),
+  other: t('api.passports.001f75c6b3'),
 } as const;
 
 const connectionSchema = z.enum(['fiber', 'ethernet', 'dsl', 'radio', 'other']);

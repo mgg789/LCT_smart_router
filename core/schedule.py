@@ -9,6 +9,7 @@ from core.contracts import (
     Engineer,
     EngineerRoute,
     EquipmentHandoff,
+    EquipmentLogistics,
     EquipmentType,
     Geometry,
     GeoPoint,
@@ -57,16 +58,42 @@ class HandoffStep:
     meeting_at: int
 
 
-ScheduleStep = str | None | HandoffStep
+@dataclass(frozen=True)
+class LogisticsStep:
+    """A one-sided five-minute logistics action at its actual location."""
+
+    logistics: EquipmentLogistics
+    location: GeoPoint
+    at: int
 
 
-def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[HandoffStep]:
+ScheduleStep = str | None | HandoffStep | LogisticsStep
+
+
+def _pending_time(item: HandoffStep | LogisticsStep) -> int:
+    """Return the fixed event time used to replay pending logistics in order."""
+    if isinstance(item, HandoffStep):
+        return item.meeting_at
+    return item.at
+
+
+def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[ScheduleStep]:
     """Return the immutable future exchanges owned by one route in time order."""
-    return [
+    handoffs: list[HandoffStep] = [
         HandoffStep(handoff, handoff.location, handoff.meeting_at)
         for handoff in sorted(snapshot.pending_equipment_handoffs, key=lambda item: item.meeting_at)
         if engineer_id in (handoff.donor_engineer_id, handoff.receiver_engineer_id)
     ]
+    logistics: list[LogisticsStep] = [
+        LogisticsStep(item.logistics, item.location, item.at)
+        for item in sorted(snapshot.pending_equipment_logistics, key=lambda item: item.at)
+        if engineer_id == (item.logistics.donor_engineer_id if item.logistics.kind == "donor_delivery" else item.logistics.receiver_engineer_id)
+    ]
+    pending: list[HandoffStep | LogisticsStep] = [*handoffs, *logistics]
+    pending.sort(key=_pending_time)
+    ordered: list[ScheduleStep] = []
+    ordered.extend(pending)
+    return ordered
 
 
 def _with_pending(snapshot: RouterTaskSnapshot, engineer_id: str, steps: list[ScheduleStep]) -> list[list[ScheduleStep]]:
@@ -98,11 +125,16 @@ def _baseline_eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request
         request.required_equipment is not None
         and release_at(snapshot, engineer) is not None
         and _matches_non_equipment_constraints(engineer, request)
-        and any(
+        and (any(
             handoff.receiver_engineer_id == engineer.engineer_id
             and handoff.items.quantity(request.required_equipment) > 0
             for handoff in snapshot.pending_equipment_handoffs
-        )
+        ) or any(
+            item.logistics.kind == "office_pickup"
+            and item.logistics.receiver_engineer_id == engineer.engineer_id
+            and item.logistics.equipment_type == request.required_equipment
+            for item in snapshot.pending_equipment_logistics
+        ))
     )
 
 
@@ -142,6 +174,7 @@ def job_completion_limit(
     shift recovery allowance.  Its customer-window allowance is checked
     separately and is likewise terminal-only.
     """
+    strict = strict or engineer.manual_shift
     limit = engineer.shift_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
     horizon = snapshot.horizon_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
     return min(limit, horizon)
@@ -157,7 +190,9 @@ def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int
 def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     """Check assignment compatibility independently from the time release rule."""
     return (
-        (request.region is None or engineer.region is None or request.region == engineer.region)
+        not request.manual_unassigned
+        and (request.manual_engineer_id is None or request.manual_engineer_id == engineer.engineer_id)
+        and (request.manual_engineer_id == engineer.engineer_id or request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
         and transport_matches(request.required_transport, engineer)
         and (
@@ -170,7 +205,9 @@ def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
 def _matches_non_equipment_constraints(engineer: Engineer, request: Request) -> bool:
     """Keep job compatibility distinct from inventory, which is time-dependent."""
     return (
-        (request.region is None or engineer.region is None or request.region == engineer.region)
+        not request.manual_unassigned
+        and (request.manual_engineer_id is None or request.manual_engineer_id == engineer.engineer_id)
+        and (request.manual_engineer_id == engineer.engineer_id or request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
         and transport_matches(request.required_transport, engineer)
     )
@@ -272,7 +309,7 @@ def schedule_steps(
             equipment_used[request.required_equipment] += 1
     # Static precheck remains useful for ordinary routes.  A receiver can start
     # with zero stock only when a preceding typed handoff credits inventory.
-    if not any(isinstance(item, HandoffStep) for item in steps) and any(
+    if not any(isinstance(item, (HandoffStep, LogisticsStep)) for item in steps) and any(
         quantity > engineer.equipment_stock.quantity(equipment_type)
         for equipment_type, quantity in equipment_used.items()
     ):
@@ -285,9 +322,9 @@ def schedule_steps(
     end_limit = min(engineer.shift_end_at, snapshot.horizon_end_at)
 
     def add_stop(
-        kind: Literal["job", "lunch", "wait", "handoff"], request_id: str | None,
+        kind: Literal["job", "lunch", "wait", "handoff", "delivery", "office_pickup"], request_id: str | None,
         arrival: int, start: int, end: int, point: GeoPoint,
-        handoff: EquipmentHandoff | None = None,
+        handoff: EquipmentHandoff | None = None, logistics: EquipmentLogistics | None = None,
     ) -> RouteStop:
         stop = RouteStop(
             stop_id=f"{engineer.engineer_id}:{len(stops)}",
@@ -299,11 +336,49 @@ def schedule_steps(
             start_at=start,
             end_at=end,
             handoff=handoff,
+            logistics=logistics,
         )
         stops.append(stop)
         return stop
 
     for step_index, step in enumerate(steps):
+        if isinstance(step, LogisticsStep):
+            quote = quote_at(travel, location, step.location, engineer.travel_profile(), clock)
+            if quote is None:
+                return None
+            arrival = clock + quote.duration_sec
+            if arrival > step.at:
+                return None
+            previous_stop = stops[-1].stop_id if stops else None
+            target = None
+            if step.at > arrival:
+                target = add_stop("wait", None, arrival, arrival, step.at, step.location)
+            logistics_stop = add_stop(
+                "delivery" if step.logistics.kind == "donor_delivery" else "office_pickup",
+                None, arrival, step.at, step.at + 300, step.location, logistics=step.logistics,
+            )
+            legs.append(RouteLeg(
+                leg_id=f"{engineer.engineer_id}:leg:{len(legs)}", from_stop_id=previous_stop,
+                to_stop_id=(target or logistics_stop).stop_id, departure_at=clock, arrival_at=arrival,
+                travel_time_sec=quote.duration_sec, distance_km=quote.distance_m / 1000,
+                geometry=None if quote.provenance == "traffic_api" and not quote.geometry_exact else Geometry(points=list(quote.points)),
+                travel_source=quote.provenance, traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
+                segments=[RouteSegment(geometry=Geometry(points=list(segment.points)), travel_source=segment.provenance, duration_sec=segment.duration_sec, distance_m=segment.distance_m) for segment in quote.segments],
+            ))
+            equipment_type = step.logistics.equipment_type
+            if step.logistics.kind == "donor_delivery":
+                if engineer.engineer_id != step.logistics.donor_engineer_id:
+                    return None
+                inventory[equipment_type] -= 1
+            else:
+                if engineer.engineer_id != step.logistics.receiver_engineer_id:
+                    return None
+                inventory[equipment_type] += 1
+            if inventory[equipment_type] < 0 or sum(inventory.values()) > engineer.equipment_capacity:
+                return None
+            clock, location = step.at + 300, step.location
+            continue
         if isinstance(step, HandoffStep):
             quote = quote_at(travel, location, step.location, engineer.travel_profile(), clock)
             if quote is None:
@@ -328,6 +403,7 @@ def schedule_steps(
                     distance_km=quote.distance_m / 1000,
                     geometry=None if quote.provenance == "traffic_api" and not quote.geometry_exact else Geometry(points=list(quote.points)),
                     travel_source=quote.provenance, traffic_factor=quote.traffic_factor,
+                    weather_multiplier_used=quote.weather_multiplier_used,
                     segments=[RouteSegment(geometry=Geometry(points=list(segment.points)), travel_source=segment.provenance, duration_sec=segment.duration_sec, distance_m=segment.distance_m) for segment in quote.segments],
                 )
             )
@@ -379,13 +455,13 @@ def schedule_steps(
         if quote is None:
             return None
         arrival = clock + quote.duration_sec
-        start = max(arrival, request.window_start_at)
+        start = max(arrival, request.ready_at)
         end = start + request.service_duration_sec
         tolerance = getattr(getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0)
         # The customer window covers the end of the normative work, not only arrival.
         # This is intentionally the same predicate used by the OR-Tools seed and the
         # fast neighbourhood evaluator.
-        window_tolerance = 0 if strict else max(
+        window_tolerance = 0 if strict or request.manual_window else max(
             tolerance,
             TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if step_index == len(steps) - 1 else 0,
         )
@@ -416,6 +492,7 @@ def schedule_steps(
                 ),
                 travel_source=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
                 segments=[
                     RouteSegment(
                         geometry=Geometry(points=list(segment.points)),
@@ -647,6 +724,11 @@ def assigned_reason(
         "CONSTRAINTS_SATISFIED",
         "Skill, transport and schedule constraints verified.",
         policy_id=snapshot.policy.policy_id,
+        work_category=request.category,
+        received_at=request.ready_at,
+        emergency_response_target_sec=7200 if request.category == "emergency" else None,
+        emergency_response_sec=(None if stop is None or request.category != "emergency"
+                                else max(0, stop.start_at - request.ready_at)),
         required_skill=request.required_skill,
         required_transport=request.required_transport,
         required_equipment=request.required_equipment,
@@ -782,17 +864,24 @@ def assemble_plan(
     )
 
 
-def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
+def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider, *, prioritized: bool = False) -> Plan:
     """Build a FIFO baseline, reserving terminal overtime for its final extension.
 
     The ordinary append pass preserves the historical on-shift FIFO comparison.
+    ``prioritized`` builds a separate optimizer seed; the reported FIFO stays unchanged.
+    Emergencies choose the earliest feasible start across compatible free crews.
     Only after every regular request was considered can one overrun-only job be
     appended as the engineer's actual terminal visit.
     """
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
-    for request in sorted(snapshot.requests, key=lambda r: r.arrival_order):
+    requests = sorted(snapshot.requests, key=lambda r: (
+        (int(r.manual_engineer_id is None), r.priority_tier, r.ready_at, r.arrival_order)
+        if prioritized else (int(r.manual_engineer_id is None), r.arrival_order)
+    ))
+    for request in requests:
+        candidates = []
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
             route = (
@@ -806,8 +895,14 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
                 and route.finish_at > job_completion_limit(snapshot, engineer, terminal=False)
             )
             if route is not None and not uses_terminal_overtime:
-                orders[engineer.engineer_id] = order
-                break
+                candidates.append((route, engineer, order))
+                if not prioritized or (request.category != "emergency" and not request.dispatcher_priority):
+                    break
+        if candidates:
+            route, engineer, order = min(candidates, key=lambda item: next(
+                stop.start_at for stop in item[0].stops if stop.request_id == request.request_id
+            ))
+            orders[engineer.engineer_id] = order
         else:
             deferred.append(request)
     for request in deferred:
@@ -929,10 +1024,15 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
     engineers = {e.engineer_id: e for e in snapshot.engineers}
     observed: dict[str, tuple[str, str]] = {}
     handoffs: dict[str, list[tuple[str, RouteStop]]] = {}
+    logistics_stops: dict[str, RouteStop] = {}
     for route in plan.routes:
         engineer = engineers[route.engineer_id]
         steps: list[ScheduleStep] = []
         for stop in route.stops:
+            if stop.logistics is not None:
+                identifier = stop.logistics.logistics_id
+                require(identifier not in logistics_stops, "duplicate logistics action")
+                logistics_stops[identifier] = stop
             if stop.kind == "job":
                 if stop.request_id is None:
                     raise ValueError("RESULT_INVALID: job stop missing request")
@@ -941,6 +1041,10 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
                 if stop.handoff is None:
                     raise ValueError("RESULT_INVALID: handoff stop missing metadata")
                 steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+            elif stop.kind in ("delivery", "office_pickup"):
+                if stop.logistics is None:
+                    raise ValueError("RESULT_INVALID: logistics stop missing metadata")
+                steps.append(LogisticsStep(stop.logistics, stop.location, stop.start_at))
             elif stop.kind == "lunch":
                 steps.append(None)
         expected = schedule_steps(snapshot, engineer, steps, travel)
@@ -1016,6 +1120,12 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             frozen = next(item for item in snapshot.pending_equipment_handoffs if item.handoff_id == handoff_id)
             require(first.location == frozen.location and first.start_at == frozen.meeting_at, "pending handoff changed")
     require(set(handoffs) >= pending_ids, "pending handoff missing")
+    for pending in snapshot.pending_equipment_logistics:
+        stop = logistics_stops.get(pending.logistics.logistics_id)
+        require(stop is not None, "pending logistics missing")
+        if stop is not None:
+            require(stop.logistics == pending.logistics and stop.location == pending.location and stop.start_at == pending.at,
+                    "pending logistics changed")
     for assignment in plan.assignments:
         owner = observed.get(assignment.request_id)
         require(

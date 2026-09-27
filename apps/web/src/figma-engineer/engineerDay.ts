@@ -1,4 +1,4 @@
-import type { HandoffView } from '../api/live';
+import type { EquipmentLogisticsView, HandoffView } from '../api/live';
 import type {
   EngineerDayView,
   EngineerPlanResponse,
@@ -28,7 +28,16 @@ export type EngineerHandoffItem = {
   readonly role: 'donor' | 'receiver';
 };
 
-export type EngineerListItem = EngineerJobItem | EngineerLunchItem | EngineerHandoffItem;
+export type EngineerLogisticsItem = {
+  readonly kind: 'logistics';
+  readonly stop: PlanStopView;
+  readonly logistics: EquipmentLogisticsView;
+};
+export type EngineerListItem =
+  | EngineerJobItem
+  | EngineerLunchItem
+  | EngineerHandoffItem
+  | EngineerLogisticsItem;
 
 /**
  * Duration shown on the engineer home card: planned norm, plus a reported delay
@@ -64,6 +73,7 @@ export function engineerListItems(
   lunchOverride?: EngineerLunchItem | null,
   handoffs: readonly HandoffView[] = [],
   engineerId?: string,
+  logistics: readonly EquipmentLogisticsView[] = [],
 ): EngineerListItem[] {
   const items: EngineerListItem[] = [];
   const byId = new Map((plan?.requests ?? []).map((request) => [request.id, request]));
@@ -71,6 +81,17 @@ export function engineerListItems(
   const lunch = lunchOverride === undefined ? engineerLunchWindow(plan, day) : lunchOverride;
 
   for (const stop of plan?.route?.stops ?? []) {
+    if (stop.kind === 'delivery' || stop.kind === 'office_pickup') {
+      const entry = logistics.find((item) => item.id === stop.logistics?.logistics_id);
+      if (
+        entry &&
+        (entry.kind === 'donor_delivery' ? entry.donorEngineerId : entry.receiverEngineerId) ===
+          engineerId
+      ) {
+        items.push({ kind: 'logistics', stop, logistics: entry });
+      }
+      continue;
+    }
     if (stop.kind === 'handoff') {
       const id = stop.handoff?.handoff_id;
       const handoff = handoffs.find((item) => item.id === id);

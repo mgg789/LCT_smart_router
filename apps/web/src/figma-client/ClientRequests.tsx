@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
 import { RequestMap } from '../figma-engineer/RequestMap';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import { type ClientRequestView, splitClientRequests } from './clientPreview';
 
@@ -16,12 +18,15 @@ export function ClientRequests({
   motionOn,
   onOpen,
   onNewRequest,
+  selectedId,
 }: {
   requests: readonly ClientRequestView[];
   notice: string | null;
   motionOn: boolean;
   onOpen: (id: string) => void;
   onNewRequest: () => void;
+  /** Outlined because it is the one being read, not because it is the live one. */
+  selectedId?: string | null;
 }) {
   const { featured, rest, archive } = splitClientRequests(requests);
 
@@ -31,7 +36,7 @@ export function ClientRequests({
         className="font-extrabold tracking-[0.02em] text-figma-ink"
         style={{ marginTop: eu(48), fontSize: eu(36) }}
       >
-        Список заявок
+        {t('figma-client.ClientRequests.db511eb63e')}
       </h1>
       {notice ? (
         <p
@@ -49,6 +54,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={0}
             onOpen={() => onOpen(featured.id)}
+            selected={featured.id === selectedId}
           />
         ) : null}
         {rest.map((item, index) => (
@@ -59,6 +65,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={(index + 1) * 0.04}
             onOpen={() => onOpen(item.id)}
+            selected={item.id === selectedId}
           />
         ))}
       </div>
@@ -75,14 +82,14 @@ export function ClientRequests({
           fontSize: eu(28),
         }}
       >
-        Новая заявка
+        {t('figma-client.ClientRequests.ee5790e7f4')}
       </motion.button>
 
       <h2
         className="font-extrabold tracking-[0.02em] text-figma-ink"
         style={{ marginTop: eu(36), fontSize: eu(36) }}
       >
-        Архив
+        {t('figma-client.ClientRequests.3c54b5e783')}
       </h2>
       <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
         {archive.map((item, index) => (
@@ -93,6 +100,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={index * 0.04}
             onOpen={() => onOpen(item.id)}
+            selected={item.id === selectedId}
           />
         ))}
       </div>
@@ -105,11 +113,13 @@ function FeaturedCard({
   motionOn,
   delay,
   onOpen,
+  selected,
 }: {
   item: ClientRequestView;
   motionOn: boolean;
   delay: number;
   onOpen: () => void;
+  selected: boolean;
 }) {
   return (
     <motion.article
@@ -128,7 +138,9 @@ function FeaturedCard({
             onOpen();
           }
         }}
-        className="overflow-hidden border-solid border-figma-bee bg-white text-left"
+        className={`overflow-hidden border-solid bg-white text-left ${
+          selected ? 'border-figma-bee' : 'border-transparent'
+        }`}
         style={{
           borderRadius: eu(20),
           borderWidth: eu(3),
@@ -153,7 +165,9 @@ function FeaturedCard({
               className="flex flex-wrap items-center font-medium tracking-[-0.02em] text-figma-muted"
               style={{ marginTop: eu(12), columnGap: eu(10), rowGap: eu(4), fontSize: eu(20) }}
             >
-              <span>{item.workTypeTitle}</span>
+              <span>
+                <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
+              </span>
               <FigmaIcon
                 src={CLIENT_ASSETS.dot}
                 alt=""
@@ -216,12 +230,14 @@ function ArchiveCard({
   motionOn,
   delay,
   onOpen,
+  selected,
 }: {
   item: ClientRequestView;
   archived: boolean;
   motionOn: boolean;
   delay: number;
   onOpen: () => void;
+  selected: boolean;
 }) {
   return (
     <motion.article
@@ -240,8 +256,11 @@ function ArchiveCard({
             onOpen();
           }
         }}
-        className="flex w-full items-start justify-between overflow-hidden bg-white text-left"
+        className={`flex w-full items-start justify-between overflow-hidden border-solid bg-white text-left ${
+          selected ? 'border-figma-bee' : 'border-transparent'
+        }`}
         style={{
+          borderWidth: eu(3),
           gap: eu(16),
           borderRadius: eu(20),
           padding: `${eu(25)} ${eu(30)}`,
@@ -268,7 +287,7 @@ function ArchiveCard({
             className="font-medium tracking-[-0.02em] text-figma-muted"
             style={{ marginTop: eu(12), fontSize: eu(20) }}
           >
-            {item.workTypeTitle}
+            <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
             {archived ? null : ` · ${item.statusLabel}`}
           </p>
           <span

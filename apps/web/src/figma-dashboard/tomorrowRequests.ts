@@ -1,4 +1,5 @@
 import type { RequestView } from '../api/types';
+import { t } from '../i18n';
 import { formatClock, moscowAt } from '../lib/time';
 import { shortRequestId } from './requestsTable';
 
@@ -34,7 +35,7 @@ export function tomorrowRequestRows(
     .map((request) => ({
       id: request.id,
       number: shortRequestId(request.id),
-      type: request.workTypeTitle?.trim() || 'Без типа',
+      type: request.workTypeTitle?.trim() || t('figma-dashboard.tomorrowRequests.97cc1d2f7f'),
       window: `${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)}`,
       windowStartAt: request.windowStartAt,
     }));

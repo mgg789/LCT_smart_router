@@ -7,6 +7,7 @@ import {
   passportInputSchema,
   savePassport,
 } from '../../api/passports';
+import { t } from '../../i18n';
 import { announcePassportSaved, usePassport } from './usePassport';
 
 const fieldClass =
@@ -33,16 +34,16 @@ export function PassportOffer({ token, requestId }: { token: string; requestId: 
       <div className="mt-3 text-sm text-figma-muted">
         <span>{error}. </span>
         <button type="button" onClick={refresh} className="underline">
-          Повторить
+          {t('components.passports.PassportOffer.5189135a61')}
         </button>
       </div>
     );
   if (data?.unavailableReason === 'ADDRESS_NOT_RESOLVED') {
     return (
       <p className="mt-3 text-sm text-figma-muted">
-        Не удалось определить здание для паспорта.{' '}
+        {t('components.passports.PassportOffer.82a73bd7a3')}{' '}
         <button type="button" onClick={refresh} className="underline">
-          Повторить
+          {t('components.passports.PassportOffer.5189135a61')}
         </button>
       </p>
     );
@@ -57,8 +58,14 @@ export function PassportOffer({ token, requestId }: { token: string; requestId: 
             onClick={() => setOpen(true)}
             className="flex w-full items-center justify-between gap-3 rounded-[20px] bg-figma-bee p-4 text-left font-semibold text-figma-ink"
           >
-            <span>{data?.passport ? 'Обновить паспорт' : 'Заполнить паспорт'}</span>
-            <span className="shrink-0 text-sm">+35 баллов</span>
+            <span>
+              {data?.passport
+                ? t('components.passports.PassportOffer.a3deb410bb')
+                : t('components.passports.PassportOffer.d21bc5e640')}
+            </span>
+            <span className="shrink-0 text-sm">
+              {t('components.passports.PassportOffer.71f388aca2')}
+            </span>
           </button>
         </div>
       ) : null}
@@ -72,7 +79,7 @@ export function PassportOffer({ token, requestId }: { token: string; requestId: 
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
-            Паспорт сохранён · +35 баллов
+            {t('components.passports.PassportOffer.5ff81675ed')}
           </motion.p>
         ) : null}
       </AnimatePresence>
@@ -131,13 +138,15 @@ export function PassportSuccessScreen({ onContinue }: { onContinue: () => void }
       <div className="flex w-full max-w-[430px] -translate-y-[3dvh] flex-col items-center text-center">
         <motion.img
           src="/figma/logo-dark.png"
-          alt="NAVIX"
+          alt={t('components.passports.PassportOffer.d675af9943')}
           className="size-[108px] object-contain"
           initial={reduceMotion ? false : { opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...transition, delay: reduceMotion ? 0 : 0.04 }}
         />
-        <p className="mt-4 font-murs text-[42px] tracking-[0.02em]">NAVIX</p>
+        <p className="mt-4 font-murs text-[42px] tracking-[0.02em]">
+          {t('components.passports.PassportOffer.d675af9943')}
+        </p>
         <motion.img
           src="/figma/passport-success-check.svg"
           alt=""
@@ -153,7 +162,7 @@ export function PassportSuccessScreen({ onContinue }: { onContinue: () => void }
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...transition, delay: reduceMotion ? 0 : 0.22 }}
         >
-          Данные заполнены
+          {t('components.passports.PassportOffer.7b5b1e45ef')}
         </motion.h2>
         <motion.button
           ref={continueRef}
@@ -165,7 +174,7 @@ export function PassportSuccessScreen({ onContinue }: { onContinue: () => void }
           whileTap={{ scale: 0.98 }}
           transition={{ ...transition, delay: reduceMotion ? 0 : 0.32 }}
         >
-          Продолжить
+          {t('components.passports.PassportOffer.a42aee58d6')}
         </motion.button>
       </div>
     </motion.section>,
@@ -224,7 +233,7 @@ function PassportForm({
             comment,
           });
           if (!parsed.success) {
-            setError('Выберите тип подключения и сложность от 1 до 3.');
+            setError(t('components.passports.PassportOffer.9ba728d853'));
             return;
           }
           const payload = JSON.stringify(parsed.data);
@@ -240,7 +249,7 @@ function PassportForm({
             setError(
               cause instanceof Error
                 ? cause.message
-                : 'Не удалось сохранить паспорт. Повторите попытку.',
+                : t('components.passports.PassportOffer.5ff45a9501'),
             );
           } finally {
             pending.current = false;
@@ -249,15 +258,17 @@ function PassportForm({
         }}
       >
         <h2 id={titleId} className="text-xl font-semibold">
-          {passport ? 'Обновить паспорт объекта' : 'Паспорт объекта'}
+          {passport
+            ? t('components.passports.PassportOffer.6009aad9cd')
+            : t('components.passports.PassportOffer.5e289abfb8')}
         </h2>
         <p className="mt-2 text-sm text-figma-muted">
-          Проверьте сведения о здании. За сохранение — 35 баллов.
+          {t('components.passports.PassportOffer.b41d046b20')}
         </p>
         {passport ? <p className="mt-2 break-words text-sm">{passport.address}</p> : null}
         <fieldset disabled={busy} className="mt-4 flex flex-col gap-4">
           <label className="text-sm font-semibold">
-            Тип подключения *
+            {t('components.passports.PassportOffer.2e43791425')}
             <select
               required
               value={connectionType}
@@ -265,7 +276,7 @@ function PassportForm({
               className={fieldClass}
             >
               <option value="" disabled>
-                Выберите тип
+                {t('components.passports.PassportOffer.7d9facc541')}
               </option>
               {Object.entries(CONNECTION_TYPES).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -275,7 +286,7 @@ function PassportForm({
             </select>
           </label>
           <label className="text-sm font-semibold">
-            Сложность подключения *
+            {t('components.passports.PassportOffer.a1b61c5401')}
             <select
               required
               value={difficulty}
@@ -283,15 +294,15 @@ function PassportForm({
               className={fieldClass}
             >
               <option value="" disabled>
-                Выберите сложность
+                {t('components.passports.PassportOffer.39a491e8dc')}
               </option>
-              <option value="1">1 — простое</option>
-              <option value="2">2 — среднее</option>
-              <option value="3">3 — сложное</option>
+              <option value="1">{t('components.passports.PassportOffer.364a9dab58')}</option>
+              <option value="2">{t('components.passports.PassportOffer.bbef5d78cd')}</option>
+              <option value="3">{t('components.passports.PassportOffer.96558034fa')}</option>
             </select>
           </label>
           <label className="text-sm font-semibold">
-            Оборудование
+            {t('components.passports.PassportOffer.7f1b1af539')}
             <textarea
               value={equipment}
               onChange={(event) => setEquipment(event.target.value)}
@@ -301,7 +312,7 @@ function PassportForm({
             />
           </label>
           <label className="text-sm font-semibold">
-            Условия доступа
+            {t('components.passports.PassportOffer.e3e7dd800e')}
             <textarea
               value={accessNotes}
               onChange={(event) => setAccessNotes(event.target.value)}
@@ -311,7 +322,7 @@ function PassportForm({
             />
           </label>
           <label className="text-sm font-semibold">
-            Комментарий
+            {t('components.passports.PassportOffer.d89b310286')}
             <textarea
               value={comment}
               onChange={(event) => setComment(event.target.value)}
@@ -333,14 +344,16 @@ function PassportForm({
             onClick={onClose}
             className="flex-1 rounded-[20px] bg-figma-track p-3 font-semibold disabled:opacity-50"
           >
-            Отмена
+            {t('components.passports.PassportOffer.8fbe9b75cb')}
           </button>
           <button
             type="submit"
             disabled={busy}
             className="flex-1 rounded-[20px] bg-figma-bee p-3 font-semibold disabled:opacity-50"
           >
-            {busy ? 'Сохраняем…' : 'Сохранить'}
+            {busy
+              ? t('components.passports.PassportOffer.9c27c381dd')
+              : t('components.passports.PassportOffer.b4d30cae52')}
           </button>
         </div>
       </form>

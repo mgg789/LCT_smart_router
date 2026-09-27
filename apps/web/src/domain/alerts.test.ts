@@ -57,6 +57,8 @@ describe('dispatcher alert lifecycle projection', () => {
       'remove_shift',
       'message_remove',
       'extend',
+      'make_passive',
+      'prioritize',
     ] as const;
     expect(Object.keys(ALERT_ACTION_SPECS)).toEqual(serverActions);
     for (const action of serverActions) {

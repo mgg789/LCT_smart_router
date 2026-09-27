@@ -10,8 +10,13 @@ import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { AlertsService } from '../../src/orchestrator/alerts/alerts.service';
+import { EquipmentLogisticsService } from '../../src/orchestrator/equipment/logistics.service';
 import { LiveService } from '../../src/orchestrator/live/live.service';
 import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
+import {
+  type LogisticsProposalInput,
+  RouterClient,
+} from '../../src/routing/router-gateway/router-client.port';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 import { buildRouterResult } from '../support/router-result';
 
@@ -276,6 +281,7 @@ describe('LIVE workday', () => {
     // The dedicated LIVE database is durable between local runner invocations. Clear only
     // the mutable planning/live projections so a stopped test cannot donate its running
     // clock or applied route to this test's independently created engineers.
+    await prisma.equipmentLogistics.deleteMany({ where: { requestId: { in: requestIds } } });
     await prisma.liveWorkday.deleteMany({});
     await prisma.appliedPlanCurrent.deleteMany({});
     await prisma.appliedPlan.deleteMany({});
@@ -326,6 +332,7 @@ describe('LIVE workday', () => {
   afterEach(async () => {
     // A completed scenario must not leave its accelerated clock running for the next
     // independent scenario in this durable test database.
+    await prisma.equipmentLogistics.deleteMany({ where: { requestId: { in: requestIds } } });
     await prisma.liveWorkday.deleteMany({});
     await prisma.appliedPlanCurrent.deleteMany({});
     await prisma.appliedPlan.deleteMany({});
@@ -1412,6 +1419,57 @@ describe('LIVE workday', () => {
     assert.equal(await prisma.requestFact.count({ where: { requestId: request.id } }), 0);
   });
 
+  it('keeps a passive engineer on schedule without manufacturing completion facts', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const before = await liveView(engineer.token);
+    const job = before.route?.stops.find((stop) => stop.requestId === request.id);
+    assert.ok(job);
+    const alert = await prisma.alert.create({
+      data: {
+        code: 'engineer_overdue',
+        severity: 'warning',
+        workDate: workDate(),
+        engineerIds: [engineer.id],
+        requestIds: [],
+        reasons: {},
+        isBlocking: true,
+        createdAt: BigInt(before.workday.liveNow),
+      },
+    });
+    const response = await call(
+      'POST',
+      `/api/v1/dispatch/alerts/${alert.id}/resolve`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        action: 'make_passive',
+      },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+    const day = await prisma.engineerDay.findUniqueOrThrow({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+    });
+    assert.equal(day.attendanceOptOut, true);
+    assert.equal(day.availability, 'online');
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      job.endAt + 1,
+      before.workday.speedDurationSec,
+    );
+    await liveView(engineer.token);
+    assert.ok(
+      (await prisma.liveRequestState.findFirstOrThrow({ where: { requestId: request.id } }))
+        .assumedCompletedAt,
+    );
+    assert.equal(await prisma.requestFact.count({ where: { requestId: request.id } }), 0);
+  });
+
   it('keeps explicit overdue work active, accepts more time, and cancels with equipment detail', async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();
@@ -1830,4 +1888,184 @@ describe('LIVE workday', () => {
     emails.push(email);
     clientToken = await signIn(email, 'client');
   });
+
+  for (const outcome of ['available', 'unavailable', 'none'] as const) {
+    it(`handles active-job equipment logistics: ${outcome}`, async () => {
+      const receiver = await liveCreateEngineer();
+      const donor = await liveCreateEngineer();
+      const request = await liveCreateRequest();
+      const donorRequest = await liveCreateRequest(3 * HOUR);
+      const snapshot = await liveSnapshot();
+      await liveFeed(
+        buildRouterResult({
+          resultId: unique('logistics-result'),
+          inputHash: snapshot.inputHash,
+          contextVersion: 'live-test',
+          planningAsOf: snapshot.planningAsOf,
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId: receiver.id,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: snapshot.planningAsOf + 900,
+              durationSec: 1800,
+            },
+            {
+              requestId: donorRequest.id,
+              engineerId: donor.id,
+              lat: donorRequest.lat,
+              lon: donorRequest.lon,
+              startAt: snapshot.planningAsOf + 3 * HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+      );
+      await liveStart();
+      assert.equal((await liveAction(receiver.token, { kind: 'online' })).status, 201);
+      assert.equal((await liveAction(donor.token, { kind: 'online' })).status, 201);
+      const before = await liveView(receiver.token);
+      const job = before.route?.stops.find((stop) => stop.requestId === request.id);
+      assert.ok(job);
+      await liveSetLogicalNow(
+        before.workday.id,
+        before.workday.logicalStartAt,
+        before.workday.logicalEndAt,
+        job.startAt + 1,
+        before.workday.speedDurationSec,
+      );
+      assert.equal(
+        (await liveAction(receiver.token, { kind: 'start', requestId: request.id })).status,
+        201,
+      );
+      const baseline = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      const jobSchedule = (view: LiveEngineerView) =>
+        view.route?.stops
+          .filter((stop) => stop.kind === 'job')
+          .map(({ requestId, startAt, endAt, lat, lon }) => ({
+            requestId,
+            startAt,
+            endAt,
+            lat,
+            lon,
+          }));
+      const donorBefore = jobSchedule(await liveView(donor.token));
+      const router = app.get(RouterClient);
+      const configured = mock.method(router, 'isConfigured', () => true);
+      const context = mock.method(router, 'getActiveContextVersion', async () => 'live-test');
+      const settings = mock.method(router, 'getTechnicalSettings', async () => ({
+        routerContextVersion: 'live-test',
+        equipmentTransfersEnabled: true,
+        lunchesEnabled: false,
+        departureLatenessToleranceSec: 0,
+        taskStartLatenessToleranceSec: 0,
+        travelTimeMode: 'fixed_normative' as const,
+        accessBufferSec: 0,
+        fixedTravelTimeSec: 600,
+        earlyFinishReplanThresholdSec: 300,
+        taskOverrunToleranceSec: 900,
+      }));
+      const proposal = mock.method(
+        router,
+        'proposeLogistics',
+        async (input: LogisticsProposalInput) => {
+          if (outcome === 'unavailable') throw new Error('Router unavailable');
+          return {
+            status: outcome,
+            router_context_version: 'live-test',
+            proposal:
+              outcome === 'none'
+                ? null
+                : {
+                    kind: 'donor_delivery' as const,
+                    donor_engineer_id: donor.id,
+                    at: input.snapshot.planning_as_of + 600,
+                    location: { lat: request.lat, lon: request.lon },
+                    travel_delta_sec: 600,
+                    distance_delta_m: 1000,
+                    wait_delta_sec: -900,
+                    occupied_from_at: input.snapshot.planning_as_of,
+                    occupied_until_at: input.snapshot.planning_as_of + 900,
+                  },
+          };
+        },
+      );
+      try {
+        const response = await liveAction(receiver.token, {
+          kind: 'problem',
+          requestId: request.id,
+          problemKind: 'missing_equipment',
+          missingEquipment: 'router',
+          note: 'Need router',
+        });
+        assert.equal(response.status, 201, await response.clone().text());
+        const pending = await prisma.equipmentLogistics.findUniqueOrThrow({
+          where: { workDate_requestId: { workDate: workDate(), requestId: request.id } },
+        });
+        assert.equal(pending.status, 'searching');
+        assert.equal(
+          (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).lifecycle,
+          'in_progress',
+        );
+        await app.get(EquipmentLogisticsService).runOnce();
+        const row = await prisma.equipmentLogistics.findUniqueOrThrow({
+          where: { id: pending.id },
+        });
+        const updated = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+        if (outcome === 'unavailable') {
+          assert.equal(row.status, 'error');
+          assert.equal(row.failureCode, 'ROUTER_UNAVAILABLE');
+          assert.equal(updated.lifecycle, 'in_progress');
+          assert.equal(updated.cancelledAt, null);
+        } else if (outcome === 'none') {
+          assert.equal(row.status, 'none');
+          assert.equal(updated.lifecycle, 'cancelled');
+        } else {
+          assert.equal(row.status, 'assigned');
+          assert.equal(updated.lifecycle, 'in_progress');
+          assert.equal(
+            updated.expectedCompletionAt,
+            BigInt(baseline.expectedCompletionAt ?? 0) + 600n,
+          );
+          const donorView = await liveView(donor.token);
+          assert.equal(donorView.route?.stops.filter((stop) => stop.kind === 'delivery').length, 1);
+          assert.deepEqual(jobSchedule(donorView), donorBefore);
+          assert.equal(
+            (await liveView(receiver.token)).route?.stops.some((stop) => stop.kind === 'delivery'),
+            false,
+          );
+          await liveSetLogicalNow(
+            before.workday.id,
+            before.workday.logicalStartAt,
+            before.workday.logicalEndAt,
+            Number(row.expectedAt) + 60,
+            before.workday.speedDurationSec,
+          );
+          const delivered = await liveAction(donor.token, {
+            kind: 'equipment_delivery_confirm',
+            logisticsId: row.id,
+          });
+          assert.equal(delivered.status, 201, await delivered.clone().text());
+          const complete = await prisma.equipmentLogistics.findUniqueOrThrow({
+            where: { id: row.id },
+          });
+          assert.equal(complete.status, 'completed');
+          assert.ok(complete.actualAt);
+          assert.equal(
+            (await prisma.request.findUniqueOrThrow({ where: { id: request.id } }))
+              .expectedCompletionAt,
+            BigInt(baseline.expectedCompletionAt ?? 0) +
+              complete.actualAt -
+              BigInt(pending.waitStartedAt ?? 0),
+          );
+        }
+      } finally {
+        proposal.mock.restore();
+        settings.mock.restore();
+        context.mock.restore();
+        configured.mock.restore();
+      }
+    });
+  }
 });

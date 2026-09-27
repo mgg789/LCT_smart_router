@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 /**
  * Setup kit for the dashboard MCP server: pin generation, the self-connecting
  * `setup.md` the dispatcher hands to their agent, and the browser download.
@@ -28,77 +30,71 @@ export interface McpSetupInput {
 const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
   {
     name: 'get_dispatcher_context',
-    description: 'кто ты в этой системе, состояние рабочего дня, правила автономной работы',
+    description: t('figma-dashboard.mcpSetup.5af4062b36'),
   },
   {
     name: 'get_routing_principles',
-    description: 'цели и жёсткие ограничения планирования, каталог политик',
+    description: t('figma-dashboard.mcpSetup.47ac59fcc0'),
   },
   {
     name: 'get_situation',
-    description: 'текущая обстановка: статусы инженеров, открытые алерты, погода',
+    description: t('figma-dashboard.mcpSetup.22a541366c'),
   },
-  { name: 'get_plan', description: 'текущий план: маршруты, остановки, назначения' },
+  { name: 'get_plan', description: t('figma-dashboard.mcpSetup.9dbb757ec2') },
   {
     name: 'get_plan_explanations',
-    description: 'подробные факторы решателя: почему так, почему не иначе',
+    description: t('figma-dashboard.mcpSetup.61931e9453'),
   },
-  { name: 'list_requests', description: 'все заявки дня с деталями каждой' },
-  { name: 'get_request', description: 'одна заявка: детали и история изменений условий' },
-  { name: 'list_alerts', description: 'очередь решений диспетчера: алерты и уведомления' },
-  { name: 'resolve_alert', description: 'применить выбранное решение по алерту' },
+  { name: 'list_requests', description: t('figma-dashboard.mcpSetup.3886c8cd19') },
+  { name: 'get_request', description: t('figma-dashboard.mcpSetup.bae18b7dd2') },
+  { name: 'list_alerts', description: t('figma-dashboard.mcpSetup.68111faebf') },
+  { name: 'resolve_alert', description: t('figma-dashboard.mcpSetup.7b0457b723') },
   {
     name: 'ai_resolve_alert',
-    description: 'поручить разбор алерта платформенному AI (System one)',
+    description: t('figma-dashboard.mcpSetup.a120949c42'),
   },
-  { name: 'list_engineers', description: 'инженеры: навыки, транспорт, смена, доступность' },
+  { name: 'list_engineers', description: t('figma-dashboard.mcpSetup.16694eb611') },
   {
     name: 'set_engineer_availability',
-    description: 'уволить инженера с линии или вернуть на линию',
+    description: t('figma-dashboard.mcpSetup.4c9d5be6f7'),
   },
   {
     name: 'get_policies',
-    description:
-      'каталог политик и действующая. «Полное покрытие» поднимает покрытие первым критерием и может добавить резервные экипажи; оно не обещает назначить каждую заявку',
+    description: t('figma-dashboard.mcpSetup.fca8933993'),
   },
   {
     name: 'select_policy',
-    description: 'выбрать политику планирования. Перед этим: simulate_plan_change и review_action',
+    description: t('figma-dashboard.mcpSetup.ad2380a3f7'),
   },
   {
     name: 'get_router_controls',
-    description: 'переключатели решателя: обеды, метро, пробки, оборудование',
+    description: t('figma-dashboard.mcpSetup.e39c24f090'),
   },
   {
     name: 'set_router_controls',
-    description:
-      'сменить один или несколько переключателей решателя. Сначала симуляция и review_action',
+    description: t('figma-dashboard.mcpSetup.613977f3aa'),
   },
   {
     name: 'set_control_mode',
-    description:
-      'manual замораживает автоплан, auto возвращает его решателю. Сначала review_action',
+    description: t('figma-dashboard.mcpSetup.e6f7ee3eb7'),
   },
   {
     name: 'simulate_plan_change',
-    description:
-      'проверка в симуляторе без записи в план: политика, каталог, переключатели, вызов инженера вне линии, окно, закрепление, снятие. В ответе числа до и после, включая инженеров и резервные экипажи covering',
+    description: t('figma-dashboard.mcpSetup.f6e84b334e'),
   },
   {
     name: 'review_action',
-    description:
-      'самопроверка серьёзного действия: симуляция до/после и вердикт Разрешено или Риск. Если Риск — не применяй, пока диспетчер не примет вероятные риски',
+    description: t('figma-dashboard.mcpSetup.b7428b5699'),
   },
   {
     name: 'get_dispatcher_settings',
-    description: 'оперативные настройки: часы дня, пороги алертов',
+    description: t('figma-dashboard.mcpSetup.746b846580'),
   },
-  { name: 'update_dispatcher_settings', description: 'сменить оперативные настройки' },
-  { name: 'start_workday', description: 'начать рабочий день (LIVE)' },
+  { name: 'update_dispatcher_settings', description: t('figma-dashboard.mcpSetup.1c97190ae6') },
+  { name: 'start_workday', description: t('figma-dashboard.mcpSetup.441f532ec8') },
   {
     name: 'close_shift',
-    description:
-      'закрыть смену (пока есть неразобранные алерты — откажет). Перед закрытием вызови review_action',
+    description: t('figma-dashboard.mcpSetup.a5cff3f080'),
   },
 ];
 
@@ -106,62 +102,16 @@ const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
 export function renderMcpSetupMd(input: McpSetupInput): string {
   const url = `${input.origin.replace(/\/$/, '')}${input.endpoint}`;
   const tools = TOOL_CATALOGUE.map((tool) => `- \`${tool.name}\` — ${tool.description}`).join('\n');
-  return `# LCT Smart Router — подключение агента к дашборду диспетчера
-
-Этот файл выпустил диспетчер. Выполнив настройку, ты подключаешься к его дашборду по MCP
-и можешь работать за него: смотреть обстановку, читать объяснения плана, разбирать алерты,
-менять политики и настройки, вести рабочий день.
-
-## Подключение
-
-- **Транспорт:** MCP поверх HTTP (streamable HTTP, JSON-RPC 2.0). SSE-потоков нет,
-  соединение stateless — сессия не требуется.
-- **Endpoint:** \`${url}\`
-- **Заголовок аутентификации (основной):**
-  \`\`\`json
-  { "X-MCP-Pin": "${input.pin}" }
-  \`\`\`
-- Если клиент умеет задавать только Bearer — подойдёт и он (пин выпущен как ключ диспетчера):
-  \`\`\`json
-  { "Authorization": "Bearer ${input.pin}" }
-  \`\`\`
-
-## Пример конфигурации
-
-\`\`\`json
-{
-  "mcpServers": {
-    "lct-dashboard": {
-      "url": "${url}",
-      "headers": { "X-MCP-Pin": "${input.pin}" }
-    }
-  }
-}
-\`\`\`
-
-Для Claude Code то же самое одной командой:
-
-\`\`\`bash
-claude mcp add lct-dashboard --transport http ${url} --header "X-MCP-Pin: ${input.pin}"
-\`\`\`
-
-## Инструменты
-
-${tools}
-
-## Как работать
-
-1. Начни с \`get_dispatcher_context\`, \`get_routing_principles\` и \`get_situation\`.
-2. Все изменения — только через инструменты; каждый вызов идемпотентен и попадает в журнал операций.
-3. Опирайся на факторы из \`get_plan_explanations\`, а не на собственные догадки о причинах.
-4. Серьёзное действие сначала проверь. \`simulate_plan_change\` показывает, что станет с назначениями, опозданиями, пробегом и числом инженеров. \`review_action\` по тем же полям возвращает \`Разрешено\` или \`Риск\`. Если вердикт \`Риск\`, не применяй действие, пока диспетчер явно не примет вероятные риски.
-5. Число инженеров бери только из текста симуляции. Дополнительный экипаж \`covering\` — резервный клон, не человек со смены. Политика «полное покрытие» не обещает закрыть каждую заявку.
-6. Алерт нельзя «скрыть»: \`resolve_alert\` применяет решение из списка допустимых действий.
-7. Сброс данных и перезапуск демо-дня через MCP недоступны — это подтверждаемые человеком действия.
-8. Создание заявки с нуля остаётся формой дашборда. Условия уже существующей заявки смотри через \`get_request\`.
-
-Пока ты работаешь, в шапке дашборда мигает робот — диспетчер это видит.
-`;
+  return t('figma-dashboard.mcpSetup.1a39e7a40c', {
+    value0: url,
+    value1: input.pin,
+    value2: input.pin,
+    value3: url,
+    value4: input.pin,
+    value5: url,
+    value6: input.pin,
+    value7: tools,
+  });
 }
 
 /** Triggers a browser download of the setup file; safe to call from a click handler. */

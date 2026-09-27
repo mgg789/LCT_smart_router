@@ -2,11 +2,15 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useCallback, useEffect, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { DeskShell } from '../figma-engineer/DeskShell';
 import { engineerHeaderStamp } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
 import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
+import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
+import { ClientAiPane } from './ClientAiPane';
 import { ClientEmailGate } from './ClientEmailGate';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
@@ -41,7 +45,7 @@ import {
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease: slideEase };
 
-type GatePurpose = 'submit' | 'list' | 'detail';
+type GatePurpose = 'submit' | 'list' | 'detail' | 'support';
 
 interface EmailGateState {
   purpose: GatePurpose;
@@ -57,11 +61,13 @@ interface EmailGateState {
  */
 export function ClientApp() {
   const motionOn = !useReducedMotion();
+  const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
   const [requests, setRequests] = useState<ClientRequestView[]>([]);
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [newMode, setNewMode] = useState<'story' | 'form'>('form');
   const [notice, setNotice] = useState<string | null>(null);
   const [session, setSession] = useState<StoredClientSession | null>(null);
   const [gate, setGate] = useState<EmailGateState | null>(null);
@@ -247,6 +253,10 @@ export function ClientApp() {
         await sendNow(next);
         return;
       }
+      if (gate.purpose === 'support') {
+        setScreen('support');
+        return;
+      }
       const cards = await refreshHistory(next.token);
       setScreen('list');
       setNowMs(Date.now());
@@ -297,172 +307,270 @@ export function ClientApp() {
   const failure = isPhoneFailureNotice(notice) ? notice : null;
   const inlineNotice = failure ? null : notice;
 
-  return (
-    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
-      <div className="engineer-phone client-phone relative h-dvh overflow-hidden">
-        {failure ? (
-          <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
-        ) : null}
-        <div
-          className="flex h-full min-h-0 flex-col overflow-y-auto"
-          style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
-        >
-          <header className="flex items-center" style={{ gap: eu(20) }}>
-            <motion.button
-              type="button"
-              aria-label="Меню"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(true)}
-              whileTap={{ scale: 0.96 }}
-              transition={{ duration: 0.16 }}
-              className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
-              style={{
-                width: eu(90),
-                height: eu(90),
-                borderRadius: eu(20),
-              }}
-            >
-              <FigmaIcon
-                src={CLIENT_ASSETS.menu}
-                alt=""
-                width={36}
-                height={25}
-                style={{ width: eu(36), height: eu(25) }}
-              />
-            </motion.button>
-            {screen === 'list' ? (
-              <p
-                className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
-                style={{ fontSize: eu(32), position: 'relative', top: 2 }}
-              >
-                {engineerHeaderStamp(nowMs)}
-              </p>
-            ) : null}
-            {screen === 'new' || screen === 'sent' ? (
-              <p
-                className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
-                style={{ fontSize: eu(40), position: 'relative', top: 1 }}
-              >
-                NAVIX
-              </p>
-            ) : null}
-          </header>
+  const closeDetail = () => {
+    setOpenedId(null);
+    setNotice(null);
+    if (window.location.pathname.startsWith('/client/requests/')) {
+      window.history.pushState({}, '', '/client');
+    }
+  };
 
-          {screen === 'new' ? (
-            <ClientNewRequest
-              draft={draft}
+  const detail = opened ? (
+    <ClientRequestDetail
+      item={opened}
+      nowMs={nowMs}
+      notice={inlineNotice}
+      onBack={closeDetail}
+      onChangeTime={() => setNotice(t('figma-client.ClientApp.d4f8b2e820'))}
+    />
+  ) : null;
+
+  const gateSheet = (
+    <AnimatePresence>
+      {gate ? (
+        <motion.div
+          key="client-email-gate"
+          className="absolute inset-0 z-40 bg-figma-canvas"
+          initial={motionOn ? { y: 24, opacity: 0 } : false}
+          animate={{ y: 0, opacity: 1 }}
+          exit={motionOn ? { y: 24, opacity: 0 } : undefined}
+          transition={motionOn ? slide : { duration: 0 }}
+        >
+          {/* The sheet covers the pane; the form inside it keeps a column of
+              its own, at a scale that matches that column's width. */}
+          <div className={desk ? 'phone-desk-sheet h-full' : 'h-full'}>
+            <ClientEmailGate
+              purpose={gate.purpose}
+              email={gate.email}
+              codeStep={gate.codeStep}
+              devCode={gate.devCode}
               busy={busy}
-              notice={busy ? 'Отправляем…' : inlineNotice}
-              onChange={setDraft}
-              onSubmit={submit}
-            />
-          ) : null}
-          {screen === 'sent' && sent ? (
-            <ClientSent
-              item={sent}
-              onList={openList}
-              onAnother={() => {
-                setSent(null);
-                go('new');
+              notice={inlineNotice}
+              onEmailChange={(email) => setGate({ ...gate, email })}
+              onRequestCode={() => {
+                void askCode(gate.email.trim());
+              }}
+              onConfirm={(code) => {
+                void confirmCode(code);
+              }}
+              onClose={() => {
+                setGate(null);
+                setNotice(null);
               }}
             />
-          ) : null}
-          {screen === 'list' ? (
-            <ClientRequests
-              requests={requests}
-              notice={inlineNotice}
-              motionOn={motionOn}
-              onOpen={openCard}
-              onNewRequest={() => go('new')}
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+
+  /**
+   * The same menu twice over: a drawer behind a button on the phone, and the
+   * rail itself on a desk, where there is room for it to simply be there.
+   */
+  const deskMenu = (
+    <ClientMenu
+      active={screen === 'sent' ? 'new' : screen}
+      docked
+      email={session?.email ?? null}
+      motionOn={motionOn}
+      onClose={() => undefined}
+      onNavigate={(id) => {
+        if (id === 'list') openList();
+        else go(id);
+      }}
+      onNewRequest={() => go('new')}
+      open
+    />
+  );
+
+  const menuDrawer = (
+    <ClientMenu
+      active={screen === 'sent' ? 'new' : screen}
+      email={session?.email ?? null}
+      motionOn={motionOn}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        if (id === 'list') openList();
+        else go(id);
+      }}
+      onNewRequest={() => go('new')}
+      open={menuOpen}
+    />
+  );
+
+  const column = (
+    <>
+      {failure ? (
+        <PhoneErrorNotice
+          title={t('figma-client.ClientApp.bf22dfeeba')}
+          body={failure}
+          onClose={() => setNotice(null)}
+        />
+      ) : null}
+      {/*
+       * On a desk the list is the one screen worth the whole width; a form is
+       * not, so it keeps a readable column in the middle.
+       */}
+      <div
+        className={`flex h-full min-h-0 flex-col ${screen === 'support' ? 'overflow-hidden' : 'overflow-y-auto'} ${
+          desk && screen !== 'list'
+            ? screen === 'new' && newMode === 'story'
+              ? 'phone-desk-column'
+              : 'phone-desk-center'
+            : ''
+        }`}
+        style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
+      >
+        <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
+          <motion.button
+            type="button"
+            aria-label={t('figma-client.ClientApp.122f717650')}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+            whileTap={{ scale: 0.96 }}
+            transition={{ duration: 0.16 }}
+            className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
+            style={{
+              width: eu(90),
+              height: eu(90),
+              borderRadius: eu(20),
+            }}
+          >
+            <FigmaIcon
+              src={CLIENT_ASSETS.menu}
+              alt=""
+              width={36}
+              height={25}
+              style={{ width: eu(36), height: eu(25) }}
             />
-          ) : null}
-          {screen === 'support' ? (
+          </motion.button>
+          {screen === 'list' ? (
             <p
-              className="font-medium text-figma-muted"
-              style={{ marginTop: eu(48), fontSize: eu(20) }}
+              className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
+              style={{ fontSize: eu(32), position: 'relative', top: 2 }}
             >
-              Поддержка пока недоступна.
+              {engineerHeaderStamp(nowMs)}
             </p>
           ) : null}
-        </div>
-
-        <AnimatePresence>
-          {opened ? (
-            <motion.div
-              key={`detail-${opened.id}`}
-              className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
-              initial={motionOn ? { x: '100%' } : false}
-              animate={{ x: '0%' }}
-              exit={motionOn ? { x: '100%' } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
+          {screen === 'new' || screen === 'sent' ? (
+            <p
+              className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
+              style={{ fontSize: eu(40), position: 'relative', top: 1 }}
             >
-              <div className="h-full overflow-y-auto">
-                <ClientRequestDetail
-                  item={opened}
-                  nowMs={nowMs}
-                  notice={inlineNotice}
-                  onBack={() => {
-                    setOpenedId(null);
-                    setNotice(null);
-                    if (window.location.pathname.startsWith('/client/requests/')) {
-                      window.history.pushState({}, '', '/client');
-                    }
-                  }}
-                  onChangeTime={() => setNotice('Смена окна этой заявки появится отдельным шагом.')}
-                />
-              </div>
-            </motion.div>
+              {t('figma-client.ClientApp.d675af9943')}
+            </p>
           ) : null}
-        </AnimatePresence>
+        </header>
 
-        <AnimatePresence>
-          {gate ? (
-            <motion.div
-              key="client-email-gate"
-              className="absolute inset-0 z-30 bg-figma-canvas"
-              initial={motionOn ? { y: 24, opacity: 0 } : false}
-              animate={{ y: 0, opacity: 1 }}
-              exit={motionOn ? { y: 24, opacity: 0 } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
-            >
-              <ClientEmailGate
-                purpose={gate.purpose}
-                email={gate.email}
-                codeStep={gate.codeStep}
-                devCode={gate.devCode}
-                busy={busy}
-                notice={inlineNotice}
-                onEmailChange={(email) => setGate({ ...gate, email })}
-                onRequestCode={() => {
-                  void askCode(gate.email.trim());
-                }}
-                onConfirm={(code) => {
-                  void confirmCode(code);
-                }}
-                onClose={() => {
-                  setGate(null);
-                  setNotice(null);
-                }}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        {opened || gate ? null : (
-          <ClientMenu
-            open={menuOpen}
-            motionOn={motionOn}
-            email={session?.email ?? null}
-            active={screen === 'sent' ? 'new' : screen}
-            onClose={() => setMenuOpen(false)}
-            onNavigate={(id) => {
-              if (id === 'list') openList();
-              else go(id);
-            }}
-            onNewRequest={() => go('new')}
+        {screen === 'new' ? (
+          <ClientNewRequest
+            onModeChange={setNewMode}
+            draft={draft}
+            busy={busy}
+            notice={busy ? t('figma-client.ClientApp.899dce11fb') : inlineNotice}
+            onChange={setDraft}
+            onSubmit={submit}
           />
-        )}
+        ) : null}
+        {screen === 'sent' && sent ? (
+          <ClientSent
+            item={sent}
+            onList={openList}
+            onAnother={() => {
+              setSent(null);
+              go('new');
+            }}
+          />
+        ) : null}
+        {screen === 'list' ? (
+          <ClientRequests
+            requests={requests}
+            notice={inlineNotice}
+            motionOn={motionOn}
+            onOpen={openCard}
+            onNewRequest={() => go('new')}
+            selectedId={openedId}
+          />
+        ) : null}
+        {screen === 'support' ? (
+          <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+            {session ? (
+              <ClientAiPane
+                token={session.token}
+                sessionScope={session.email}
+                onSessionExpired={forgetSession}
+                displayName={draft.contactName || null}
+                onOperationApplied={() => {
+                  void refreshHistory(session.token).catch((error: unknown) => {
+                    if (isDeadSession(error)) forgetSession();
+                    else setNotice(errorText(error));
+                  });
+                }}
+                onOpenRequest={(id) => void openOwned(session, id)}
+              />
+            ) : (
+              <button
+                type="button"
+                className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
+                onClick={() => setGate({ purpose: 'support', email: draft.email, codeStep: false })}
+              >
+                {t('figma-client.ClientApp.b050495194')}
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
+
+      <AnimatePresence>
+        {opened && !desk ? (
+          <motion.div
+            key={`detail-${opened.id}`}
+            className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
+            initial={motionOn ? { x: '100%' } : false}
+            animate={{ x: '0%' }}
+            exit={motionOn ? { x: '100%' } : undefined}
+            transition={motionOn ? slide : { duration: 0 }}
+          >
+            <div className="h-full overflow-y-auto">{detail}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {gateSheet}
+
+      {desk || (opened && !desk) || gate ? null : menuDrawer}
+    </>
+  );
+
+  if (desk) {
+    return (
+      <DeskShell
+        menu={deskMenu}
+        detail={detail}
+        detailKey={opened?.id}
+        header={
+          <>
+            <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">
+              {t('figma-client.ClientApp.d675af9943')}
+            </p>
+            <span className="flex-1" />
+            {session?.email ? (
+              <p className="font-medium text-[16px] text-figma-muted">{session.email}</p>
+            ) : null}
+          </>
+        }
+        fitScreen={desk && ((screen === 'new' && newMode === 'form') || screen === 'sent')}
+        screenKey={screen}
+      >
+        {column}
+      </DeskShell>
+    );
+  }
+
+  return (
+    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
+      <div className="engineer-phone client-phone relative h-dvh overflow-hidden">{column}</div>
     </main>
   );
 }
@@ -475,8 +583,8 @@ function isDeadSession(error: unknown): boolean {
 }
 
 function errorText(error: unknown): string {
-  if (isDeadSession(error)) return 'Сессия закончилась. Войдите по почте ещё раз.';
+  if (isDeadSession(error)) return t('figma-client.ClientApp.519fbc6482');
   if (error instanceof DashboardApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return 'Не удалось выполнить запрос.';
+  return t('figma-client.ClientApp.747aa7a100');
 }

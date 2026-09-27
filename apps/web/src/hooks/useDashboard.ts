@@ -7,6 +7,7 @@ import {
   createDispatchRequest,
   DashboardApiError,
   deleteDispatchEngineer,
+  ImportCancelledError,
   importOfficialDataset,
   importRoadData,
   linkEngineerAccount,
@@ -14,7 +15,6 @@ import {
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
-  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -23,15 +23,18 @@ import {
   setDispatchMode,
   setEngineerAttendanceOptOut,
   setEngineerAvailability,
+  setOrdinaryReplanning,
   signOutDispatcher,
   simulateChange,
   simulationWorsens,
   unlinkEngineerAccount,
+  updateDispatchEngineerProfile,
   updateRouterTechnicalSettings,
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
 import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import { loadManualState, saveManualDecision } from '../api/manual';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -44,6 +47,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  ReviewImportQuality,
   RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
@@ -69,6 +73,7 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import { t } from '../i18n';
 
 import { usePlanHistory } from './usePlanHistory';
 
@@ -132,6 +137,7 @@ export function useDashboard() {
   const [loading, setLoading] = useState(token !== null);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
+  const [savingReplanning, setSavingReplanning] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
@@ -198,7 +204,7 @@ export function useDashboard() {
     (cause: unknown) => {
       setDiagnostic(connectionDiagnostic(cause));
       if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Доступ к рабочим данным закрыт. Войдите снова.');
+        handleSessionFailure(t('hooks.useDashboard.8464c6ba27'));
         return;
       }
       if (snapshotRef.current && sourceRef.current !== 'demo') setSource('cached');
@@ -211,7 +217,7 @@ export function useDashboard() {
       return null;
     }
     if (recoverySessionExpired(sessionStorage)) {
-      handleSessionFailure('Сессия закончилась. Войдите снова.');
+      handleSessionFailure(t('hooks.useDashboard.6404743fab'));
       return null;
     }
     const generation = readGeneration.current;
@@ -233,7 +239,7 @@ export function useDashboard() {
       }
       reportFailure(cause);
       if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        handleSessionFailure(t('hooks.useDashboard.6404743fab'));
         return null;
       }
       setError(errorMessage(cause));
@@ -262,7 +268,7 @@ export function useDashboard() {
       if (generation !== liveReadGeneration.current) return null;
       reportFailure(cause);
       if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        handleSessionFailure(t('hooks.useDashboard.6404743fab'));
         return null;
       }
       setError(errorMessage(cause));
@@ -512,7 +518,9 @@ export function useDashboard() {
       );
       setFocus({ engineerId: null, requestId: null });
       pushEvent(
-        `Демо: ${demoScenarios.find((item) => item.id === id)?.title}. Записанный результат Router.`,
+        t('hooks.useDashboard.0b61a22f11', {
+          value0: demoScenarios.find((item) => item.id === id)?.title,
+        }),
       );
     },
     [invalidateAsyncReads, pushEvent, rebuilding, uploadingData, setSource, setSnapshot],
@@ -588,7 +596,12 @@ export function useDashboard() {
   );
 
   const rebuild = useCallback(
-    async (nextPolicy: PolicyId, nextSettings: RouterTechnicalSettings, reason: string) => {
+    async (
+      nextPolicy: PolicyId,
+      nextSettings: RouterTechnicalSettings,
+      reason: string,
+      selectPolicy = false,
+    ) => {
       if (
         !token ||
         sourceRef.current !== 'live' ||
@@ -609,12 +622,8 @@ export function useDashboard() {
       setRebuilding(true);
       setPendingDelta(null);
       setError(null);
-      pushEvent(`${reason}. Router пересчитывает план…`);
+      pushEvent(t('hooks.useDashboard.29dad6f34e', { value0: reason }));
       try {
-        if (previous.plan.mode === 'manual') {
-          await setDispatchMode(token, 'auto');
-          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
-        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -623,10 +632,13 @@ export function useDashboard() {
           expectedContextVersion = updated.routerContextVersion;
         }
         if (generation !== readGeneration.current) return false;
-        if (nextPolicy !== previous.policyId) {
+        if (nextPolicy !== previous.policyId || selectPolicy) {
           try {
-            const preview = await simulateChange(token, { policyId: nextPolicy });
-            if (simulationWorsens(preview.delta)) {
+            const preview =
+              nextPolicy === 'personal'
+                ? null
+                : await simulateChange(token, { policyId: nextPolicy });
+            if (preview && simulationWorsens(preview.delta)) {
               const accepted = await new Promise<boolean>((resolve) => {
                 worseningResolve.current = resolve;
                 setWorseningText(preview.text);
@@ -667,16 +679,19 @@ export function useDashboard() {
             ),
           );
         }
-        pushEvent(`Применён план rev.${next.plan.plan?.revision ?? '—'} (${nextPolicy}).`);
+        pushEvent(
+          t('hooks.useDashboard.637733c787', {
+            value0: next.plan.plan?.revision ?? '—',
+            value1: nextPolicy,
+          }),
+        );
         return true;
       } catch (cause) {
         if (generation !== readGeneration.current) return false;
         reportFailure(cause);
         setError(errorMessage(cause));
-        setOperationWarning(
-          'Результат изменения не подтверждён. Проверьте актуальный план перед повторным действием.',
-        );
-        pushEvent(`Перестроение не завершено: ${errorMessage(cause)}`);
+        setOperationWarning(t('hooks.useDashboard.2ebe9e3623'));
+        pushEvent(t('hooks.useDashboard.c3f6646d50', { value0: errorMessage(cause) }));
         await refresh();
         return false;
       } finally {
@@ -697,51 +712,78 @@ export function useDashboard() {
   );
 
   const applyRoutingSettings = useCallback(
-    (policyId: PolicyId, nextSettings: RouterTechnicalSettings) => {
+    (policyId: PolicyId, nextSettings: RouterTechnicalSettings, selectPolicy = false) => {
       if (!snapshot) {
         return;
       }
       const current = snapshot.routerSettings ?? defaultRouterSettings(snapshot);
       const changes = [
-        policyId !== snapshot.policyId ? `политика ${policyId}` : null,
+        policyId !== snapshot.policyId
+          ? t('hooks.useDashboard.6186d31ff9', { value0: policyId })
+          : null,
         nextSettings.lunchesEnabled !== snapshot.lunchesEnabled
           ? nextSettings.lunchesEnabled
-            ? 'обеды включены'
-            : 'обеды выключены'
+            ? t('hooks.useDashboard.9b379afd6f')
+            : t('hooks.useDashboard.3df5947d5c')
           : null,
         nextSettings.strictTimeWindows !== current.strictTimeWindows ||
         nextSettings.windowLatenessToleranceSec !== current.windowLatenessToleranceSec ||
         nextSettings.departureLatenessToleranceSec !== current.departureLatenessToleranceSec ||
         nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
-          ? 'допуск опоздания обновлён'
+          ? t('hooks.useDashboard.5feaad001e')
           : null,
-        nextSettings.accessBufferSec !== current.accessBufferSec ? 'буфер доступа обновлён' : null,
+        nextSettings.accessBufferSec !== current.accessBufferSec
+          ? t('hooks.useDashboard.103786f83a')
+          : null,
         nextSettings.earlyFinishReplanThresholdSec !== current.earlyFinishReplanThresholdSec
-          ? 'порог раннего финиша обновлён'
+          ? t('hooks.useDashboard.73ffe7bb10')
           : null,
         nextSettings.taskOverrunToleranceSec !== current.taskOverrunToleranceSec
-          ? 'допуск переработки обновлён'
+          ? t('hooks.useDashboard.fa049255a2')
           : null,
-        nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
-        nextSettings.metroEnabled !== current.metroEnabled ? 'режим метро обновлён' : null,
+        nextSettings.trafficEnabled !== current.trafficEnabled
+          ? t('hooks.useDashboard.4bac716696')
+          : null,
+        nextSettings.metroEnabled !== current.metroEnabled
+          ? t('hooks.useDashboard.56901e557e')
+          : null,
         nextSettings.equipmentEnabled !== current.equipmentEnabled
-          ? 'режим оборудования обновлён'
+          ? t('hooks.useDashboard.5df8aabf41')
           : null,
       ].filter((item): item is string => item !== null);
-      if (changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
+      if (selectPolicy || changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
         void rebuild(
           policyId,
           nextSettings,
-          changes.join(', ') || 'технические настройки обновлены',
+          changes.join(', ') || t('hooks.useDashboard.897204689b'),
+          selectPolicy,
         );
       }
     },
     [rebuild, snapshot],
   );
 
+  const toggleOrdinaryReplanning = useCallback(async () => {
+    if (!token || source !== 'live' || !snapshot || savingReplanning) return;
+    setSavingReplanning(true);
+    try {
+      const result = await setOrdinaryReplanning(token, !snapshot.ordinaryReplanningDisabled);
+      pushEvent(
+        result.ordinaryReplanningDisabled
+          ? t('hooks.useDashboard.8f52b94fb0')
+          : t('hooks.useDashboard.af20f5e557'),
+      );
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSavingReplanning(false);
+    }
+  }, [token, source, snapshot, savingReplanning, pushEvent, refresh]);
+
   const acceptDelta = useCallback(() => {
     setPendingDelta(null);
-    pushEvent('Изменения плана просмотрены.');
+    pushEvent(t('hooks.useDashboard.35b54e0e57'));
   }, [pushEvent]);
 
   /** Starts the day once; the following refresh is read-only confirmation. */
@@ -755,7 +797,7 @@ export function useDashboard() {
       const next = await startLiveWorkday(token);
       if (generation !== liveReadGeneration.current) return false;
       setLiveWorkday(next);
-      pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+      pushEvent(t('hooks.useDashboard.00d9a134a2'));
       void refresh();
       return true;
     } catch (cause) {
@@ -768,7 +810,7 @@ export function useDashboard() {
           setLiveWorkday,
         );
         if (started) {
-          pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+          pushEvent(t('hooks.useDashboard.00d9a134a2'));
           void refresh();
           return true;
         }
@@ -788,25 +830,30 @@ export function useDashboard() {
       !planHistory?.eligibility.eligible ||
       !planHistory.current
     )
-      return;
+      return false;
     setEntityMutationPending(true);
     try {
       const restored = await restorePreviousPlan(token, planHistory.current.revision);
       setPendingDelta(null);
       pushEvent(
-        `Восстановлен план ревизии ${restored.fromRevision} новой ревизией ${restored.restoredRevision}.`,
+        t('hooks.useDashboard.2b4771b24d', {
+          value0: restored.fromRevision,
+          value1: restored.restoredRevision,
+        }),
       );
       await refresh();
+      return true;
     } catch (cause) {
       reportFailure(cause);
       setError(errorMessage(cause));
+      return false;
     } finally {
       setEntityMutationPending(false);
     }
   }, [token, planHistory, refresh, pushEvent, reportFailure]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual') => {
+    async (mode: 'auto' | 'manual', reason?: string) => {
       if (!token || sourceRef.current !== 'live') {
         return;
       }
@@ -814,18 +861,18 @@ export function useDashboard() {
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode);
+        await setDispatchMode(token, mode, reason);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
-          mode === 'manual' ? 'Включён ручной режим.' : 'Восстановлен автоматический режим.',
+          mode === 'manual'
+            ? t('hooks.useDashboard.ec7836ccd3')
+            : t('hooks.useDashboard.3b304818ce'),
         );
       } catch (cause) {
         if (generation !== readGeneration.current) return;
         reportFailure(cause);
-        setOperationWarning(
-          'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
-        );
+        setOperationWarning(t('hooks.useDashboard.13ca03f2f3'));
         setError(errorMessage(cause));
       }
     },
@@ -855,9 +902,11 @@ export function useDashboard() {
       if (generation !== readGeneration.current || requestId !== comparisonRequestId.current) {
         return;
       }
-      reportFailure(cause);
+      // Comparison conflicts (including MANUAL mode and a stale plan version)
+      // are domain responses, not a lost connection to the live dashboard.
+      if (!(cause instanceof DashboardApiError && cause.status === 409)) reportFailure(cause);
       if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        handleSessionFailure(t('hooks.useDashboard.6404743fab'));
         return;
       }
       setPolicyComparisonError(errorMessage(cause));
@@ -905,8 +954,8 @@ export function useDashboard() {
       setError(null);
       pushEvent(
         availability === 'offline'
-          ? `Отключаем ${engineerName(previous, engineerId)} от линии…`
-          : `Возвращаем ${engineerName(previous, engineerId)} на линию…`,
+          ? t('hooks.useDashboard.2d0cd16f95', { value0: engineerName(previous, engineerId) })
+          : t('hooks.useDashboard.b7b539c63b', { value0: engineerName(previous, engineerId) }),
       );
       try {
         const inputHash = await setEngineerAvailability(token, engineerId, availability);
@@ -938,16 +987,21 @@ export function useDashboard() {
           );
         }
         pushEvent(
-          `${engineerName(next, engineerId)}: ${availability === 'online' ? 'на линии' : 'отключён'}, применён план rev.${next.plan.plan?.revision ?? '—'}.`,
+          t('hooks.useDashboard.8776d0f8fc', {
+            value0: engineerName(next, engineerId),
+            value1:
+              availability === 'online'
+                ? t('hooks.useDashboard.a9cf7bedb2')
+                : t('hooks.useDashboard.f2d86ccb74'),
+            value2: next.plan.plan?.revision ?? '—',
+          }),
         );
       } catch (cause) {
         if (generation !== readGeneration.current) return;
         reportFailure(cause);
         setError(errorMessage(cause));
-        pushEvent(
-          `Не удалось подтвердить перестроение после смены статуса: ${errorMessage(cause)}`,
-        );
-        setOperationWarning('Результат изменения не подтверждён. Проверьте состояние на сервере.');
+        pushEvent(t('hooks.useDashboard.d8ac1effa3', { value0: errorMessage(cause) }));
+        setOperationWarning(t('hooks.useDashboard.1f3e4e01f2'));
         await refresh();
       } finally {
         setAvailabilityPendingId(null);
@@ -971,7 +1025,7 @@ export function useDashboard() {
   const saveEngineerLogin = useCallback(
     async (engineerId: string, email: string) => {
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Изменение почты доступно только в живом контуре');
+        throw new Error(t('hooks.useDashboard.78dc702368'));
       }
       const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
       if (engineer?.hasAccount) {
@@ -988,7 +1042,7 @@ export function useDashboard() {
   const unlinkEngineerLogin = useCallback(
     async (engineerId: string) => {
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Снятие почты доступно только в живом контуре');
+        throw new Error(t('hooks.useDashboard.61b98daf5c'));
       }
       await unlinkEngineerAccount(token, engineerId);
       await refresh();
@@ -1006,7 +1060,7 @@ export function useDashboard() {
         entityMutationPending ||
         operationWarning !== null
       ) {
-        throw new Error('Изменение доступно только при подключении к рабочему серверу');
+        throw new Error(t('hooks.useDashboard.e43dbb9a89'));
       }
       invalidateAsyncReads();
       setEntityMutationPending(true);
@@ -1015,9 +1069,7 @@ export function useDashboard() {
         await operation(token);
         const [next] = await Promise.all([refresh(), refreshLive()]);
         if (!next) {
-          setOperationWarning(
-            'Изменение принято сервером, но обновление экрана не подтверждено. Не повторяйте операцию вслепую.',
-          );
+          setOperationWarning(t('hooks.useDashboard.f576a3788f'));
         }
         pushEvent(eventText);
       } catch (cause) {
@@ -1029,9 +1081,7 @@ export function useDashboard() {
           reportFailure(cause);
         }
         if (uncertain) {
-          setOperationWarning(
-            'Результат изменения не подтверждён. Проверьте актуальный список перед повтором.',
-          );
+          setOperationWarning(t('hooks.useDashboard.b56a06ae45'));
         }
         setError(errorMessage(cause));
         throw cause;
@@ -1052,11 +1102,24 @@ export function useDashboard() {
     ],
   );
 
+  const updateEngineerProfile = useCallback(
+    (
+      engineerId: string,
+      patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+    ) =>
+      performEntityMutation(async (session) => {
+        const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+        if (!engineer) throw new Error(t('hooks.useDashboard.3d944f689c'));
+        await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+      }, t('hooks.useDashboard.2950b62d94')),
+    [performEntityMutation],
+  );
+
   const createRequest = useCallback(
     (input: CreateDispatchRequestInput) =>
       performEntityMutation(async (session) => {
         await createDispatchRequest(session, input);
-      }, 'Создана новая заявка.'),
+      }, t('hooks.useDashboard.8c739f5515')),
     [performEntityMutation],
   );
 
@@ -1070,7 +1133,7 @@ export function useDashboard() {
           current?.version,
           'cancelled by dispatcher',
         );
-      }, 'Визит отменён.');
+      }, t('hooks.useDashboard.a2727a3442'));
     },
     [performEntityMutation],
   );
@@ -1080,10 +1143,14 @@ export function useDashboard() {
       const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
       return performEntityMutation(
         async (session) => {
-          await setDispatchMode(session, 'manual');
-          await reassignDispatchRequest(session, requestId, engineerId);
+          const manual = await loadManualState(session);
+          await saveManualDecision(session, manual.version, {
+            kind: 'assignment',
+            targetId: requestId,
+            engineerId,
+          });
         },
-        `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
+        t('hooks.useDashboard.0bd2017b6a', { value0: engineer?.displayName ?? engineerId }),
       );
     },
     [performEntityMutation],
@@ -1091,9 +1158,12 @@ export function useDashboard() {
 
   const createEngineer = useCallback(
     (input: CreateDispatchEngineerInput) =>
-      performEntityMutation(async (session) => {
-        await createDispatchEngineer(session, input);
-      }, `Добавлен инженер ${input.displayName}.`),
+      performEntityMutation(
+        async (session) => {
+          await createDispatchEngineer(session, input);
+        },
+        t('hooks.useDashboard.cc54ecd385', { value0: input.displayName }),
+      ),
     [performEntityMutation],
   );
 
@@ -1104,7 +1174,7 @@ export function useDashboard() {
         async (session) => {
           await deleteDispatchEngineer(session, engineerId, engineer?.version);
         },
-        `Инженер ${engineer?.displayName ?? engineerId} удалён из активного состава.`,
+        t('hooks.useDashboard.f8d3574d77', { value0: engineer?.displayName ?? engineerId }),
       );
     },
     [performEntityMutation],
@@ -1113,7 +1183,7 @@ export function useDashboard() {
   const performAlertOperation = useCallback(
     async (operation: (session: string) => Promise<void>, onSuccess?: () => void) => {
       if (!token || sourceRef.current !== 'live' || loading || operationWarning !== null) {
-        throw new Error('Для решения алертов нужно подключение к рабочему серверу');
+        throw new Error(t('hooks.useDashboard.33a1f14c8b'));
       }
       const generation = readGeneration.current;
       try {
@@ -1137,7 +1207,9 @@ export function useDashboard() {
     (id: string, input: AlertResolutionInput) =>
       performAlertOperation(
         (session) => resolveDispatchAlert(session, id, input),
-        input.action === 'move_window' || input.action === 'restore_auto'
+        input.action === 'move_window' ||
+          input.action === 'restore_auto' ||
+          input.action === 'prioritize'
           ? undefined
           : () => {
               const current = snapshotRef.current;
@@ -1169,7 +1241,7 @@ export function useDashboard() {
   );
 
   const restartDemoDay = useCallback(async () => {
-    if (!token) throw new Error('Нужна живая сессия диспетчера');
+    if (!token) throw new Error(t('hooks.useDashboard.469d6911f3'));
     invalidateAsyncReads();
     const generation = readGeneration.current;
     const summary = await restartDemoStand(token);
@@ -1179,16 +1251,16 @@ export function useDashboard() {
   }, [invalidateAsyncReads, refresh, refreshLive, token]);
 
   const uploadDataset = useCallback(
-    async (file: DataUploadFile): Promise<DataUploadSummary> => {
+    async (file: DataUploadFile, review?: ReviewImportQuality): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
-        throw new Error('Загрузка данных уже выполняется');
+        throw new Error(t('hooks.useDashboard.356cfc8bbe'));
       }
       invalidateAsyncReads();
       const generation = readGeneration.current;
       setUploadingData(true);
       setError(null);
       try {
-        const summary = await uploadDataPackage(token, file);
+        const summary = await uploadDataPackage(token, file, review);
         if (generation !== readGeneration.current) return summary;
         try {
           const next = await loadDashboardSnapshot(token);
@@ -1197,26 +1269,26 @@ export function useDashboard() {
         } catch (refreshCause) {
           if (generation !== readGeneration.current) return summary;
           reportFailure(refreshCause);
-          setOperationWarning(
-            'Данные приняты сервером, но обновление экрана не подтверждено. Не отправляйте пакет повторно.',
-          );
-          setError(`Данные приняты, но экран не обновился: ${errorMessage(refreshCause)}`);
+          setOperationWarning(t('hooks.useDashboard.f8b3a951ec'));
+          setError(t('hooks.useDashboard.d8a45b2d88', { value0: errorMessage(refreshCause) }));
         }
         setFocus({ engineerId: null, requestId: null });
         setPolicyComparison(null);
         await refreshLive();
         pushEvent(
           summary.applied
-            ? `Регион ${summary.region}: добавлено ${summary.requestsCreated} заявок.`
-            : `Пакет региона ${summary.region} уже был загружен.`,
+            ? t('hooks.useDashboard.11463640cd', {
+                value0: summary.region,
+                value1: summary.requestsCreated,
+              })
+            : t('hooks.useDashboard.087199f510', { value0: summary.region }),
         );
         return summary;
       } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
         if (generation === readGeneration.current) {
           reportFailure(cause);
-          setOperationWarning(
-            'Результат загрузки не подтверждён. Проверьте список заявок перед повтором.',
-          );
+          setOperationWarning(t('hooks.useDashboard.aea5d60ef2'));
           setError(errorMessage(cause));
         }
         throw cause;
@@ -1238,7 +1310,7 @@ export function useDashboard() {
   const importRoadResource = useCallback(
     async (payloadBase64: string): Promise<RoadImportSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
-        throw new Error('Загрузка данных уже выполняется');
+        throw new Error(t('hooks.useDashboard.356cfc8bbe'));
       }
       invalidateAsyncReads();
       const generation = readGeneration.current;
@@ -1250,16 +1322,14 @@ export function useDashboard() {
         await refreshLive();
         pushEvent(
           summary.status === 'replayed'
-            ? 'Дорожный ресурс уже был импортирован.'
-            : `Дорожный ресурс принят: ${summary.edges} рёбер, ${summary.nodes} узлов.`,
+            ? t('hooks.useDashboard.5a114b39a8')
+            : t('hooks.useDashboard.78f2637360', { value0: summary.edges, value1: summary.nodes }),
         );
         return summary;
       } catch (cause) {
         if (generation === readGeneration.current) {
           reportFailure(cause);
-          setOperationWarning(
-            'Импорт дорожного ресурса не подтверждён. Проверьте журнал операций.',
-          );
+          setOperationWarning(t('hooks.useDashboard.4b7f74ba7e'));
           setError(errorMessage(cause));
         }
         throw cause;
@@ -1270,57 +1340,62 @@ export function useDashboard() {
     [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
   );
 
-  const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
-    if (!token || sourceRef.current !== 'live' || uploadingData) {
-      throw new Error('Загрузка данных уже выполняется');
-    }
-    invalidateAsyncReads();
-    const generation = readGeneration.current;
-    setUploadingData(true);
-    setError(null);
-    try {
-      const summary = await importOfficialDataset(token);
-      if (generation !== readGeneration.current) return summary;
+  const importOfficialTzDataset = useCallback(
+    async (review?: ReviewImportQuality): Promise<OfficialImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error(t('hooks.useDashboard.356cfc8bbe'));
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
       try {
-        const next = await loadDashboardSnapshot(token);
+        const summary = await importOfficialDataset(token, review);
         if (generation !== readGeneration.current) return summary;
-        setSnapshot(next);
-      } catch (refreshCause) {
-        if (generation !== readGeneration.current) return summary;
-        reportFailure(refreshCause);
-        setOperationWarning(
-          'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+        try {
+          const next = await loadDashboardSnapshot(token);
+          if (generation !== readGeneration.current) return summary;
+          setSnapshot(next);
+        } catch (refreshCause) {
+          if (generation !== readGeneration.current) return summary;
+          reportFailure(refreshCause);
+          setOperationWarning(t('hooks.useDashboard.ada58283fe'));
+          setError(t('hooks.useDashboard.5cafa28064', { value0: errorMessage(refreshCause) }));
+        }
+        setFocus({ engineerId: null, requestId: null });
+        setPolicyComparison(null);
+        await refreshLive();
+        pushEvent(
+          summary.applied
+            ? t('hooks.useDashboard.a9d2aad489', {
+                value0: summary.requestsCreated,
+                value1: summary.engineersCreated,
+              })
+            : t('hooks.useDashboard.0a71f4cd4c'),
         );
-        setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+        return summary;
+      } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning(t('hooks.useDashboard.382ae877b4'));
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
       }
-      setFocus({ engineerId: null, requestId: null });
-      setPolicyComparison(null);
-      await refreshLive();
-      pushEvent(
-        summary.applied
-          ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
-          : 'Официальный датасет из ТЗ уже был загружен.',
-      );
-      return summary;
-    } catch (cause) {
-      if (generation === readGeneration.current) {
-        reportFailure(cause);
-        setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
-        setError(errorMessage(cause));
-      }
-      throw cause;
-    } finally {
-      setUploadingData(false);
-    }
-  }, [
-    invalidateAsyncReads,
-    pushEvent,
-    refreshLive,
-    token,
-    uploadingData,
-    reportFailure,
-    setSnapshot,
-  ]);
+    },
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      refreshLive,
+      token,
+      uploadingData,
+      reportFailure,
+      setSnapshot,
+    ],
+  );
 
   const displaySnapshot = useMemo(
     () =>
@@ -1394,12 +1469,15 @@ export function useDashboard() {
     selectRequest,
     selectUnassignedOffset,
     applyRoutingSettings,
+    toggleOrdinaryReplanning,
+    savingReplanning,
     acceptDelta,
     rejectDelta,
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
     saveEngineerLogin,
+    updateEngineerProfile,
     unlinkEngineerLogin,
     createRequest,
     cancelRequest,
@@ -1478,9 +1556,7 @@ async function waitForRebuild(
     }
     await delay(750);
   }
-  throw new Error(
-    `Router не успел применить новую ревизию за ${Math.round(timeoutMs / 1000)} секунд`,
-  );
+  throw new Error(t('hooks.useDashboard.b99696ea67', { value0: Math.round(timeoutMs / 1000) }));
 }
 
 function delay(durationMs: number): Promise<void> {
@@ -1517,7 +1593,7 @@ async function waitForStartedDay(
 }
 
 function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : 'Не удалось выполнить запрос';
+  return cause instanceof Error ? cause.message : t('hooks.useDashboard.8f9c4884b8');
 }
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {

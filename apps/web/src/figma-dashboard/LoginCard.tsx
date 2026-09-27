@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { requestDispatcherLoginCode, verifyDispatcherLoginCode } from '../api/client';
 import { requestEngineerLoginCode, verifyEngineerLoginCode } from '../api/engineer';
 import type { AuthSession } from '../api/types';
+import { t } from '../i18n';
 import { FIGMA_ASSETS } from './assets';
 import {
   DISPATCHER_LOGIN_LEAD,
@@ -69,7 +70,7 @@ export function LoginCard({
   const requestCode = async () => {
     const nextEmail = email.trim();
     if (!isLoginEmail(nextEmail)) {
-      pushAuthErrorToast('Проверьте адрес почты.');
+      pushAuthErrorToast(t('figma-dashboard.LoginCard.78bbe6d207'));
       return;
     }
     setBusy(true);
@@ -113,7 +114,11 @@ export function LoginCard({
     if (!onPassword) return;
     const nextEmail = email.trim();
     if (!isLoginEmail(nextEmail) || !password) {
-      pushAuthErrorToast(password ? 'Проверьте адрес почты.' : 'Введите пароль.');
+      pushAuthErrorToast(
+        password
+          ? t('figma-dashboard.LoginCard.78bbe6d207')
+          : t('figma-dashboard.LoginCard.24155137a9'),
+      );
       return;
     }
     setBusy(true);
@@ -130,7 +135,12 @@ export function LoginCard({
   return (
     <div className="relative w-[480px] rounded-[20px] bg-white px-[36px] pb-[32px] pt-[36px]">
       <div className="flex justify-center">
-        <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={56} height={56} />
+        <FigmaIcon
+          src={FIGMA_ASSETS.logo}
+          alt={t('figma-dashboard.LoginCard.d985a55a7b')}
+          width={56}
+          height={56}
+        />
       </div>
       <h1 className="mt-[20px] text-center font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
         {title}
@@ -150,7 +160,7 @@ export function LoginCard({
           <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">
             {lead}
           </p>
-          <Field label="Почта" htmlFor={`${role}-email`}>
+          <Field label={t('figma-dashboard.LoginCard.abd894bf06')} htmlFor={`${role}-email`}>
             <input
               id={`${role}-email`}
               type="email"
@@ -161,7 +171,14 @@ export function LoginCard({
               className={fieldClass}
             />
           </Field>
-          <PrimaryButton disabled={locked} label={locked ? 'Отправляем…' : 'Получить код'} />
+          <PrimaryButton
+            disabled={locked}
+            label={
+              locked
+                ? t('figma-dashboard.LoginCard.899dce11fb')
+                : t('figma-dashboard.LoginCard.94b683c81c')
+            }
+          />
           {role === 'dispatcher' && onPassword ? (
             <button
               type="button"
@@ -169,7 +186,7 @@ export function LoginCard({
               onClick={() => setStep('password')}
               className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
             >
-              Войти паролем
+              {t('figma-dashboard.LoginCard.09ed98f0de')}
             </button>
           ) : null}
         </motion.form>
@@ -197,7 +214,8 @@ export function LoginCard({
           />
           {devCode ? (
             <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
-              Код для локальной отладки: {devCode}
+              {t('figma-dashboard.LoginCard.015f0314f2')}
+              {devCode}
             </p>
           ) : remaining > 0 ? (
             <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
@@ -210,12 +228,16 @@ export function LoginCard({
               onClick={() => void requestCode()}
               className="mt-[12px] mx-auto block font-medium text-[14px] text-figma-muted underline underline-offset-4"
             >
-              Получить новый код
+              {t('figma-dashboard.LoginCard.34fb79f9ac')}
             </button>
           )}
           <PrimaryButton
             disabled={locked || code.length !== OTP_LENGTH}
-            label={locked ? 'Входим…' : 'Войти'}
+            label={
+              locked
+                ? t('figma-dashboard.LoginCard.0d71e00507')
+                : t('figma-dashboard.LoginCard.8fc9ab2eeb')
+            }
           />
           <button
             type="button"
@@ -229,7 +251,7 @@ export function LoginCard({
             }}
             className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
           >
-            Сменить почту
+            {t('figma-dashboard.LoginCard.749cd1d495')}
           </button>
         </motion.form>
       ) : null}
@@ -246,9 +268,12 @@ export function LoginCard({
           }}
         >
           <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">
-            Запасной вход по паролю диспетчера из окружения сервера.
+            {t('figma-dashboard.LoginCard.eb710ac218')}
           </p>
-          <Field label="Почта" htmlFor={`${role}-password-email`}>
+          <Field
+            label={t('figma-dashboard.LoginCard.abd894bf06')}
+            htmlFor={`${role}-password-email`}
+          >
             <input
               id={`${role}-password-email`}
               type="email"
@@ -259,7 +284,7 @@ export function LoginCard({
               className={fieldClass}
             />
           </Field>
-          <Field label="Пароль" htmlFor={`${role}-password`}>
+          <Field label={t('figma-dashboard.LoginCard.cb1a2074b3')} htmlFor={`${role}-password`}>
             <input
               id={`${role}-password`}
               type="password"
@@ -270,7 +295,14 @@ export function LoginCard({
               className={fieldClass}
             />
           </Field>
-          <PrimaryButton disabled={locked} label={locked ? 'Входим…' : 'Войти'} />
+          <PrimaryButton
+            disabled={locked}
+            label={
+              locked
+                ? t('figma-dashboard.LoginCard.0d71e00507')
+                : t('figma-dashboard.LoginCard.8fc9ab2eeb')
+            }
+          />
           <button
             type="button"
             disabled={locked}
@@ -280,7 +312,7 @@ export function LoginCard({
             }}
             className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
           >
-            Войти по коду
+            {t('figma-dashboard.LoginCard.b1448aaf65')}
           </button>
         </motion.form>
       ) : null}
@@ -353,7 +385,10 @@ function OtpRow({
           }}
           inputMode="numeric"
           autoComplete={index === 0 ? 'one-time-code' : 'off'}
-          aria-label={`Цифра ${index + 1} из ${OTP_LENGTH}`}
+          aria-label={t('figma-dashboard.LoginCard.1e69b3fe8f', {
+            value0: index + 1,
+            value1: OTP_LENGTH,
+          })}
           maxLength={OTP_LENGTH}
           disabled={disabled}
           value={cells[index]}

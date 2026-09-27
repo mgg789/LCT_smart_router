@@ -1,0 +1,148 @@
+[
+  {
+    "input": {
+      "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
+      "split": "test",
+      "variant": "original",
+      "address": "Город Москва, пр-кт.Волгоградский, д. 128 к 5",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [3.828641396489095, 0.08888888888888889, 0.6666666666666666, 0.0, 1.0, 2, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
+      "split": "test",
+      "variant": "truncated",
+      "address": "Город Мо",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [2.1972245773362196, 0.0, 0.875, 0.0, 0.0, 0, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
+      "split": "test",
+      "variant": "garbage",
+      "address": "@@@ ??? \uFFFD 999",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [
+      2.6390573296152584, 0.23076923076923078, 0.0, 0.07692307692307693, 1.0, 0, 0.0, 0.0
+    ]
+  },
+  {
+    "input": {
+      "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
+      "split": "test",
+      "variant": "no_house",
+      "address": "Город Москва, пр-кт.Волгоградский, д. ",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [3.6635616461296463, 0.0, 0.7631578947368421, 0.0, 0.0, 2, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
+      "split": "test",
+      "variant": "duplicated",
+      "address": "Город Москва, пр-кт.Волгоградский, д. 128 к 5 Город Москва, пр-кт.Волгоградский, д. 128 к 5",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [4.5217885770490405, 0.08791208791208792, 0.6593406593406593, 0.0, 1.0, 4, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
+      "split": "train",
+      "variant": "original",
+      "address": "Город Москва, пер.Маяковского, д. 2",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [3.58351893845611, 0.02857142857142857, 0.7428571428571429, 0.0, 1.0, 2, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
+      "split": "train",
+      "variant": "truncated",
+      "address": "Город Мо",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [2.1972245773362196, 0.0, 0.875, 0.0, 0.0, 0, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
+      "split": "train",
+      "variant": "garbage",
+      "address": "@@@ ??? \uFFFD 999",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [
+      2.6390573296152584, 0.23076923076923078, 0.0, 0.07692307692307693, 1.0, 0, 0.0, 0.0
+    ]
+  },
+  {
+    "input": {
+      "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
+      "split": "train",
+      "variant": "no_house",
+      "address": "Город Москва, пер.Маяковского, д. ",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [3.5553480614894135, 0.0, 0.7647058823529411, 0.0, 0.0, 2, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
+      "split": "train",
+      "variant": "duplicated",
+      "address": "Город Москва, пер.Маяковского, д. 2 Город Москва, пер.Маяковского, д. 2",
+      "windowMinutes": 0,
+      "hasCoordinates": false
+    },
+    "expected": [4.276666119016055, 0.028169014084507043, 0.7323943661971831, 0.0, 1.0, 4, 0.0, 0.0]
+  },
+  {
+    "input": {
+      "address": "ул. Тестовая, ١٢",
+      "windowMinutes": 60,
+      "hasCoordinates": false
+    },
+    "expected": [2.833213344056216, 0.125, 0.625, 0.0, 1.0, 1, 4.110873864173311, 0.0]
+  },
+  {
+    "input": {
+      "address": "ул. Тестовая, １２",
+      "windowMinutes": 60,
+      "hasCoordinates": false
+    },
+    "expected": [2.833213344056216, 0.125, 0.625, 0.0, 1.0, 1, 4.110873864173311, 0.0]
+  },
+  {
+    "input": {
+      "address": "ул. Тестовая, ²",
+      "windowMinutes": 60,
+      "hasCoordinates": false
+    },
+    "expected": [2.772588722239781, 0.0, 0.6666666666666666, 0.0, 0.0, 1, 4.110873864173311, 0.0]
+  },
+  {
+    "input": {
+      "address": "",
+      "windowMinutes": 60,
+      "hasCoordinates": false
+    },
+    "expected": [0.0, 0.0, 0.0, 0.0, 0.0, 0, 4.110873864173311, 0.0]
+  }
+]

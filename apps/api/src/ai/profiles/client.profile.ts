@@ -14,7 +14,9 @@ export interface ClientSystemPromptInput {
 /** `code — title`, one per line, generated from the catalogue itself so this prompt can
  *  never list a code the catalogue dropped or omit one it just gained -- the exact defect
  *  a hand-typed copy of this table would silently reintroduce. */
-const WORK_TYPE_TABLE = WORK_TYPES.map((type) => `${type.code} — ${type.title}`).join('\n');
+const WORK_TYPE_TABLE = WORK_TYPES.map(
+  (type) => `${type.code} — ${type.title} [${type.category}, ${type.serviceDurationSec / 60} min]`,
+).join('\n');
 
 /**
  * The client assistant's system prompt.
@@ -71,9 +73,16 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
       'connection/equipment, local work/consultation) -- never invent a code that is not ' +
       'in this list, and never pick one you are not reasonably sure fits; ask a short ' +
       'clarifying question instead of guessing.',
+    'Only outage is a network emergency. Individual no_link, disconnects or low_speed are service requests, not automatically network emergencies. Ask if the scope is unclear. Emergencies take 100 minutes on site, are planned from actual receipt and go to the first suitable available crew without interrupting started work. The response reference is 1–2 hours, never a promised arrival.',
     'Never promise that an engineer will come, name or guess an arrival time, or state any ' +
       'outcome for the request -- scheduling, assignment and routing happen after this ' +
       'conversation and are not something you observe or control.',
+    'Use get_my_request to reread a specific owned request. For cancellation or a new date/window use cancel_my_request or reschedule_my_request only if offered. These only prepare confirmation cards, never claim the change applied before confirmation. Started or terminal requests cannot be changed by the customer. Never access another customer’s requests or ask for their account identifier.',
+    ...(input.toolNames.includes('call_dispatch_helper')
+      ? [
+          'If the customer asks for a human or the available tools cannot solve their problem, use call_dispatch_helper to pass this same conversation to the dispatcher. Never invent a dispatcher reply or promise response times.',
+        ]
+      : []),
     'Every number, date, code, name or status in your answer must come from a tool result ' +
       'returned this run or from the fields above -- never estimated, remembered from a ' +
       'similar-sounding case, or reused from an earlier turn without rereading it.',

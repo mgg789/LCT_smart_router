@@ -121,3 +121,40 @@ describe('Figma engineer LIVE controls', () => {
     expect(overlay({ ...waiting, engineer: { ...waiting.engineer, lineStartedAt: 90 } })).toBe('');
   });
 });
+
+describe('Equipment delivery wait', () => {
+  it('keeps the active visit visible but prevents finishing before delivery', () => {
+    const html = controls({
+      ...live,
+      current: {
+        request,
+        stop: null,
+        phase: 'in_progress',
+        expectedCompletionAt: 500,
+        overrunAt: null,
+      },
+      logistics: [
+        {
+          id: 'delivery',
+          kind: 'donor_delivery',
+          state: 'assigned',
+          requestId: request.id,
+          equipmentType: 'router',
+          donorEngineerId: 'donor',
+          donorName: 'Алексей',
+          receiverEngineerId: live.engineer.id,
+          depotId: null,
+          expectedAt: 500,
+          actualAt: null,
+          location: { lat: 55, lon: 37 },
+          action: null,
+          retryAt: null,
+          failureCode: null,
+        },
+      ],
+    });
+    expect(html).toContain('Ждём оборудование');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Ждём оборудование<\/button>/);
+    expect(html).toContain('Проблема или дополнительное время');
+  });
+});

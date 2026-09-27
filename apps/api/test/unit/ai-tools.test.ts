@@ -15,6 +15,7 @@ import type { Actor } from '../../src/auth';
 import type { AppConfigService } from '../../src/common/config';
 import { SysError } from '../../src/common/errors';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
+import type { PassportsService } from '../../src/orchestrator/passports/passports.service';
 import type { RequestsService } from '../../src/orchestrator/requests/requests.service';
 
 /**
@@ -48,6 +49,7 @@ function realCatalogueUnderTest(): readonly AnyToolSpec[] {
   const engineer = buildEngineerTools({
     aiOperations: inert as unknown as AiOperationService,
     live: inert as unknown as LiveService,
+    passports: inert as unknown as PassportsService,
     config,
   });
   const search = buildSearchDocumentationTool(inert as unknown as KnowledgeSearchPort);
@@ -120,15 +122,19 @@ describe('AI tool schemas never let the model choose the subject', () => {
   it('finds at least the tools this change adds', () => {
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [
+      'cancel_my_request',
       'change_status_to',
       'create_request',
       'finish_technical_break',
+      'get_my_request',
       'get_my_route',
+      'get_my_visit_context',
       'list_my_requests',
       'report_cannot_complete',
       'report_delay',
       'report_eta',
       'report_missing_equipment',
+      'reschedule_my_request',
       'search_documentation',
       'start_technical_break',
     ]);
@@ -208,20 +214,27 @@ describe('AI tool schemas never take a raw epoch number', () => {
 });
 
 describe('AI tool catalogue scoping', () => {
-  it('gives the client its own two operations plus the two shared tools', () => {
+  it('gives the client its own five operations', () => {
     const tools = buildClientTools({
       aiOperations: {} as unknown as AiOperationService,
       requests: {} as unknown as RequestsService,
       prisma: {} as never,
       config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
     });
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), ['create_request', 'list_my_requests']);
+    assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+      'cancel_my_request',
+      'create_request',
+      'get_my_request',
+      'list_my_requests',
+      'reschedule_my_request',
+    ]);
   });
 
-  it('gives the engineer exactly the eight liveActionSchema-mapped tools, no start/finish visit', () => {
+  it('gives the engineer exactly the nine action/read tools, no start/finish visit', () => {
     const tools = buildEngineerTools({
       aiOperations: {} as unknown as AiOperationService,
       live: {} as unknown as LiveService,
+      passports: {} as unknown as PassportsService,
       config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
     });
     const names = tools.map((tool) => tool.name).sort();
@@ -229,6 +242,7 @@ describe('AI tool catalogue scoping', () => {
       'change_status_to',
       'finish_technical_break',
       'get_my_route',
+      'get_my_visit_context',
       'report_cannot_complete',
       'report_delay',
       'report_eta',
@@ -239,16 +253,19 @@ describe('AI tool catalogue scoping', () => {
     assert.ok(!names.includes('finish_visit'));
   });
 
-  it('gives dispatcher_readonly its own fourteen read tools (ToolRegistry adds search_documentation on top)', () => {
+  it('gives dispatcher_readonly its seventeen routing read tools (ToolRegistry adds knowledge and operation verification)', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => !tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
       .sort();
     assert.deepEqual(names, [
+      'compare_assignments',
       'compare_policies',
       'evaluate_manual_order',
+      'explain_entity',
       'get_day_plan',
       'get_policies',
+      'get_previous_plan',
       'get_request',
       'get_request_history',
       'get_router_settings',
@@ -262,7 +279,7 @@ describe('AI tool catalogue scoping', () => {
     ]);
   });
 
-  it('gives dispatcher_fix exactly the twelve documented preparers on top of the read tools', () => {
+  it('gives dispatcher_fix exactly the thirteen documented preparers on top of the read tools', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
@@ -276,6 +293,7 @@ describe('AI tool catalogue scoping', () => {
       'prepare_move_window',
       'prepare_reschedule_request',
       'prepare_resolve_alert',
+      'prepare_restore_previous_plan',
       'prepare_select_policy',
       'prepare_set_engineer_availability',
       'prepare_set_engineer_workday',
@@ -396,6 +414,7 @@ describe('change_status_to(0) during a running LIVE workday', () => {
     const tools = buildEngineerTools({
       aiOperations,
       live: liveWithWorkdayRunning(true),
+      passports: {} as unknown as PassportsService,
       config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
     });
     const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
@@ -425,6 +444,7 @@ describe('change_status_to(0) during a running LIVE workday', () => {
     const tools = buildEngineerTools({
       aiOperations,
       live: liveWithWorkdayRunning(true),
+      passports: {} as unknown as PassportsService,
       config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
     });
     const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
