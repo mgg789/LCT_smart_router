@@ -268,12 +268,18 @@ export function PhoneAiPane({
           </div>
         ) : (
           <>
+            {/*
+             * Outside the scroller, not at the top of it: who holds the dialogue is true
+             * of the whole screen, not of the moment the handover happened. Scrolled into
+             * the history it stopped answering the question a reader has while reading
+             * the newest line.
+             */}
+            <HandoffBanner status={chat.handoffStatus} />
             <div
               ref={scrollRef}
               className="min-h-0 flex-1 overflow-y-auto"
               style={{ paddingBottom: eu(140) }}
             >
-              <HandoffBanner status={chat.handoffStatus} />
               <div className="flex flex-col" style={{ gap: eu(28) }}>
                 {spoken.map((message, index) =>
                   message.author === 'user' ? (
@@ -525,7 +531,7 @@ export function HandoffBanner({ status }: { status: HandoffStatus }) {
   if (status === null) return null;
   return (
     <div
-      className="flex items-center bg-white"
+      className="flex shrink-0 items-center bg-white"
       style={{
         marginBottom: eu(28),
         gap: eu(14),
