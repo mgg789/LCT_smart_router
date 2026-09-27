@@ -613,6 +613,7 @@ export function MainDashboardPage() {
           width: canvas.width,
           height: canvas.height,
           zoom: canvas.scale,
+          ...{ '--dashboard-scale': canvas.scale },
         }}
         onMouseDown={(event) => {
           const target = event.target as HTMLElement;

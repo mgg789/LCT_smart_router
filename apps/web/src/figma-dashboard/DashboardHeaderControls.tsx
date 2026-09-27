@@ -30,13 +30,13 @@ const NAV_ICONS = {
  * wide window is further right than the drawing put it.
  */
 const NOTIF_PANEL_LEFT = 1407,
-  NOTIF_PANEL_TOP = 10,
+  NOTIF_PANEL_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))',
   HEADER_AVATAR_LEFT = 1800,
-  HEADER_AVATAR_TOP = 12;
+  HEADER_AVATAR_TOP = 'calc(12px + 4px / var(--dashboard-scale, 1))';
 const METRICS_BUTTON_WIDTH = 232,
   METRICS_BUTTON_LEFT = 1081,
   ADD_BUTTON_LEFT = 1014,
-  ADD_BUTTON_TOP = 10,
+  ADD_BUTTON_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))',
   ADD_BUTTON_SIZE = 51;
 
 const NAV_ICON_BOX: Record<NavItemId, { width: number; height: number; className: string }> = {
@@ -51,7 +51,7 @@ const NAV_ICON_BOX: Record<NavItemId, { width: number; height: number; className
 const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
 const POLICY_LEFT = 1329;
-const POLICY_TOP = 10;
+const POLICY_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))';
 const POLICY_OPEN_HEIGHT = 695;
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 /** Navigates dashboard sections while retaining the existing disabled-section policy. */
@@ -85,7 +85,7 @@ export function SidebarNav({
   return (
     <aside
       ref={railRef}
-      className="absolute inset-y-0 left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
+      className="absolute inset-y-[calc(8px/var(--dashboard-scale,1))] left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
     >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon

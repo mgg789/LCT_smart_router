@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { appSurface, appSurfaceTitle } from './appSurface';
+import { DashboardMobileGate } from './components/DashboardMobileGate';
 import { ClientPage } from './figma-client/ClientPage';
 import { EngineerAuthPage } from './figma-dashboard/EngineerAuthPage';
 import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
@@ -20,5 +21,9 @@ export function App() {
 
   if (surface === 'client') return <ClientPage />;
   if (surface === 'engineer') return <EngineerAuthPage />;
-  return <MainDashboardPage />;
+  return (
+    <DashboardMobileGate>
+      <MainDashboardPage />
+    </DashboardMobileGate>
+  );
 }

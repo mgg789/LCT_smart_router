@@ -1,5 +1,9 @@
 /** Russian source catalogue. Keys are stable, namespaced by source module. */
 export const ru = {
+  'dashboard.mobile.title': 'Дашборд пока не адаптирован для телефона',
+  'dashboard.mobile.description':
+    'Рекомендуем открыть дашборд на ПК или планшете. Мобильная версия находится в разработке.',
+  'dashboard.mobile.proceed': 'Всё равно открыть',
   'api.ai.f96963397c': 'Сервер не открыл поток событий ассистента',
   'api.ai.0940af4949': 'ассистента',
   'api.ai.0b12c2bba9': 'Поток событий ассистента прервался',
