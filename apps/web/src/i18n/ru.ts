@@ -2591,6 +2591,7 @@ export const ru = {
   'figma-engineer.EngineerMenu.dbe91db5dc': 'Написать в поддержку',
   'figma-engineer.EngineerMenu.5690c2e63b': 'Выйти',
   'figma-engineer.EngineerMenu.980d22e392': 'Закрыть меню',
+  'common.offlineContour': 'Контур запущен в офлайн-режиме',
   'api.client.01ad9de2da': 'Стратегии сравнения не должны повторяться',
   'api.client.41da24a8b7': 'Не получен полный набор стратегий сравнения',
   'api.client.0e88f7b84e': 'Тип стратегии сравнения не соответствует ответу',

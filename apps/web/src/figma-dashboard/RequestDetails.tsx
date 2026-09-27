@@ -2,6 +2,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
@@ -58,6 +59,7 @@ export function RequestDetails({
   onClose: () => void;
   onOpenEngineer?: () => void;
 }) {
+  const offline = isNavixOffline();
   const { dx, dy } = useArtboardStretch();
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
@@ -184,6 +186,7 @@ export function RequestDetails({
             explanation={explanation}
             durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
             onToggleAi={() => setAiOn((value) => !value)}
+            disabled={offline}
             onToggleLarge={() => setLargeOn((value) => !value)}
           />
         ) : (
@@ -226,6 +229,7 @@ function RequestReasons({
   durationLabel,
   onToggleAi,
   onToggleLarge,
+  disabled = false,
 }: {
   aiOn: boolean;
   largeOn: boolean;
@@ -236,6 +240,7 @@ function RequestReasons({
   durationLabel: string;
   onToggleAi: () => void;
   onToggleLarge: () => void;
+  disabled?: boolean;
 }) {
   const { text: aiText, ready: aiReady } = useAiExplanation({
     enabled: aiOn,
@@ -266,6 +271,7 @@ function RequestReasons({
                       : t('figma-dashboard.RequestDetails.f50242f50b')
                   }
                   motionOn={motionOn}
+                  disabled={disabled}
                   onClick={onToggleAi}
                 >
                   {aiOn ? (
@@ -353,11 +359,13 @@ function ReasonIconButton({
   label,
   motionOn,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string;
   motionOn: boolean;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -365,8 +373,9 @@ function ReasonIconButton({
       type="button"
       aria-label={label}
       title={label}
+      disabled={disabled}
       onClick={onClick}
-      className="flex size-[36px] items-center justify-center rounded-full bg-white/10"
+      className="flex size-[36px] items-center justify-center rounded-full bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
       whileHover={motionOn ? { scale: 1.08, backgroundColor: 'rgba(255,255,255,0.18)' } : undefined}
       whileTap={motionOn ? { scale: 0.92 } : undefined}
       transition={{ duration: 0.16 }}

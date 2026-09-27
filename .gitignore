@@ -39,3 +39,9 @@ playwright-report/
 # Learned plan-assessment calibration is machine-local execution state
 # (factory defaults ship in code; see core/predict_calibration.py)
 .router/predict-calibration.json
+
+# Launcher-local credentials, resolved Compose and diagnostics
+.launch/
+services/distribution/distribution.env
+services/distribution/state/
+services/distribution/payload/

@@ -1,0 +1,17 @@
+@echo off
+setlocal
+chcp 65001 >nul
+cd /d "%~dp0.."
+where py >nul 2>nul
+if not errorlevel 1 (
+  py -3 -m launch.gui %*
+) else (
+  where python >nul 2>nul
+  if errorlevel 1 (
+    echo Install Python 3.10+ with Tcl/Tk: https://www.python.org/downloads/
+    pause
+    exit /b 1
+  )
+  python -m launch.gui %*
+)
+if errorlevel 1 pause

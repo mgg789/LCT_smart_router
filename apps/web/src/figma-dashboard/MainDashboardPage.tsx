@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { clearAssistantSessions } from '../hooks/useAssistantChat';
 import { useDashboard } from '../hooks/useDashboard';
@@ -636,7 +637,7 @@ export function MainDashboardPage() {
               activeNav={activeNav}
               motionOn={motionOn}
               onSelect={(id) => {
-                if (isNavLocked(id)) return;
+                if (isNavLocked(id) || (isNavixOffline() && id === 'ai')) return;
                 if (id === 'requests' && activeNav === 'requests') {
                   setOpenedRequestId(null);
                 }
@@ -731,13 +732,15 @@ export function MainDashboardPage() {
                 setPolicyOpen((value) => !value);
               }}
               personalConfigured={personalPolicy !== null}
+              offline={isNavixOffline()}
               personalTitle={personalPolicy?.title}
               onEditPersonal={() => {
                 setPolicyOpen(false);
-                setPersonalPolicyOpen(true);
+                if (!isNavixOffline()) setPersonalPolicyOpen(true);
               }}
               onSelect={(id) => {
                 if (id === 'personal' && !personalPolicy) {
+                  if (isNavixOffline()) return;
                   setPolicyOpen(false);
                   setPersonalPolicyOpen(true);
                 } else applyPolicy(id);
@@ -758,6 +761,7 @@ export function MainDashboardPage() {
               open={personalPolicyOpen}
               motionOn={motionOn}
               onClose={() => setPersonalPolicyOpen(false)}
+              disabled={isNavixOffline()}
               onContinue={() => {
                 setPersonalPolicyOpen(false);
                 setStackDir(stackSlideDir(stackNav, 'ai'));

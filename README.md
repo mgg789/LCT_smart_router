@@ -335,3 +335,10 @@ pytest 143 passed, golden-планы зелёные; см. [docs/ci.md](docs/ci.
 Этапы: разработка 15–29.09, техническая экспертиза 30.09–14.10, финал 23.10.
 Контакты организаторов: [@help_lct](https://t.me/help_lct),
 [info.leaders@develop.mos.ru](mailto:info.leaders@develop.mos.ru), модератор задачи [@Dantec_01](https://t.me/Dantec_01).
+
+### Мастер локального запуска
+
+В [`launch/`](launch/) доступны GUI и консольные лаунчеры для Windows и Unix
+(Linux/macOS): проверка установки и Docker, Full/headless, онлайн/офлайн,
+OSRM, порты и получение настроек по PIN. Нужны Python 3.10+ и Docker Compose;
+для GUI — Tkinter. Подробнее: [запуск и подготовка офлайн-контура](docs/launcher.md).

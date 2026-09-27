@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { PolicyId } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
@@ -105,7 +106,7 @@ export function SidebarNav({
         />
         {NAV_ITEMS.map((item) => {
           const active = item.id === activeNav;
-          const locked = isNavLocked(item.id);
+          const locked = isNavLocked(item.id) || (isNavixOffline() && item.id === 'ai');
           const icon = NAV_ICON_BOX[item.id];
           return (
             <button
@@ -114,7 +115,13 @@ export function SidebarNav({
               disabled={locked}
               aria-label={item.label}
               aria-disabled={locked}
-              title={locked ? t('figma-dashboard.DashboardHeaderControls.72c299e0d6') : undefined}
+              title={
+                locked
+                  ? isNavixOffline() && item.id === 'ai'
+                    ? t('common.offlineContour')
+                    : t('figma-dashboard.DashboardHeaderControls.72c299e0d6')
+                  : undefined
+              }
               onClick={() => onSelect(item.id)}
               className={`relative flex h-[74px] w-full items-end justify-center pb-[12px] transition-transform duration-200 ease-out ${
                 locked ? 'cursor-not-allowed opacity-35' : 'hover:scale-[1.02]'
@@ -454,6 +461,7 @@ export function PolicyControl({
   personalConfigured = false,
   personalTitle,
   onEditPersonal,
+  offline = false,
 }: {
   open: boolean;
   policyLabel: string;
@@ -480,6 +488,7 @@ export function PolicyControl({
   personalConfigured?: boolean;
   personalTitle?: string;
   onEditPersonal?: () => void;
+  offline?: boolean;
 }) {
   const baseOptions =
     policies.length > 0
@@ -570,8 +579,14 @@ export function PolicyControl({
           <motion.button
             key={option.id}
             type="button"
+            disabled={offline && option.id === 'personal' && !personalConfigured}
+            title={
+              offline && option.id === 'personal' && !personalConfigured
+                ? t('common.offlineContour')
+                : undefined
+            }
             onClick={() => onSelect(option.id)}
-            className={`absolute left-0 h-[32px] ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
+            className={`absolute left-0 h-[32px] disabled:cursor-not-allowed disabled:opacity-40 ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
             style={{ top: 14 + index * 44 }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
@@ -593,9 +608,11 @@ export function PolicyControl({
         {personalConfigured && onEditPersonal ? (
           <button
             type="button"
+            disabled={offline}
+            title={offline ? t('common.offlineContour') : undefined}
             onClick={onEditPersonal}
             aria-label={t('figma-dashboard.DashboardHeaderControls.5cb8591e49')}
-            className="absolute right-[18px] flex size-[32px] items-center justify-center"
+            className="absolute right-[18px] flex size-[32px] items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
             style={{ top: 12 + personalIndex * 44 }}
           >
             <span

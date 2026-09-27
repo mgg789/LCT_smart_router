@@ -13,6 +13,7 @@ import { ChatBottomSpacer } from '../components/ai/ChatBottomSpacer';
 import { ChatMessage } from '../components/ai/ChatMessage';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
 import { HandoffBanner } from '../components/ai/HandoffBanner';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { AiMarkdown } from '../figma-dashboard/AiMarkdown';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { thoughtLabel } from '../figma-dashboard/DispatcherAiPane';
@@ -68,7 +69,8 @@ export function EngineerAiPane({
   onOperationApplied?: () => void;
   onOpenObject?: (target: { type: 'request' | 'engineer' | 'alert'; id: string }) => void;
 }) {
-  const chat = useAssistantChat({ token, surface, sessionScope });
+  const offline = isNavixOffline();
+  const chat = useAssistantChat({ token: offline ? null : token, surface, sessionScope });
   const [draft, setDraft] = useState('');
   const [thoughtFor, setThoughtFor] = useState<Readonly<Record<string, number>>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -106,7 +108,8 @@ export function EngineerAiPane({
     !chat.loading &&
     !chat.sending &&
     (chat.runState !== 'running' || spoken.length === 0) &&
-    chat.unavailable !== 'auth';
+    chat.unavailable !== 'auth' &&
+    !offline;
   const canFollowUp = canSend && !running;
   const risky = [...chat.operations.values()].find(
     (operation) =>
@@ -179,6 +182,7 @@ export function EngineerAiPane({
         event.preventDefault();
         submit();
       }}
+      title={!canSend && !running && offline ? t('common.offlineContour') : undefined}
       className="w-full"
       style={{ maxWidth: '100%' }}
     >

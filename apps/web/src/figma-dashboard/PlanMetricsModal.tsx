@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { optimizePlanWithAi, predictSituation, type SituationPredictionView } from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import {
   type AdviceLine,
   type PlanQualityAdvice,
@@ -59,7 +60,7 @@ export function PlanMetricsModal({
   // snapshot/identity/plan are read through the closure on purpose.
   // biome-ignore lint/correctness/useExhaustiveDependencies: identity-driven refresh
   useEffect(() => {
-    if (!open || !snapshot || !token || !identity || !plan) {
+    if (isNavixOffline() || !open || !snapshot || !token || !identity || !plan) {
       setPrediction(null);
       setPending(false);
       setFailed(false);
@@ -163,7 +164,7 @@ export function PlanMetricsModal({
           pending={pending}
           failed={failed}
           hasPlan={plan !== null}
-          token={token}
+          token={isNavixOffline() ? null : token}
           context={{
             advice,
             metrics,
@@ -210,7 +211,7 @@ export function PlanMetricsModal({
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
             <OptimizeButton
-              token={token}
+              token={isNavixOffline() ? null : token}
               summary={JSON.stringify({ advice, metrics, prediction })}
             />
           </dl>
@@ -274,6 +275,7 @@ function QualityBody({
 }) {
   const reduce = useReducedMotion();
   const explainable = advice.band === 'yellow' || advice.band === 'red';
+  const offline = isNavixOffline();
   const [aiOn, setAiOn] = useState(false);
   const { text: aiText, ready: aiReady } = useAiExplanation({
     enabled: aiOn,
@@ -288,6 +290,7 @@ function QualityBody({
       {explainable ? (
         <button
           type="button"
+          disabled={offline}
           aria-label={
             aiOn
               ? t('figma-dashboard.PlanMetricsModal.83290b9944')
@@ -299,7 +302,7 @@ function QualityBody({
               : t('figma-dashboard.PlanMetricsModal.f50242f50b')
           }
           onClick={() => setAiOn((value) => !value)}
-          className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10"
+          className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {aiOn ? (
             <TintIcon src="/figma/explain-default.svg" color="currentColor" size={18} />
@@ -399,13 +402,18 @@ function AdviceSentence({
 
 /** Reserved AI action. It does not change the plan until a model is connected. */
 function OptimizeButton({ token, summary }: { token: string | null; summary: string }) {
+  const offline = isNavixOffline();
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   return (
     <button
       type="button"
-      disabled={!token || pending}
-      title={note ?? t('figma-dashboard.PlanMetricsModal.202a8a5212')}
+      disabled={offline || !token || pending}
+      title={
+        offline
+          ? t('common.offlineContour')
+          : (note ?? t('figma-dashboard.PlanMetricsModal.202a8a5212'))
+      }
       onClick={() => {
         if (!token || pending) return;
         setPending(true);

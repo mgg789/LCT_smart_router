@@ -7,11 +7,13 @@ export function PersonalPolicyDialog({
   motionOn,
   onClose,
   onContinue,
+  disabled = false,
 }: {
   open: boolean;
   motionOn: boolean;
   onClose: () => void;
   onContinue: () => void;
+  disabled?: boolean;
 }) {
   return (
     <ModalLayer open={open} motionOn={motionOn}>
@@ -41,8 +43,10 @@ export function PersonalPolicyDialog({
           </button>
           <button
             type="button"
+            disabled={disabled}
             onClick={onContinue}
-            className="client-ai-fill rounded-[16px] px-[24px] py-[14px] text-[18px] font-semibold text-white"
+            title={disabled ? t('common.offlineContour') : undefined}
+            className="client-ai-fill rounded-[16px] px-[24px] py-[14px] text-[18px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             {t('figma-dashboard.PersonalPolicyDialog.b8f392228a')}
           </button>

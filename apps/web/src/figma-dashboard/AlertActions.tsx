@@ -33,6 +33,7 @@ import {
   alertWindowSeconds,
   isAlertActionId,
 } from '../domain/alerts';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { InboxButton } from './inboxCard';
 import { WorsenModal } from './WorsenModal';
@@ -85,6 +86,7 @@ export function AlertActions({
 }) {
   const [selected, setSelected] = useState<AlertActionId | null>(null);
   const [pending, setPending] = useState(false);
+  const offline = isNavixOffline();
   const waiting = alert?.resolutionAction === 'restore_auto';
   const actions = [...new Set(alert?.actions ?? [])];
   return (
@@ -112,8 +114,9 @@ export function AlertActions({
         <ExplainedAction
           icon={Sparkles}
           appearance="ai"
-          disabled={disabled || waiting || pending || thinking || !token || !alert}
+          disabled={offline || disabled || waiting || pending || thinking || !token || !alert}
           thinking={thinking}
+          title={offline ? t('common.offlineContour') : undefined}
           spec={{
             label: t('figma-dashboard.AlertActions.29476f2252'),
             summary: t('figma-dashboard.AlertActions.22eee1186f'),
@@ -128,7 +131,7 @@ export function AlertActions({
           }}
         />
       </div>
-      {token && alert && actions.includes('move_window') ? (
+      {!offline && token && alert && actions.includes('move_window') ? (
         <WindowAiNote token={token} alertId={alert.id} />
       ) : null}
       {disabled && actions.length > 0 ? (
@@ -171,6 +174,7 @@ function ExplainedAction({
   spotlight = false,
   thinking = false,
   onClick,
+  title,
 }: {
   icon: LucideIcon;
   spec: Pick<AlertActionSpec, 'label' | 'summary' | 'effect' | 'benefit' | 'drawback' | 'tone'>;
@@ -182,6 +186,7 @@ function ExplainedAction({
   /** Moving highlight while the model has not answered. */
   thinking?: boolean;
   onClick?: () => void;
+  title?: string;
 }) {
   const id = useId();
   const reduceMotion = useReducedMotion();
@@ -230,6 +235,7 @@ function ExplainedAction({
         disabled ? t('figma-dashboard.AlertActions.9baa6ef546', { value0: spec.label }) : undefined
       }
       aria-describedby={id}
+      title={title}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
@@ -394,7 +400,7 @@ function ResolutionForm({
   const [proposalStatus, setProposalStatus] = useState('loading');
   const [proposalText, setProposalText] = useState(t('figma-dashboard.AlertActions.099189b8c4'));
   useEffect(() => {
-    if (action !== 'move_window') return;
+    if (action !== 'move_window' || isNavixOffline()) return;
     let active = true;
     if (!token) {
       setProposalStatus('unavailable');
@@ -455,7 +461,7 @@ function ResolutionForm({
         throw new Error(t('figma-dashboard.AlertActions.27e20f534d'));
       let expectedPriorityVersion: string | undefined;
       if (action === 'prioritize') {
-        if (!token || !alert.workDate)
+        if (isNavixOffline() || !token || !alert.workDate)
           throw new Error(t('figma-dashboard.AlertActions.7b1fa03ae0'));
         const { priority } = await loadRequestPriority(token, alert.workDate);
         if (priority && priority.requestId !== alert.requestIds[0]) {

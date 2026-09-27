@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRef } from 'react';
 import { useModalFocus } from '../components/useModalFocus';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { t } from '../i18n';
@@ -81,6 +82,7 @@ export function ClientMenu({
               iconWidth={30}
               iconHeight={33}
               active={active === 'support'}
+              disabled={isNavixOffline()}
               onClick={() => onNavigate('support')}
             />
           </nav>
@@ -185,6 +187,7 @@ export function ClientMenu({
                   iconWidth={30}
                   iconHeight={33}
                   active={active === 'support'}
+                  disabled={isNavixOffline()}
                   onClick={() => onNavigate('support')}
                 />
               </nav>
@@ -239,7 +242,13 @@ function MenuItem({
       aria-current={active ? 'page' : undefined}
       aria-disabled={disabled}
       disabled={disabled}
-      title={disabled ? t('figma-client.ClientMenu.72c299e0d6') : undefined}
+      title={
+        disabled
+          ? isNavixOffline()
+            ? t('common.offlineContour')
+            : t('figma-client.ClientMenu.72c299e0d6')
+          : undefined
+      }
       onClick={onClick}
       className={`flex w-full items-center ${active ? 'bg-figma-track' : ''} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
       style={{

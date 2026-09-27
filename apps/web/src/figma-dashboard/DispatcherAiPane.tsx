@@ -12,6 +12,7 @@ import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
 import { ChatBottomSpacer } from '../components/ai/ChatBottomSpacer';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
+import { isNavixOffline } from '../domain/mapAvailability';
 import {
   type AiOperationView,
   type AiUnavailableReason,
@@ -56,7 +57,8 @@ export function DashboardAi({
   initialMessage,
   onInitialMessageSent,
 }: PaneProps) {
-  const chat = useAssistantChat({ token, surface: 'dispatcher' });
+  const offline = isNavixOffline();
+  const chat = useAssistantChat({ token: offline ? null : token, surface: 'dispatcher' });
   const initialSent = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -140,7 +142,8 @@ export function DashboardAi({
     !chat.loading &&
     !chat.sending &&
     (chat.runState !== 'running' || spoken.length === 0) &&
-    chat.unavailable !== 'auth';
+    chat.unavailable !== 'auth' &&
+    !offline;
   const canFollowUp = canSend && !running;
 
   /** Fills and focuses the composer without submitting a follow-up question. */
@@ -446,7 +449,11 @@ function Composer({
     if (fieldRef.current) fitComposerField(fieldRef.current);
   }, [draft, fieldRef]);
   return (
-    <form onSubmit={onSubmit} className="pointer-events-auto w-full max-w-[813px]">
+    <form
+      onSubmit={onSubmit}
+      title={!canSend && !running && isNavixOffline() ? t('common.offlineContour') : undefined}
+      className="pointer-events-auto w-full max-w-[813px]"
+    >
       {notice || status ? (
         <p
           role={notice ? 'alert' : 'status'}

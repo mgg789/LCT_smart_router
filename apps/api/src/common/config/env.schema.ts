@@ -51,6 +51,12 @@ export const envSchema = z.object({
   /** Road geometry endpoint for the API; takes precedence over the legacy Router key. */
   API_ROAD_API_URL: z.url().optional(),
 
+  /** Render non-metro route geometry as direct endpoint lines (offline contour). */
+  NAVIX_STRAIGHT_ROUTES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   /**
    * Optional duration of an entire logical workday in wall-clock seconds. Empty means
    * ordinary 1:1 time. LIVE persists the chosen value when the dispatcher starts a day,

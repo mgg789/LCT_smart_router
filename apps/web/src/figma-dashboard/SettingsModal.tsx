@@ -22,6 +22,7 @@ import type {
   McpSettingsView,
   RouterTechnicalSettings,
 } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { formatMoscowDate, moscowAt } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
@@ -110,6 +111,7 @@ export function SettingsModal({
     router: RouterTechnicalSettings;
   }) => Promise<void>;
 }) {
+  const offline = isNavixOffline();
   const [tab, setTab] = useState<SettingsTab>('general');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -131,14 +133,14 @@ export function SettingsModal({
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
-    setTab(initialTab);
+    setTab(offline && (initialTab === 'ai' || initialTab === 'maps') ? 'general' : initialTab);
     setError(null);
     setTwogisKey('');
     setYandexKey('');
     setClearTwogis(false);
     setClearYandex(false);
     setDraft(generalFrom(undefined, routerRef.current));
-  }, [open, initialTab]);
+  }, [open, initialTab, offline]);
 
   useEffect(() => {
     if (!open) return;
@@ -148,7 +150,10 @@ export function SettingsModal({
     }
     let cancelled = false;
     setLoading(true);
-    void Promise.all([getDispatcherSettings(token), getMapProvidersStatus(token).catch(() => null)])
+    void Promise.all([
+      getDispatcherSettings(token),
+      offline ? Promise.resolve(null) : getMapProvidersStatus(token).catch(() => null),
+    ])
       .then(([settings, status]) => {
         if (cancelled) return;
         setServer(settings);
@@ -167,7 +172,7 @@ export function SettingsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, token]);
+  }, [open, token, offline]);
 
   const setField = <K extends keyof GeneralDraft>(key: K, value: GeneralDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -210,7 +215,7 @@ export function SettingsModal({
           </button>
         </div>
 
-        <TabSwitch tab={tab} motionOn={motionOn} onChange={setTab} />
+        <TabSwitch tab={tab} motionOn={motionOn} onChange={setTab} offline={offline} />
 
         <div
           className={`mt-[16px] min-h-0 flex-1 ${tab === 'ai' ? 'overflow-hidden' : 'overflow-y-auto [scrollbar-width:thin]'}`}
@@ -222,20 +227,40 @@ export function SettingsModal({
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
-          {tab === 'ai' ? <AiForm token={token} /> : null}
+          {tab === 'ai' ? (
+            offline ? (
+              <p
+                role="status"
+                className="rounded-[16px] bg-figma-soft p-[16px] text-[16px] text-figma-muted"
+              >
+                {t('common.offlineContour')}
+              </p>
+            ) : (
+              <AiForm token={token} />
+            )
+          ) : null}
           {tab === 'maps' ? (
-            <MapsForm
-              server={server}
-              twogisKey={twogisKey}
-              yandexKey={yandexKey}
-              clearTwogis={clearTwogis}
-              clearYandex={clearYandex}
-              status={mapStatus}
-              onTwogisKey={setTwogisKey}
-              onYandexKey={setYandexKey}
-              onClearTwogis={setClearTwogis}
-              onClearYandex={setClearYandex}
-            />
+            offline ? (
+              <p
+                role="status"
+                className="rounded-[16px] bg-figma-soft p-[16px] text-[16px] text-figma-muted"
+              >
+                {t('common.offlineContour')}
+              </p>
+            ) : (
+              <MapsForm
+                server={server}
+                twogisKey={twogisKey}
+                yandexKey={yandexKey}
+                clearTwogis={clearTwogis}
+                clearYandex={clearYandex}
+                status={mapStatus}
+                onTwogisKey={setTwogisKey}
+                onYandexKey={setYandexKey}
+                onClearTwogis={setClearTwogis}
+                onClearYandex={setClearYandex}
+              />
+            )
           ) : null}
         </div>
 
@@ -346,10 +371,12 @@ function TabSwitch({
   tab,
   motionOn,
   onChange,
+  offline,
 }: {
   tab: SettingsTab;
   motionOn: boolean;
   onChange: (tab: SettingsTab) => void;
+  offline: boolean;
 }) {
   const index = TABS.findIndex((item) => item.id === tab);
   return (
@@ -364,12 +391,17 @@ function TabSwitch({
         />
         {TABS.map((item) => {
           const active = item.id === tab;
+          const disabled = offline && (item.id === 'ai' || item.id === 'maps');
           return (
             <button
               key={item.id}
               type="button"
-              onClick={() => onChange(item.id)}
-              className="relative z-10 flex h-full items-center justify-center rounded-full"
+              disabled={disabled}
+              title={disabled ? t('common.offlineContour') : undefined}
+              onClick={() => {
+                if (!disabled) onChange(item.id);
+              }}
+              className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40"
             >
               <span
                 className={`font-semibold text-[16px] tracking-[-0.3px] ${

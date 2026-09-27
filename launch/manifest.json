@@ -1,0 +1,19 @@
+{
+  "apps/api/Dockerfile": "a62cb51661d19feac5176a349b382f1702e9849e8bb47d612babf07bcaa5b17e",
+  "apps/web/Dockerfile": "ed89d630f55de68a0be41598d0d61d7da30540af2b2f95c5a6c2b941a8de0dc8",
+  "apps/web/nginx.conf": "155fb38ac31febd511e204335c20a0ae33cefe9f6a9ddb59f48e7fa665ceda8a",
+  "core/Dockerfile": "290e66f38b231102358e52fb1d9635aeabf6a81c63ba6e690df466d5472de1f3",
+  "infra/docker-compose.yml": "49c2cd309c3233e6a64d54e76d83490f81c4d7d8934d0c2df86b4f1c52b130c1",
+  "infra/postgres/enable-router-login.sql": "8823054962e81c5a7b6c9d4ea9807b282ccdbff8670264576d3ebded6fc0666b",
+  "launch/cli.py": "d54a102c9f9396f0d3e65eb10ec8a89367a891095971c733ce88ba2d5cf5aa8d",
+  "launch/core.py": "cabff024af238eed4b8fc64c3014839646726f2a8969b1b7f976ee746655c0b7",
+  "launch/gateway.cjs": "7c25dcaafcf895e9df0b72ba8609cf9783c8bd94e8abe699173d64b6edff8813",
+  "launch/gui.py": "768328647324cf1437d1102515b0df873cf050750c3c2b59589a085962f980a8",
+  "launch/test_core.py": "0628beaad60e54811072b425d3eb15ee253c46f59e2798c55952a5d11e659c66",
+  "launch/unix-gui.sh": "608cb5ed612bb3c789f38f87179a6ff20e4a43aab0d26db4b04839bfb0e13353",
+  "launch/unix-shell.sh": "3c3c3b6ae6cd73fbbdffe6dc9e957e6a4d2870d0a068d223fd222d3ae41468a9",
+  "launch/update_manifest.py": "5529a0cd724c2d6e51a9ea52ccefe99720af1857c56ebddba52dc8f5e8b5dfbe",
+  "launch/windows-gui.cmd": "59299945189323c80d403dcf9c651ef67f12f9f8ef111d2e87edf7dbafec2344",
+  "launch/windows-shell.cmd": "b7495bc0c51473275ec5a860abef4189dbf16a340446a399bafbdf6918fe649e",
+  "pnpm-lock.yaml": "3cc59fa239f06d76e911f37bb3eca175de58919c2cf91c8d84e61ac6cab3c4d5"
+}

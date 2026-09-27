@@ -4,7 +4,7 @@ import { geocodeAddress } from '../api/client';
 import type { DispatchRegion } from '../api/regions';
 import type { GeocodeHit } from '../api/types';
 import { localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { t } from '../i18n';
 
 const FIELD =
@@ -134,7 +134,7 @@ function OsmPointMap({
 
   useEffect(() => {
     if (!host.current || mapRef.current) return;
-    const local = !navigator.onLine;
+    const local = !browserMapOnline();
     const map = new maplibregl.Map({
       container: host.current,
       style: local ? localMapStyle() : ONLINE_MAP_STYLE,
