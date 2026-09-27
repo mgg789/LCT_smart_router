@@ -429,7 +429,23 @@ export function MainDashboardPage() {
 
   const applyPolicy = (nextPolicy: PolicyId) => {
     if (!dash.snapshot) return;
-    dash.applyRoutingSettings(nextPolicy, nextRouterSettings(dash.snapshot, {}));
+    const preset = nextPolicy === 'personal' ? personalPolicy?.preset : undefined;
+    dash.applyRoutingSettings(
+      nextPolicy,
+      nextRouterSettings(
+        dash.snapshot,
+        preset
+          ? {
+              lunchesEnabled: preset.lunchesEnabled,
+              trafficEnabled: preset.trafficEnabled,
+              metroEnabled: preset.metroEnabled,
+              equipmentTransfersEnabled: preset.equipmentTransfersEnabled,
+              strictTimeWindows: preset.strictTimeWindows,
+            }
+          : {},
+      ),
+      true,
+    );
   };
   const applyLunch = () => {
     if (!dash.snapshot) return;

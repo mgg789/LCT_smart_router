@@ -12,6 +12,7 @@ import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { AuditService, OperationsService } from '../../operations';
+import { assertManualConflictResolved } from '../../operations/manual-conflict-guard';
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
@@ -29,7 +30,8 @@ import {
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
-import { personalPolicyUpdateSchema } from '../policy/personal-policy';
+import { parsePersonalObjectiveOrder, personalPolicyToolSchema } from '../policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../policy/personal-policy-preset';
 import { resolveRequestReference } from '../requests/request-reference';
 import { DispatcherSettingsService } from '../settings';
 import {
@@ -666,20 +668,23 @@ export class McpToolsService {
           name: 'save_personal_policy',
           title: 'Сохранить личную политику',
           description:
-            'Ask about ALL nine objective dimensions, agree priority order, then save personal preferences. Saving never selects the policy; changing an already-active owned profile triggers replanning. Safety and emergency/coverage priorities remain mandatory. Requires dispatcher account.',
+            'Show numbered nine objectives and six numbered yes/no switches. Accept contiguous or separated digit permutations; ask only missing answers, agree order and switch preset, then save. Switch presets apply only on explicit selection, never on save or after independent edits. Saving never selects the policy; changing an already-active owned profile triggers replanning. Safety and emergency/coverage priorities remain mandatory. Requires dispatcher account.',
           inputSchema: {
             type: 'object',
-            properties: z.toJSONSchema(personalPolicyUpdateSchema).properties ?? {},
-            required: ['expectedVersion', 'title', 'objectiveOrder'],
+            properties: z.toJSONSchema(personalPolicyToolSchema).properties ?? {},
+            required: ['expectedVersion', 'title', 'objectiveOrder', 'preset'],
             additionalProperties: false,
           },
         },
-        personalPolicyUpdateSchema,
+        personalPolicyToolSchema,
         async (args, actor) => {
           const outcome = await this.operations.execute(
             { operationId: randomUUID(), actor, action: 'policy.personal.save', payload: args },
             async (context) => {
-              const result = await this.policyService.savePersonal(context, args);
+              const result = await this.policyService.savePersonal(context, {
+                ...args,
+                objectiveOrder: parsePersonalObjectiveOrder(args.objectiveOrder),
+              });
               if (result.activeUpdated)
                 await this.publisher.publishIfChanged(
                   context.tx,
@@ -955,6 +960,17 @@ export class McpToolsService {
         z.object({ policyId: z.string().min(1).max(64) }),
         async (args, actor) => {
           const operationId = randomUUID();
+          if (args.policyId === 'personal') {
+            await assertManualConflictResolved(this.prisma, {
+              operationId,
+              actor,
+              action: 'policy.select',
+              payload: args,
+            });
+            const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
+            if (!profile) throw SysError.validationFailed('Личная политика не создана');
+            await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+          }
           const outcome = await this.operations.execute(
             {
               operationId,

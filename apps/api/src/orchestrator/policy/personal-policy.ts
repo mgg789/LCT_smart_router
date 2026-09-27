@@ -12,8 +12,65 @@ export const PERSONAL_OBJECTIVES = [
   'workload_spread',
   'max_jobs_per_engineer',
 ] as const;
+/** Preset applies only on explicit selection; later switch edits remain independent. */
+export const PERSONAL_POLICY_PRESET_DEFAULTS = {
+  lunchesEnabled: false,
+  trafficEnabled: true,
+  metroEnabled: false,
+  equipmentTransfersEnabled: false,
+  strictTimeWindows: false,
+  ordinaryReplanningDisabled: false,
+};
+export const personalPolicyPresetSchema = z.object({
+  lunchesEnabled: z.boolean(),
+  trafficEnabled: z.boolean(),
+  metroEnabled: z.boolean(),
+  equipmentTransfersEnabled: z.boolean(),
+  strictTimeWindows: z.boolean(),
+  ordinaryReplanningDisabled: z.boolean(),
+});
+export const PERSONAL_POLICY_SWITCH_FIELDS = [
+  {
+    number: 1,
+    id: 'lunchesEnabled',
+    title: 'Рассчитать обеды',
+    description: 'Включить планирование обедов',
+  },
+  {
+    number: 2,
+    id: 'trafficEnabled',
+    title: 'Прогнозировать пробки',
+    description: 'Учитывать прогноз пробок',
+  },
+  {
+    number: 3,
+    id: 'metroEnabled',
+    title: 'Маршруты с метро',
+    description: 'Разрешить метро пешим инженерам',
+  },
+  {
+    number: 4,
+    id: 'equipmentTransfersEnabled',
+    title: 'Передача оборудования',
+    description: 'Разрешить доставку и передачу оборудования',
+  },
+  {
+    number: 5,
+    id: 'strictTimeWindows',
+    title: 'Строгое время',
+    description: 'Не допускать послабления временных окон',
+  },
+  {
+    number: 6,
+    id: 'ordinaryReplanningDisabled',
+    title: 'Без перестройки по обычным',
+    description:
+      'Да: новые обычные заявки остаются в алертах; аварии по-прежнему вызывают пересчёт',
+  },
+] as const;
 export const PERSONAL_POLICY_DEFAULTS = {
   title: 'Моя политика',
+  preset: PERSONAL_POLICY_PRESET_DEFAULTS,
   objectiveOrder: [
     'max_workload_ratio',
     'total_lateness',
@@ -63,6 +120,7 @@ export const PERSONAL_POLICY_FIELDS = [
 ] as const;
 export const personalPolicySettingsSchema = z.object({
   title: z.string().trim().min(1).max(80),
+  preset: personalPolicyPresetSchema.optional(),
   objectiveOrder: z
     .array(z.enum(PERSONAL_OBJECTIVES))
     .length(PERSONAL_OBJECTIVES.length)
@@ -75,6 +133,7 @@ export const personalPolicyUpdateSchema = personalPolicySettingsSchema.extend({
   expectedVersion: z.number().int().nonnegative(),
 });
 export const personalPolicyStoredSchema = personalPolicySettingsSchema.extend({
+  preset: personalPolicyPresetSchema.default(PERSONAL_POLICY_PRESET_DEFAULTS),
   version: z.number().int().positive(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -84,3 +143,25 @@ export const PERSONAL_POLICY_ACTIVE_OWNER_KEY = 'policy.personal.active-owner';
 export function personalPolicyKey(accountId: string): string {
   return `policy.personal.account:${accountId}`;
 }
+
+/** Accept the displayed digit permutation, including contiguous 123456789, without guessing. */
+export function parsePersonalObjectiveOrder(
+  value: unknown,
+): Array<(typeof PERSONAL_OBJECTIVES)[number]> {
+  const normalized =
+    typeof value === 'string' && /^[1-9\s,;>.-]+$/.test(value)
+      ? value
+          .replace(/[^1-9]/g, '')
+          .split('')
+          .map((digit) => PERSONAL_OBJECTIVES[Number(digit) - 1])
+      : value;
+  return personalPolicySettingsSchema.shape.objectiveOrder.parse(normalized);
+}
+/** Model-facing input accepts compact numbered answers, then stores only canonical criteria. */
+export const personalPolicyToolSchema = personalPolicyUpdateSchema.extend({
+  objectiveOrder: z.union([
+    personalPolicySettingsSchema.shape.objectiveOrder,
+    z.string().min(9).max(80),
+  ]),
+  preset: personalPolicyPresetSchema,
+});

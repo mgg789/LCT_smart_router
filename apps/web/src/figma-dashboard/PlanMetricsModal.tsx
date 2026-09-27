@@ -283,7 +283,7 @@ function QualityBody({
           ) : (
             <span
               aria-hidden
-              className="block size-[18px] bg-current"
+              className="client-ai-fill block size-[18px]"
               style={{
                 WebkitMaskImage: 'url(/figma/explain-ai.png)',
                 maskImage: 'url(/figma/explain-ai.png)',

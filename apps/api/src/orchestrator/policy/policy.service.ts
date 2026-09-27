@@ -15,6 +15,7 @@ import {
   PERSONAL_POLICY_ACTIVE_OWNER_KEY,
   PERSONAL_POLICY_DEFAULTS,
   PERSONAL_POLICY_FIELDS,
+  PERSONAL_POLICY_SWITCH_FIELDS,
   personalPolicyKey,
   personalPolicyStoredSchema,
   personalPolicyUpdateSchema,
@@ -63,7 +64,8 @@ export class PolicyService {
       policyId: 'personal' as const,
       profile,
       defaults: PERSONAL_POLICY_DEFAULTS,
-      fields: PERSONAL_POLICY_FIELDS,
+      fields: PERSONAL_POLICY_FIELDS.map((field, index) => ({ ...field, number: index + 1 })),
+      switchFields: PERSONAL_POLICY_SWITCH_FIELDS,
     };
   }
 
@@ -98,6 +100,7 @@ export class PolicyService {
     const next = {
       title: parsed.title,
       objectiveOrder: parsed.objectiveOrder,
+      preset: parsed.preset ?? profile?.preset ?? PERSONAL_POLICY_DEFAULTS.preset,
       version: parsed.expectedVersion + 1,
       updatedAt: context.now,
     };
@@ -256,6 +259,8 @@ export class PolicyService {
         },
         update: {},
       });
+    if (personal)
+      await this.setOrdinaryReplanning(context, personal.preset.ordinaryReplanningDisabled);
     const parameters = personal ? { objective_order: personal.objectiveOrder.join(',') } : {};
     if (personal)
       await context.tx.appState.upsert({

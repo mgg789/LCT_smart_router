@@ -7,6 +7,7 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
+import { assertManualConflictResolved } from '../operations/manual-conflict-guard';
 import { AiService, factoryCalibrationDocument, MiniAiService } from '../orchestrator/ai';
 import { collectOptimizeLevers, type OptimizeLever } from '../orchestrator/ai/optimize-levers';
 import { workDateOf } from '../orchestrator/engineers/workday';
@@ -17,6 +18,7 @@ import { McpService } from '../orchestrator/mcp/mcp.service';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PolicyService } from '../orchestrator/policy';
 import { personalPolicyUpdateSchema } from '../orchestrator/policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../orchestrator/policy/personal-policy-preset';
 import {
   DispatcherSettingsService,
   GeocodingService,
@@ -591,6 +593,21 @@ export class DispatchController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(selectPolicySchema)) dto: SelectPolicyDto,
   ) {
+    // A retry must replay its operation without resetting switches edited after selection.
+    if (
+      dto.policyId === 'personal' &&
+      !(await this.prisma.operation.findUnique({ where: { operationId: dto.operationId } }))
+    ) {
+      await assertManualConflictResolved(this.prisma, {
+        operationId: dto.operationId,
+        actor,
+        action: 'policy.select',
+        payload: dto,
+      });
+      const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
+      if (!profile) throw SysError.validationFailed('Личная политика не создана');
+      await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+    }
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,

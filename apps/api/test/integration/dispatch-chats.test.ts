@@ -936,73 +936,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const fullBody = (await full.json()) as { chat: DispatchChatBody | null };
     assert.equal(fullBody.chat?.unreadCount, 0);
   });
-  it('opens the real dispatcher queue through the registered client handoff tool', async () => {
-    const email = `${unique('tool-handoff')}@example.test`;
-    emails.push(email);
-    const token = await signInClient(email);
-    const account = await prisma.account.findUniqueOrThrow({ where: { email } });
-    const response = await call('POST', '/api/v1/ai/conversations', token, {});
-    assert.equal(response.status, 201);
-    const { conversation } = (await response.json()) as { conversation: ConversationBody };
-    conversationIds.push(conversation.id);
-    const run = await prisma.aiRun.create({
-      data: {
-        conversationId: conversation.id,
-        accountId: account.id,
-        quotaDay: '2026-09-27',
-        quotaAccountId: account.id,
-        roleProfile: 'client',
-        state: 'running',
-        providerKind: 'replay',
-        model: 'test',
-        reservedMicros: 0,
-        startedAt: BigInt(now()),
-      },
-    });
-    const tool = app.get(ToolRegistry).find('client', 'call_dispatch_helper');
-    assert.ok(tool);
-    assert.equal(
-      app.get(ToolRegistry).find('dispatcher_readonly', 'call_dispatch_helper'),
-      undefined,
-    );
-    const toolContext = {
-      actor: {
-        kind: 'account' as const,
-        source: 'ui' as const,
-        id: account.id,
-        role: 'client' as const,
-        tokenCategory: null,
-        accountId: account.id,
-      },
-      accountId: account.id,
-      engineerId: null,
-      conversationId: conversation.id,
-      runId: run.id,
-      segments: [],
-      now: now(),
-    };
-    assert.equal((await tool.run(toolContext, {})).ok, true);
-    await tool.run(toolContext, {});
-    assert.equal(await prisma.aiHandoff.count({ where: { conversationId: conversation.id } }), 1);
-    assert.equal(
-      (await prisma.aiConversation.findUniqueOrThrow({ where: { id: conversation.id } })).mode,
-      'dispatcher',
-    );
-    assert.equal(
-      (await prisma.aiRun.findUniqueOrThrow({ where: { id: run.id } })).state,
-      'stopping',
-    );
-    const listed = await listChats();
-    assert.equal(listed.status, 200);
-    assert.ok((await listed.text()).includes(conversation.id));
-    const reply = await sendDispatcherReply(conversation.id, 'Помогу с вашим вопросом');
-    assert.equal(reply.status, 201, await reply.clone().text());
-    const messages = await call(
-      'GET',
-      `/api/v1/ai/conversations/${conversation.id}/messages`,
-      token,
-    );
-    assert.equal(messages.status, 200);
-    assert.match(await messages.text(), /Помогу с вашим вопросом/);
+  it('does not offer client handoff while the dispatcher queue is locked', () => {
+    assert.equal(app.get(ToolRegistry).find('client', 'call_dispatch_helper'), undefined);
   });
 });

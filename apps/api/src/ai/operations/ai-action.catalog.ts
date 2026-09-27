@@ -6,6 +6,7 @@ import { SysError } from '../../common/errors';
 import { formatUnixSeconds } from '../../common/time';
 import type { AiRoleProfile, Request } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
+import { assertManualConflictResolved } from '../../operations/manual-conflict-guard';
 import {
   type AlertAction,
   AlertsService,
@@ -20,6 +21,7 @@ import { assertLunchConditions } from '../../orchestrator/engineers/workday';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { findPolicy, PolicyService } from '../../orchestrator/policy';
 import { personalPolicyUpdateSchema } from '../../orchestrator/policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../../orchestrator/policy/personal-policy-preset';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 // Catalog file only, not the `requests` barrel: the barrel also loads Nest modules and
 // can leave `findWorkType` undefined under CJS circular imports in unit tests
@@ -589,17 +591,30 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       const spec = findPolicy(payload.policyId);
       return [{ label: 'Политика', value: spec?.title ?? payload.policyId }];
     },
-    async apply({ context, payload }) {
-      const input = payload as SelectPolicyPayload;
-      const selected = await deps.policy.select(context, input.policyId);
-      // The choice is data of the task, so it is republished, exactly like
-      // `DispatchController.selectPolicy`'s own call.
-      const publication = await deps.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.POLICY_CHANGED,
-      );
-      return { ...selected, publication };
+    async prepareApply(args) {
+      const input = args.payload as SelectPolicyPayload;
+      if (input.policyId === 'personal') {
+        await assertManualConflictResolved(deps.prisma, {
+          actor: args.actor,
+          operationId: 'personal-selection-precheck',
+          action: 'policy.select',
+          payload: input,
+        });
+        const { profile } = await deps.policy.personal(deps.prisma, args.actor.accountId);
+        if (!profile) throw SysError.validationFailed('Личная политика не создана');
+        await applyPersonalPolicyRouterPreset(deps.router, deps.live, profile.preset);
+      }
+      return async ({ context }) => {
+        const selected = await deps.policy.select(context, input.policyId);
+        // The choice is data of the task, so it is republished, exactly like
+        // `DispatchController.selectPolicy`'s own call.
+        const publication = await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+        return { ...selected, publication };
+      };
     },
   });
 

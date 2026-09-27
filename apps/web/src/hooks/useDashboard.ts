@@ -593,7 +593,12 @@ export function useDashboard() {
   );
 
   const rebuild = useCallback(
-    async (nextPolicy: PolicyId, nextSettings: RouterTechnicalSettings, reason: string) => {
+    async (
+      nextPolicy: PolicyId,
+      nextSettings: RouterTechnicalSettings,
+      reason: string,
+      selectPolicy = false,
+    ) => {
       if (
         !token ||
         sourceRef.current !== 'live' ||
@@ -624,7 +629,7 @@ export function useDashboard() {
           expectedContextVersion = updated.routerContextVersion;
         }
         if (generation !== readGeneration.current) return false;
-        if (nextPolicy !== previous.policyId || nextPolicy === 'personal') {
+        if (nextPolicy !== previous.policyId || selectPolicy) {
           try {
             const preview =
               nextPolicy === 'personal'
@@ -701,7 +706,7 @@ export function useDashboard() {
   );
 
   const applyRoutingSettings = useCallback(
-    (policyId: PolicyId, nextSettings: RouterTechnicalSettings) => {
+    (policyId: PolicyId, nextSettings: RouterTechnicalSettings, selectPolicy = false) => {
       if (!snapshot) {
         return;
       }
@@ -732,11 +737,12 @@ export function useDashboard() {
           ? 'режим оборудования обновлён'
           : null,
       ].filter((item): item is string => item !== null);
-      if (changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
+      if (selectPolicy || changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
         void rebuild(
           policyId,
           nextSettings,
           changes.join(', ') || 'технические настройки обновлены',
+          selectPolicy,
         );
       }
     },

@@ -8,7 +8,7 @@ import { LiveService } from '../../orchestrator/live/live.service';
 import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { PrismaService, UnitOfWork } from '../../persistence';
+import { PrismaService } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
@@ -18,15 +18,10 @@ import {
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
-import { ChatEventBus } from '../runtime/chat-event.bus';
-import { RunEventBus } from '../runtime/run-event.bus';
-import { RunRegistry } from '../runtime/run-registry';
-import { StopService } from '../runtime/stop.service';
 import { buildClientTools } from './client.tools';
 import { buildDispatcherReadTools } from './dispatcher-read.tools';
 import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
-import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
 import { buildManualTools, MANUAL_TOOL_NAMES } from './manual.tools';
@@ -66,11 +61,6 @@ export class ToolRegistry {
     router: RouterClient,
     builder: SnapshotBuilder,
     passports: PassportsService,
-    uow: UnitOfWork,
-    stop: StopService,
-    bus: RunEventBus,
-    registry: RunRegistry,
-    chatBus: ChatEventBus,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
@@ -104,11 +94,8 @@ export class ToolRegistry {
     ];
 
     this.catalogues = {
-      client: [
-        ...clientTools,
-        searchDocumentation,
-        buildCallDispatchHelperTool({ uow, stop, bus, registry, chatBus }),
-      ],
+      // The dispatcher queue is locked; never offer a handoff with no reachable recipient.
+      client: [...clientTools, searchDocumentation],
       engineer: [...engineerTools, searchDocumentation],
       dispatcher_readonly: dispatcherReadonlyTools,
       dispatcher_fix: dispatcherFixTools,

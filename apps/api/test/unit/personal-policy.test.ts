@@ -106,3 +106,66 @@ it('permits only personal preference saving as the consultant write exception', 
       assert.equal(action.allowedProfiles.includes('dispatcher_readonly'), false);
   }
 });
+
+it('accepts numbered priorities and gives old profiles a default switch preset', async () => {
+  const {
+    parsePersonalObjectiveOrder,
+    personalPolicyStoredSchema,
+    PERSONAL_POLICY_PRESET_DEFAULTS,
+    PERSONAL_OBJECTIVES,
+  } = await import('../../src/orchestrator/policy/personal-policy');
+  assert.deepEqual(parsePersonalObjectiveOrder('123456789'), [...PERSONAL_OBJECTIVES]);
+  assert.deepEqual(
+    parsePersonalObjectiveOrder('9, 8, 7, 6, 5, 4, 3, 2, 1'),
+    [...PERSONAL_OBJECTIVES].reverse(),
+  );
+  assert.throws(() => parsePersonalObjectiveOrder('112345678'));
+  const { preset: _preset, ...old } = PERSONAL_POLICY_DEFAULTS;
+  assert.deepEqual(
+    personalPolicyStoredSchema.parse({ ...old, version: 1, updatedAt: 100 }).preset,
+    PERSONAL_POLICY_PRESET_DEFAULTS,
+  );
+});
+
+it('applies only the five router switches on explicit selection and skips identical settings', async () => {
+  const { applyPersonalPolicyRouterPreset } = await import(
+    '../../src/orchestrator/policy/personal-policy-preset'
+  );
+  let current = {
+    ...PERSONAL_POLICY_DEFAULTS.preset,
+    lunchesEnabled: true,
+    routerContextVersion: 'v1',
+    accessBufferSec: 123,
+  };
+  let writes = 0;
+  let lunchSyncs = 0;
+  const router = {
+    getTechnicalSettings: async () => current,
+    updateTechnicalSettings: async (input: Record<string, unknown>) => {
+      assert.equal(input.expectedContextVersion, 'v1');
+      assert.equal(input.accessBufferSec, 123);
+      // The ordinary-request switch belongs to the API selection transaction.
+      assert.equal(input.ordinaryReplanningDisabled, undefined);
+      writes += 1;
+      current = { ...current, ...input };
+    },
+  };
+  delete (current as Partial<typeof current>).ordinaryReplanningDisabled;
+  const live = {
+    synchronizeGlobalLunchSwitch: async () => {
+      lunchSyncs += 1;
+    },
+  };
+  await applyPersonalPolicyRouterPreset(
+    router as never,
+    live as never,
+    PERSONAL_POLICY_DEFAULTS.preset,
+  );
+  await applyPersonalPolicyRouterPreset(
+    router as never,
+    live as never,
+    PERSONAL_POLICY_DEFAULTS.preset,
+  );
+  assert.equal(writes, 1);
+  assert.equal(lunchSyncs, 1);
+});

@@ -554,7 +554,7 @@ export function PolicyControl({
               className="absolute left-[16px] top-0"
             />
             <FigmaText
-              className={`figma-nowrap absolute left-[50px] right-[8px] top-[4px] overflow-hidden text-ellipsis text-left font-medium text-[20px] ${option.id === 'personal' ? 'client-ai-fill client-ai-text' : 'text-figma-ink'}`}
+              className={`figma-nowrap figma-text-uncropped absolute left-[50px] right-[8px] -top-[4px] overflow-hidden text-ellipsis text-left font-medium text-[20px] ${option.id === 'personal' ? 'client-ai-fill client-ai-text' : 'text-figma-ink'}`}
             >
               {option.label}
             </FigmaText>
@@ -566,7 +566,7 @@ export function PolicyControl({
             onClick={onEditPersonal}
             aria-label="Изменить личную политику"
             className="absolute right-[18px] flex size-[32px] items-center justify-center"
-            style={{ top: 14 + personalIndex * 44 }}
+            style={{ top: 12 + personalIndex * 44 }}
           >
             <span
               aria-hidden
