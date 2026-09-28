@@ -35100,16 +35100,7 @@
       "duration_sec": 201,
       "distance_m": 2421,
       "kind": "ride",
-      "geometry": [
-        [
-          55.6771829,
-          37.5061323
-        ],
-        [
-          55.6771829,
-          37.5061323
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m1:проспект-вернадского",
@@ -36617,16 +36608,7 @@
       "duration_sec": 80,
       "distance_m": 965,
       "kind": "ride",
-      "geometry": [
-        [
-          55.726982,
-          37.5782658
-        ],
-        [
-          55.726982,
-          37.5782658
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m1:черкизовская",
@@ -37893,16 +37875,7 @@
       "duration_sec": 163,
       "distance_m": 1965,
       "kind": "ride",
-      "geometry": [
-        [
-          55.78965,
-          37.5580823
-        ],
-        [
-          55.78965,
-          37.5580823
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m2:динамо",
@@ -39090,16 +39063,7 @@
       "duration_sec": 96,
       "distance_m": 1155,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7647089,
-          37.606428
-        ],
-        [
-          55.7647089,
-          37.606428
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m2:театральная",
@@ -39881,16 +39845,7 @@
       "duration_sec": 145,
       "distance_m": 1746,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7729343,
-          37.6806409
-        ],
-        [
-          55.7729343,
-          37.6806409
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m3:волоколамская",
@@ -42106,16 +42061,7 @@
       "duration_sec": 92,
       "distance_m": 1105,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7834165,
-          37.7211967
-        ],
-        [
-          55.7834165,
-          37.7211967
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m3:славянский-бульвар",
@@ -44642,16 +44588,7 @@
       "duration_sec": 79,
       "distance_m": 944,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7292208,
-          37.6243963
-        ],
-        [
-          55.7292208,
-          37.6243963
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m5:добрынинская",
@@ -45380,16 +45317,7 @@
       "duration_sec": 107,
       "distance_m": 1282,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7799641,
-          37.6034318
-        ],
-        [
-          55.7799641,
-          37.6034318
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m5:новослободская",
@@ -45619,16 +45547,7 @@
       "duration_sec": 110,
       "distance_m": 1317,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7296804,
-          37.6092907
-        ],
-        [
-          55.7296804,
-          37.6092907
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m5:павелецкая",
@@ -45967,16 +45886,7 @@
       "duration_sec": 110,
       "distance_m": 1317,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7359102,
-          37.5914052
-        ],
-        [
-          55.7359102,
-          37.5914052
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m5:проспект-мира",
@@ -45984,16 +45894,7 @@
       "duration_sec": 127,
       "distance_m": 1529,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7795176,
-          37.6317515
-        ],
-        [
-          55.7795176,
-          37.6317515
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m5:проспект-мира",
@@ -49319,16 +49220,7 @@
       "duration_sec": 99,
       "distance_m": 1186,
       "kind": "ride",
-      "geometry": [
-        [
-          55.719998,
-          37.6078837
-        ],
-        [
-          55.719998,
-          37.6078837
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m6:ясенево",
@@ -55715,16 +55607,7 @@
       "duration_sec": 130,
       "distance_m": 1559,
       "kind": "ride",
-      "geometry": [
-        [
-          55.7509817,
-          37.6072316
-        ],
-        [
-          55.7509817,
-          37.6072316
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m9:боровицкая",
@@ -56117,16 +56000,7 @@
       "duration_sec": 102,
       "distance_m": 1224,
       "kind": "ride",
-      "geometry": [
-        [
-          55.8065401,
-          37.581719
-        ],
-        [
-          55.8065401,
-          37.581719
-        ]
-      ]
+      "geometry": null
     },
     {
       "source": "m9:менделеевская",
@@ -58175,7 +58049,7 @@
     {
       "source": "m10:марьина-роща",
       "target": "m11:марьина-роща",
-      "duration_sec": 64,
+      "duration_sec": 80,
       "distance_m": 112,
       "kind": "transfer"
     },
@@ -58189,42 +58063,42 @@
     {
       "source": "m10:печатники",
       "target": "m11:печатники",
-      "duration_sec": 73,
+      "duration_sec": 91,
       "distance_m": 127,
       "kind": "transfer"
     },
     {
       "source": "m10:римская",
       "target": "m8:площадь-ильича",
-      "duration_sec": 60,
+      "duration_sec": 61,
       "distance_m": 85,
       "kind": "transfer"
     },
     {
       "source": "m10:сретенский-бульвар",
       "target": "m1:чистые-пруды",
-      "duration_sec": 81,
+      "duration_sec": 101,
       "distance_m": 141,
       "kind": "transfer"
     },
     {
       "source": "m10:чкаловская",
       "target": "m5:курская",
-      "duration_sec": 92,
+      "duration_sec": 115,
       "distance_m": 160,
       "kind": "transfer"
     },
     {
       "source": "m11:авиамоторная",
       "target": "m8:авиамоторная",
-      "duration_sec": 96,
+      "duration_sec": 121,
       "distance_m": 168,
       "kind": "transfer"
     },
     {
       "source": "m11:воронцовская",
       "target": "m6:калужская",
-      "duration_sec": 111,
+      "duration_sec": 139,
       "distance_m": 194,
       "kind": "transfer"
     },
@@ -58238,35 +58112,35 @@
     {
       "source": "m11:кунцевская",
       "target": "m3:кунцевская",
-      "duration_sec": 115,
+      "duration_sec": 144,
       "distance_m": 201,
       "kind": "transfer"
     },
     {
       "source": "m11:кунцевская",
       "target": "m4:кунцевская",
-      "duration_sec": 124,
+      "duration_sec": 155,
       "distance_m": 217,
       "kind": "transfer"
     },
     {
       "source": "m11:марьина-роща",
       "target": "m10:марьина-роща",
-      "duration_sec": 64,
+      "duration_sec": 80,
       "distance_m": 112,
       "kind": "transfer"
     },
     {
       "source": "m11:мичуринский-проспект",
       "target": "m8A:мичуринский-проспект",
-      "duration_sec": 107,
+      "duration_sec": 134,
       "distance_m": 187,
       "kind": "transfer"
     },
     {
       "source": "m11:народное-ополчение",
       "target": "m17:народное-ополчение",
-      "duration_sec": 142,
+      "duration_sec": 177,
       "distance_m": 247,
       "kind": "transfer"
     },
@@ -58280,70 +58154,70 @@
     {
       "source": "m11:новаторская",
       "target": "m16:новаторская",
-      "duration_sec": 98,
+      "duration_sec": 123,
       "distance_m": 171,
       "kind": "transfer"
     },
     {
       "source": "m11:петровский-парк",
       "target": "m2:динамо",
-      "duration_sec": 145,
+      "duration_sec": 181,
       "distance_m": 253,
       "kind": "transfer"
     },
     {
       "source": "m11:печатники",
       "target": "m10:печатники",
-      "duration_sec": 73,
+      "duration_sec": 91,
       "distance_m": 127,
       "kind": "transfer"
     },
     {
       "source": "m11:проспект-вернадского",
       "target": "m1:проспект-вернадского",
-      "duration_sec": 108,
+      "duration_sec": 135,
       "distance_m": 189,
       "kind": "transfer"
     },
     {
       "source": "m11:рижская",
       "target": "m6:рижская",
-      "duration_sec": 79,
+      "duration_sec": 98,
       "distance_m": 137,
       "kind": "transfer"
     },
     {
       "source": "m11:савеловская",
       "target": "m9:савеловская",
-      "duration_sec": 98,
+      "duration_sec": 122,
       "distance_m": 170,
       "kind": "transfer"
     },
     {
       "source": "m11:сокольники",
       "target": "m1:сокольники",
-      "duration_sec": 94,
+      "duration_sec": 118,
       "distance_m": 164,
       "kind": "transfer"
     },
     {
       "source": "m11:текстильщики",
       "target": "m7:текстильщики",
-      "duration_sec": 156,
+      "duration_sec": 195,
       "distance_m": 273,
       "kind": "transfer"
     },
     {
       "source": "m11:хорошевская",
       "target": "m7:полежаевская",
-      "duration_sec": 60,
+      "duration_sec": 69,
       "distance_m": 96,
       "kind": "transfer"
     },
     {
       "source": "m11:электрозаводская",
       "target": "m3:электрозаводская",
-      "duration_sec": 95,
+      "duration_sec": 119,
       "distance_m": 166,
       "kind": "transfer"
     },
@@ -58364,28 +58238,28 @@
     {
       "source": "m16:академическая",
       "target": "m6:академическая",
-      "duration_sec": 103,
+      "duration_sec": 128,
       "distance_m": 179,
       "kind": "transfer"
     },
     {
       "source": "m16:новаторская",
       "target": "m11:новаторская",
-      "duration_sec": 98,
+      "duration_sec": 123,
       "distance_m": 171,
       "kind": "transfer"
     },
     {
       "source": "m16:новомосковская",
       "target": "m1:новомосковская",
-      "duration_sec": 104,
+      "duration_sec": 130,
       "distance_m": 182,
       "kind": "transfer"
     },
     {
       "source": "m17:деловой-центр",
       "target": "m4A:деловой-центр",
-      "duration_sec": 104,
+      "duration_sec": 130,
       "distance_m": 181,
       "kind": "transfer"
     },
@@ -58399,91 +58273,91 @@
     {
       "source": "m17:народное-ополчение",
       "target": "m11:народное-ополчение",
-      "duration_sec": 142,
+      "duration_sec": 177,
       "distance_m": 247,
       "kind": "transfer"
     },
     {
       "source": "m1:библиотека-имени-ленина",
       "target": "m3:арбатская",
-      "duration_sec": 126,
+      "duration_sec": 158,
       "distance_m": 220,
       "kind": "transfer"
     },
     {
       "source": "m1:библиотека-имени-ленина",
       "target": "m4:александровский-сад",
-      "duration_sec": 89,
+      "duration_sec": 111,
       "distance_m": 155,
       "kind": "transfer"
     },
     {
       "source": "m1:библиотека-имени-ленина",
       "target": "m9:боровицкая",
-      "duration_sec": 115,
+      "duration_sec": 143,
       "distance_m": 200,
       "kind": "transfer"
     },
     {
       "source": "m1:комсомольская",
       "target": "m5:комсомольская",
-      "duration_sec": 68,
+      "duration_sec": 85,
       "distance_m": 119,
       "kind": "transfer"
     },
     {
       "source": "m1:лубянка",
       "target": "m7:кузнецкий-мост",
-      "duration_sec": 84,
+      "duration_sec": 105,
       "distance_m": 146,
       "kind": "transfer"
     },
     {
       "source": "m1:новомосковская",
       "target": "m16:новомосковская",
-      "duration_sec": 104,
+      "duration_sec": 130,
       "distance_m": 182,
       "kind": "transfer"
     },
     {
       "source": "m1:охотный-ряд",
       "target": "m2:театральная",
-      "duration_sec": 98,
+      "duration_sec": 123,
       "distance_m": 171,
       "kind": "transfer"
     },
     {
       "source": "m1:парк-культуры",
       "target": "m5:парк-культуры",
-      "duration_sec": 110,
+      "duration_sec": 137,
       "distance_m": 191,
       "kind": "transfer"
     },
     {
       "source": "m1:проспект-вернадского",
       "target": "m11:проспект-вернадского",
-      "duration_sec": 108,
+      "duration_sec": 135,
       "distance_m": 189,
       "kind": "transfer"
     },
     {
       "source": "m1:сокольники",
       "target": "m11:сокольники",
-      "duration_sec": 94,
+      "duration_sec": 118,
       "distance_m": 164,
       "kind": "transfer"
     },
     {
       "source": "m1:чистые-пруды",
       "target": "m10:сретенский-бульвар",
-      "duration_sec": 81,
+      "duration_sec": 101,
       "distance_m": 141,
       "kind": "transfer"
     },
     {
       "source": "m1:чистые-пруды",
       "target": "m6:тургеневская",
-      "duration_sec": 69,
+      "duration_sec": 86,
       "distance_m": 120,
       "kind": "transfer"
     },
@@ -58497,7 +58371,7 @@
     {
       "source": "m2:динамо",
       "target": "m11:петровский-парк",
-      "duration_sec": 145,
+      "duration_sec": 181,
       "distance_m": 253,
       "kind": "transfer"
     },
@@ -58511,56 +58385,56 @@
     {
       "source": "m2:новокузнецкая",
       "target": "m6:третьяковская",
-      "duration_sec": 79,
+      "duration_sec": 98,
       "distance_m": 137,
       "kind": "transfer"
     },
     {
       "source": "m2:павелецкая",
       "target": "m5:павелецкая",
-      "duration_sec": 116,
+      "duration_sec": 145,
       "distance_m": 203,
       "kind": "transfer"
     },
     {
       "source": "m2:тверская",
       "target": "m7:пушкинская",
-      "duration_sec": 60,
+      "duration_sec": 67,
       "distance_m": 93,
       "kind": "transfer"
     },
     {
       "source": "m2:тверская",
       "target": "m9:чеховская",
-      "duration_sec": 101,
+      "duration_sec": 126,
       "distance_m": 176,
       "kind": "transfer"
     },
     {
       "source": "m2:театральная",
       "target": "m1:охотный-ряд",
-      "duration_sec": 98,
+      "duration_sec": 123,
       "distance_m": 171,
       "kind": "transfer"
     },
     {
       "source": "m2:театральная",
       "target": "m3:площадь-революции",
-      "duration_sec": 108,
+      "duration_sec": 135,
       "distance_m": 188,
       "kind": "transfer"
     },
     {
       "source": "m3:арбатская",
       "target": "m1:библиотека-имени-ленина",
-      "duration_sec": 126,
+      "duration_sec": 158,
       "distance_m": 220,
       "kind": "transfer"
     },
     {
       "source": "m3:арбатская",
       "target": "m4:александровский-сад",
-      "duration_sec": 64,
+      "duration_sec": 80,
       "distance_m": 111,
       "kind": "transfer"
     },
@@ -58581,7 +58455,7 @@
     {
       "source": "m3:кунцевская",
       "target": "m11:кунцевская",
-      "duration_sec": 115,
+      "duration_sec": 144,
       "distance_m": 201,
       "kind": "transfer"
     },
@@ -58595,7 +58469,7 @@
     {
       "source": "m3:курская",
       "target": "m5:курская",
-      "duration_sec": 60,
+      "duration_sec": 75,
       "distance_m": 105,
       "kind": "transfer"
     },
@@ -58609,35 +58483,35 @@
     {
       "source": "m3:площадь-революции",
       "target": "m2:театральная",
-      "duration_sec": 108,
+      "duration_sec": 135,
       "distance_m": 188,
       "kind": "transfer"
     },
     {
       "source": "m3:смоленская",
       "target": "m4:смоленская",
-      "duration_sec": 85,
+      "duration_sec": 106,
       "distance_m": 148,
       "kind": "transfer"
     },
     {
       "source": "m3:электрозаводская",
       "target": "m11:электрозаводская",
-      "duration_sec": 95,
+      "duration_sec": 119,
       "distance_m": 166,
       "kind": "transfer"
     },
     {
       "source": "m4:александровский-сад",
       "target": "m1:библиотека-имени-ленина",
-      "duration_sec": 89,
+      "duration_sec": 111,
       "distance_m": 155,
       "kind": "transfer"
     },
     {
       "source": "m4:александровский-сад",
       "target": "m3:арбатская",
-      "duration_sec": 64,
+      "duration_sec": 80,
       "distance_m": 111,
       "kind": "transfer"
     },
@@ -58651,14 +58525,14 @@
     {
       "source": "m4:киевская",
       "target": "m5:киевская",
-      "duration_sec": 67,
+      "duration_sec": 83,
       "distance_m": 116,
       "kind": "transfer"
     },
     {
       "source": "m4:кунцевская",
       "target": "m11:кунцевская",
-      "duration_sec": 124,
+      "duration_sec": 155,
       "distance_m": 217,
       "kind": "transfer"
     },
@@ -58672,21 +58546,21 @@
     {
       "source": "m4:смоленская",
       "target": "m3:смоленская",
-      "duration_sec": 85,
+      "duration_sec": 106,
       "distance_m": 148,
       "kind": "transfer"
     },
     {
       "source": "m4A:деловой-центр",
       "target": "m17:деловой-центр",
-      "duration_sec": 104,
+      "duration_sec": 130,
       "distance_m": 181,
       "kind": "transfer"
     },
     {
       "source": "m4A:деловой-центр",
       "target": "m8A:деловой-центр",
-      "duration_sec": 100,
+      "duration_sec": 126,
       "distance_m": 175,
       "kind": "transfer"
     },
@@ -58700,7 +58574,7 @@
     {
       "source": "m5:добрынинская",
       "target": "m9:серпуховская",
-      "duration_sec": 76,
+      "duration_sec": 95,
       "distance_m": 132,
       "kind": "transfer"
     },
@@ -58714,98 +58588,98 @@
     {
       "source": "m5:киевская",
       "target": "m4:киевская",
-      "duration_sec": 67,
+      "duration_sec": 83,
       "distance_m": 116,
       "kind": "transfer"
     },
     {
       "source": "m5:комсомольская",
       "target": "m1:комсомольская",
-      "duration_sec": 68,
+      "duration_sec": 85,
       "distance_m": 119,
       "kind": "transfer"
     },
     {
       "source": "m5:краснопресненская",
       "target": "m7:баррикадная",
-      "duration_sec": 72,
+      "duration_sec": 90,
       "distance_m": 125,
       "kind": "transfer"
     },
     {
       "source": "m5:курская",
       "target": "m10:чкаловская",
-      "duration_sec": 92,
+      "duration_sec": 115,
       "distance_m": 160,
       "kind": "transfer"
     },
     {
       "source": "m5:курская",
       "target": "m3:курская",
-      "duration_sec": 60,
+      "duration_sec": 75,
       "distance_m": 105,
       "kind": "transfer"
     },
     {
       "source": "m5:новослободская",
       "target": "m9:менделеевская",
-      "duration_sec": 89,
+      "duration_sec": 111,
       "distance_m": 155,
       "kind": "transfer"
     },
     {
       "source": "m5:октябрьская",
       "target": "m6:октябрьская",
-      "duration_sec": 71,
+      "duration_sec": 89,
       "distance_m": 124,
       "kind": "transfer"
     },
     {
       "source": "m5:павелецкая",
       "target": "m2:павелецкая",
-      "duration_sec": 116,
+      "duration_sec": 145,
       "distance_m": 203,
       "kind": "transfer"
     },
     {
       "source": "m5:парк-культуры",
       "target": "m1:парк-культуры",
-      "duration_sec": 110,
+      "duration_sec": 137,
       "distance_m": 191,
       "kind": "transfer"
     },
     {
       "source": "m5:проспект-мира",
       "target": "m6:проспект-мира",
-      "duration_sec": 78,
+      "duration_sec": 98,
       "distance_m": 136,
       "kind": "transfer"
     },
     {
       "source": "m5:таганская",
       "target": "m7:таганская",
-      "duration_sec": 81,
+      "duration_sec": 101,
       "distance_m": 141,
       "kind": "transfer"
     },
     {
       "source": "m5:таганская",
       "target": "m8:марксистская",
-      "duration_sec": 82,
+      "duration_sec": 102,
       "distance_m": 142,
       "kind": "transfer"
     },
     {
       "source": "m6:академическая",
       "target": "m16:академическая",
-      "duration_sec": 103,
+      "duration_sec": 128,
       "distance_m": 179,
       "kind": "transfer"
     },
     {
       "source": "m6:калужская",
       "target": "m11:воронцовская",
-      "duration_sec": 111,
+      "duration_sec": 139,
       "distance_m": 194,
       "kind": "transfer"
     },
@@ -58819,28 +58693,28 @@
     {
       "source": "m6:октябрьская",
       "target": "m5:октябрьская",
-      "duration_sec": 71,
+      "duration_sec": 89,
       "distance_m": 124,
       "kind": "transfer"
     },
     {
       "source": "m6:проспект-мира",
       "target": "m5:проспект-мира",
-      "duration_sec": 78,
+      "duration_sec": 98,
       "distance_m": 136,
       "kind": "transfer"
     },
     {
       "source": "m6:рижская",
       "target": "m11:рижская",
-      "duration_sec": 79,
+      "duration_sec": 98,
       "distance_m": 137,
       "kind": "transfer"
     },
     {
       "source": "m6:третьяковская",
       "target": "m2:новокузнецкая",
-      "duration_sec": 79,
+      "duration_sec": 98,
       "distance_m": 137,
       "kind": "transfer"
     },
@@ -58854,14 +58728,14 @@
     {
       "source": "m6:тургеневская",
       "target": "m1:чистые-пруды",
-      "duration_sec": 69,
+      "duration_sec": 86,
       "distance_m": 120,
       "kind": "transfer"
     },
     {
       "source": "m7:баррикадная",
       "target": "m5:краснопресненская",
-      "duration_sec": 72,
+      "duration_sec": 90,
       "distance_m": 125,
       "kind": "transfer"
     },
@@ -58875,56 +58749,56 @@
     {
       "source": "m7:кузнецкий-мост",
       "target": "m1:лубянка",
-      "duration_sec": 84,
+      "duration_sec": 105,
       "distance_m": 146,
       "kind": "transfer"
     },
     {
       "source": "m7:полежаевская",
       "target": "m11:хорошевская",
-      "duration_sec": 60,
+      "duration_sec": 69,
       "distance_m": 96,
       "kind": "transfer"
     },
     {
       "source": "m7:пушкинская",
       "target": "m2:тверская",
-      "duration_sec": 60,
+      "duration_sec": 67,
       "distance_m": 93,
       "kind": "transfer"
     },
     {
       "source": "m7:таганская",
       "target": "m5:таганская",
-      "duration_sec": 81,
+      "duration_sec": 101,
       "distance_m": 141,
       "kind": "transfer"
     },
     {
       "source": "m7:текстильщики",
       "target": "m11:текстильщики",
-      "duration_sec": 156,
+      "duration_sec": 195,
       "distance_m": 273,
       "kind": "transfer"
     },
     {
       "source": "m8:авиамоторная",
       "target": "m11:авиамоторная",
-      "duration_sec": 96,
+      "duration_sec": 121,
       "distance_m": 168,
       "kind": "transfer"
     },
     {
       "source": "m8:марксистская",
       "target": "m5:таганская",
-      "duration_sec": 82,
+      "duration_sec": 102,
       "distance_m": 142,
       "kind": "transfer"
     },
     {
       "source": "m8:площадь-ильича",
       "target": "m10:римская",
-      "duration_sec": 60,
+      "duration_sec": 61,
       "distance_m": 85,
       "kind": "transfer"
     },
@@ -58945,14 +58819,14 @@
     {
       "source": "m8A:деловой-центр",
       "target": "m4A:деловой-центр",
-      "duration_sec": 100,
+      "duration_sec": 126,
       "distance_m": 175,
       "kind": "transfer"
     },
     {
       "source": "m8A:мичуринский-проспект",
       "target": "m11:мичуринский-проспект",
-      "duration_sec": 107,
+      "duration_sec": 134,
       "distance_m": 187,
       "kind": "transfer"
     },
@@ -58966,7 +58840,7 @@
     {
       "source": "m9:боровицкая",
       "target": "m1:библиотека-имени-ленина",
-      "duration_sec": 115,
+      "duration_sec": 143,
       "distance_m": 200,
       "kind": "transfer"
     },
@@ -58980,7 +58854,7 @@
     {
       "source": "m9:менделеевская",
       "target": "m5:новослободская",
-      "duration_sec": 89,
+      "duration_sec": 111,
       "distance_m": 155,
       "kind": "transfer"
     },
@@ -58994,21 +58868,21 @@
     {
       "source": "m9:савеловская",
       "target": "m11:савеловская",
-      "duration_sec": 98,
+      "duration_sec": 122,
       "distance_m": 170,
       "kind": "transfer"
     },
     {
       "source": "m9:серпуховская",
       "target": "m5:добрынинская",
-      "duration_sec": 76,
+      "duration_sec": 95,
       "distance_m": 132,
       "kind": "transfer"
     },
     {
       "source": "m9:чеховская",
       "target": "m2:тверская",
-      "duration_sec": 101,
+      "duration_sec": 126,
       "distance_m": 176,
       "kind": "transfer"
     }

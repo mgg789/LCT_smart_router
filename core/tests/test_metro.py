@@ -66,8 +66,8 @@ def test_metro_shortest_path_includes_transfer_and_composite_segments():
     assert quote is not None
     assert quote.provenance == "metro"
     assert [segment.provenance for segment in quote.segments] == ["road_matrix", "metro", "road_matrix"]
-    # enter + wait + ride + transfer penalty + ride + exit
-    assert quote.segments[1].duration_sec == 180 + 120 + 120 + 90 + 240 + 120 + 120
+    # metro segment: enter + wait + ride + transfer walk (edge) + overhead 60 + ride + exit
+    assert quote.segments[1].duration_sec == 810  # enter+wait+rides+transfer walk+60 s overhead+exit
     assert sum(segment.duration_sec for segment in quote.segments) == quote.duration_sec
     assert len(quote.segments[1].points) >= 2
     assert GeoPoint(lat=55.755, lon=37.620) in quote.segments[1].points
