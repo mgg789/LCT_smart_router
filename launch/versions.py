@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .installation import private_write, read_json
+from .tls import https_context
 
 VERSION_PATTERN = re.compile(
     r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$"
@@ -114,7 +115,7 @@ def check(root: Path, state: Path, service: str, *, online: bool = True) -> dict
             request = urllib.request.Request(
                 service.rstrip("/") + "/navix/version", headers={"Accept": "application/json"}
             )
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with urllib.request.urlopen(request, timeout=5, context=https_context()) as response:
                 raw = response.read(8193)
             if len(raw) > 8192:
                 raise ValueError("Ответ проверки версии слишком большой.")

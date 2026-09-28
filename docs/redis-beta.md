@@ -190,5 +190,6 @@ API; сохранённые настройки возвращаются HTTP 200
 Проверки кода: 318 тестов ядра, 27 тестов лаунчера на Windows и Linux/Tk/Xvfb,
 5 тестов distribution на Linux, 13 тестов HTTP-клиента Router, Ruff всего `core`,
 Ruff лаунчера/distribution, Pyright изменённых Python-модулей, Biome изменённых
-TypeScript-файлов. Полный интерактивный GUI→Docker прогон, macOS и публичное
-развёртывание distribution остаются ограничениями [DRO-153](launcher-validation.md).
+TypeScript-файлов. Позднее в DRO-153 пользователь подтвердил ручной GUI→Docker
+прогон, а публичный distribution был обновлён и проверен. Разграничение ручных,
+автоматических и недоступных платформенных проверок: [launcher-validation.md](launcher-validation.md).

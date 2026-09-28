@@ -53,3 +53,45 @@ status/data продолжают работать. Неполная или не�
 устаревшую версию как рекомендацию скачать обновление. Сохранённый ответ используется
 при недоступном сервисе только с датой прежней проверки. Невалидный ответ не заменяет
 кэш; ошибка TLS не обходится.
+
+## Проверенное развёртывание — 28.09.2026
+
+Сервис обновлён отдельно в `/home/mgg/navix-distribution`, Compose-проект
+`navix-distribution`. Публичный `https://distribute.droidje.com/navix/version`
+возвращает HTTP 200, `schema_version=1`, `version=1.7.0` и постоянную страницу
+[релиза v1.7](https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7).
+Официальный API SourceCraft подтвердил `published`, `is_latest=true`, отсутствие
+prerelease и commit `b885a08861e8d0c1fa7e22ef73b6f4907c7a07ef`.
+
+Репозиторий приватный: скачивание на странице релиза требует доступа SourceCraft.
+API отдаёт архивы с временным `token` в ссылке; такие ссылки не сохраняются в
+публичных метаданных. Постоянная страница соответствует маршруту SourceCraft
+`/:owner/:repo/releases/:tag`. Права репозитория и публикация архивов не менялись.
+
+Существующий nginx уже проксирует `/navix/` на `127.0.0.1:18891`, поэтому его
+конфигурация и сертификат не изменялись. Сертификат `distribute.droidje.com`
+действителен с 27.09.2026 до 26.12.2026. Запросы HTTPS проверены на сервере,
+через Windows curl и через исправленный Python-клиент лаунчера.
+
+До обновления сохранены прежний образ, код, приватная конфигурация, выдаваемый
+файл и согласованная копия SQLite в закрытом каталоге
+`/home/mgg/navix-distribution-backups/20260928-1700` (0700). Образ для отката:
+`navix-distribution-rollback:20260928-1700`. Код прошёл пять тестов в отдельном
+контейнере без внешней сети. Пересоздан только сервис `distribution` через
+`compose up --no-deps --build --wait`.
+
+После обновления: health healthy, прежняя выдача остаётся open/PIN-required,
+payload и все настройки кроме двух полей версии сохранены, SQLite integrity=ok,
+2435 прежних событий присутствуют. Идентификаторы и образы остальных работающих
+контейнеров не изменились. Санитизированное свидетельство:
+[distribution-validation-20260928.json](benchmarks/distribution-validation-20260928.json).
+
+Для отката кода восстановите `server.py` и `distribution.env` из указанной копии,
+перетегируйте rollback-образ в `navix-distribution-distribution:latest` и выполните
+`docker compose -p navix-distribution -f /home/mgg/navix-distribution/docker-compose.yml up -d --no-deps --no-build --wait distribution`.
+Текущие БД и payload при таком откате сохраняются.
+
+Проверки Windows-клиента с настоящим endpoint: для тестовой версии 1.6.0 возвращается
+`update_available`, для 1.7.0 — `current`, для сборки разработки — `development`;
+при offline сведения помечаются `source=cache`. Свежий релиз публикуется отдельным
+процессом команды; при его публикации оператор обновляет два поля метаданных.

@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from . import installation, versions
+from .tls import https_context
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / ".launch"
@@ -116,7 +117,9 @@ def check_docker() -> tuple[bool, str]:
 def check_network() -> bool:
     """Probe distribution HTTPS availability with a bounded timeout."""
     try:
-        with urllib.request.urlopen(DISTRIBUTION + "/navix/status", timeout=5) as response:
+        with urllib.request.urlopen(
+            DISTRIBUTION + "/navix/status", timeout=5, context=https_context()
+        ) as response:
             return response.status == 200
     except (OSError, ValueError):
         return False
@@ -132,7 +135,7 @@ def fetch_secrets(pin: str) -> str:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=20, context=https_context()) as response:
             data = response.read(262145)
         if len(data) > 262144:
             raise ValueError("Файл настроек слишком большой.")
