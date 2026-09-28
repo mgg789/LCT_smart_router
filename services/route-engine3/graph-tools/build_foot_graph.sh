@@ -48,6 +48,9 @@ if [[ $stage == all || $stage == graph ]]; then
   docker run --rm -v "$PWD/$BUILD":/build -w /build "$IMG" \
     osrm-customize /build/moscow-mkad-foot.osrm
   cp "$BUILD"/moscow-mkad-foot.osrm* "$OUT"/
+  # The merged pbf is vendored as the graph's source of truth (same as the car
+  # graph): rebuilding pages only needs this file plus the pinned osrm major.
+  cp "$BUILD"/moscow-mkad-foot.osm.pbf "$OUT"/
   if [ ! -f "$OUT/graph.json" ]; then
     cat > "$OUT/graph.json" <<'JSON'
 {

@@ -1,0 +1,4 @@
+# Intermediate OSRM build artifacts (host-side cut pass outputs and the
+# pre-vendoring graph pages). Only ../graphs/ is vendored into the repository.
+build/
+*.log
