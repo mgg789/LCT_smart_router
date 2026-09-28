@@ -7,11 +7,14 @@ import json
 import os
 import re
 import secrets
+import socket
 import subprocess
 import tempfile
 import time
 import urllib.request
 from pathlib import Path
+
+from . import installation, versions
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE = ROOT / ".launch"
@@ -19,20 +22,77 @@ PROJECT = "navix-launch"
 DISTRIBUTION = "https://distribute.droidje.com"
 
 
+def file_digest(path: Path) -> str:
+    """Hash source text independently of checkout line endings, leaving binary assets byte-exact."""
+    raw = path.read_bytes()
+    if (
+        path.suffix.lower()
+        in {
+            ".py",
+            ".ts",
+            ".tsx",
+            ".js",
+            ".cjs",
+            ".mjs",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".md",
+            ".txt",
+            ".sql",
+            ".prisma",
+            ".conf",
+            ".sh",
+            ".cmd",
+            ".html",
+            ".css",
+            ".svg",
+        }
+        or path.name == "Dockerfile"
+    ):
+        raw = raw.replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def check_integrity() -> list[str]:
     """Return missing/modified package paths from the release manifest."""
     manifest = ROOT / "launch/manifest.json"
     if not manifest.is_file():
         return ["launch/manifest.json"]
+    try:
+        entries = json.loads(manifest.read_text(encoding="utf-8"))
+        if not isinstance(entries, dict) or not entries:
+            return ["launch/manifest.json"]
+    except (OSError, ValueError):
+        return ["launch/manifest.json"]
     failures = []
-    for name, digest in json.loads(manifest.read_text()).items():
-        path = ROOT / name
+    for name, digest in entries.items():
         if (
-            not path.is_file()
-            or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+            not isinstance(name, str)
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
         ):
+            return ["launch/manifest.json"]
+        path = ROOT / name
+        if not path.resolve().is_relative_to(ROOT.resolve()):
+            return ["launch/manifest.json"]
+        if not path.is_file() or file_digest(path) != digest:
             failures.append(name)
     return failures
+
+
+def package_fingerprint() -> str:
+    """Bind prepared image tags to actual package inputs, even after accepted local edits."""
+    digest = hashlib.sha256()
+    manifest = json.loads((ROOT / "launch/manifest.json").read_text(encoding="utf-8"))
+    for name in sorted(manifest):
+        # Launcher files are host-side controls, not copied into application images.
+        # Updating a dialog must not invalidate otherwise portable offline images.
+        if name.startswith("launch/"):
+            continue
+        digest.update(name.encode("utf-8"))
+        digest.update(file_digest(ROOT / name).encode("ascii"))
+    return digest.hexdigest()[:12]
 
 
 def check_docker() -> tuple[bool, str]:
@@ -55,9 +115,7 @@ def check_docker() -> tuple[bool, str]:
 def check_network() -> bool:
     """Probe distribution HTTPS availability with a bounded timeout."""
     try:
-        with urllib.request.urlopen(
-            DISTRIBUTION + "/navix/status", timeout=5
-        ) as response:
+        with urllib.request.urlopen(DISTRIBUTION + "/navix/status", timeout=5) as response:
             return response.status == 200
     except (OSError, ValueError):
         return False
@@ -102,22 +160,18 @@ def parse_env(text: str) -> dict[str, str]:
         line = line.removeprefix("export ")
         key, sep, value = line.partition("=")
         key, value = key.strip(), value.strip()
-        if not sep or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+        if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
             raise ValueError("Некорректный формат .env: ожидается KEY=value.")
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             if value[0] == '"':
                 try:
                     value = json.loads(value)
                 except ValueError:
-                    raise ValueError(
-                        "Некорректное экранирование значения .env."
-                    ) from None
+                    raise ValueError("Некорректное экранирование значения .env.") from None
             else:
                 value = value[1:-1]
         if "\x00" in value or "${" in value or "$(" in value or "`" in value:
-            raise ValueError(
-                "В .env допустимы только готовые значения без подстановок."
-            )
+            raise ValueError("В .env допустимы только готовые значения без подстановок.")
         result[key] = value
     return result
 
@@ -131,10 +185,7 @@ def override_dispatcher_credentials(env_text: str, email: str, password: str) ->
     env["DISPATCHER_EMAIL"] = email
     env["DISPATCHER_PASSWORD"] = password
     return (
-        "\n".join(
-            f"{key}=" + json.dumps(value, ensure_ascii=False)
-            for key, value in env.items()
-        )
+        "\n".join(f"{key}=" + json.dumps(value, ensure_ascii=False) for key, value in env.items())
         + "\n"
     )
 
@@ -153,11 +204,7 @@ def validate_options(options: dict) -> None:
     used = []
     for port in ports:
         if port is not None:
-            if (
-                isinstance(port, bool)
-                or not isinstance(port, int)
-                or not 1 <= port <= 65535
-            ):
+            if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
                 raise ValueError("Порт должен быть целым числом от 1 до 65535.")
             used.append(port)
     if len(set(used)) != len(used):
@@ -166,14 +213,63 @@ def validate_options(options: dict) -> None:
 
 def private_write(path: Path, text: str) -> None:
     """Atomically save local configuration with owner-only POSIX permissions."""
-    fd, name = tempfile.mkstemp(dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            stream.write(text)
-        os.replace(name, path)
-    finally:
-        if os.path.exists(name):
-            os.unlink(name)
+    installation.private_write(path, text)
+
+
+def installation_status() -> dict:
+    """Read only this installation's state; unavailable Docker raises explicitly."""
+    return installation.inspect(STATE, ROOT)
+
+
+def saved_environment() -> str:
+    """Return private previous settings for restart without echoing or reimporting secrets."""
+    path = STATE / "settings.env"
+    if path.is_file():
+        return read_env(str(path))
+    legacy = installation.read_json(STATE / "active.json") or installation.read_json(
+        STATE / "compose.json"
+    )
+    if legacy:
+        env = legacy.get("services", {}).get("api", {}).get("environment", {})
+        return "\n".join(
+            f"{key}=" + json.dumps(str(value).replace("$$", "$"), ensure_ascii=False)
+            for key, value in env.items()
+        )
+    return ""
+
+
+def check_version(*, online: bool = True) -> dict:
+    """Check the public release independently of the optional PIN download."""
+    return versions.check(ROOT, STATE, DISTRIBUTION, online=online)
+
+
+def check_ports(options: dict, own_ports: list[int]) -> None:
+    """Reject occupied loopback ports before changing containers; keep this instance's ports."""
+    candidates = []
+    for key in ("api_port", "ui_port"):
+        port = options.get(key)
+        if not port or (key == "ui_port" and options["mode"] == "headless") or port in own_ports:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if os.name == "nt":
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                raise ValueError(
+                    f"Порт {port} занят или недоступен. Выберите другой порт."
+                ) from None
+        candidates.append(port)
+    if candidates:
+        # Docker Desktop can reserve a NAT port without an observable Windows listener.
+        # A successful socket bind alone does not prove that Compose can publish it.
+        published = installation.docker_read(["ps", "--format", "{{.Ports}}"])
+        for first, last in re.findall(r":(\d+)(?:-(\d+))?->", published):
+            for port in candidates:
+                if int(first) <= port <= int(last or first):
+                    raise ValueError(
+                        f"Порт {port} опубликован другим контейнером Docker. Выберите другой порт."
+                    )
 
 
 def launch(options: dict, env_text: str, log=print) -> dict:
@@ -182,17 +278,55 @@ def launch(options: dict, env_text: str, log=print) -> dict:
     env = parse_env(env_text)
     if not env.get("DISPATCHER_EMAIL") or len(env.get("DISPATCHER_PASSWORD", "")) < 8:
         raise ValueError("Укажите почту и пароль диспетчера (минимум 8 символов).")
+    with installation.operation(STATE):
+        before = installation_status()
+        check_ports(options, before["ports"])
+        record = installation.ensure(STATE, ROOT)
+        if not (STATE / "identity.json").exists() and installation.owned_volumes(STATE, record):
+            raise ValueError(
+                "Установка содержит данные, но identity.json утрачен. Восстановите файл вместо смены паролей БД."
+            )
+        record.update(phase="preparing", options=options)
+        installation.save(STATE, record)
+        try:
+            result = _launch(options, env, record, log, recovering=before["status"] == "partial")
+        except (OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt):
+            record["phase"] = "interrupted"
+            installation.save(STATE, record)
+            raise
+        record.update(phase="running", last_success_at=int(time.time()))
+        installation.save(STATE, record)
+        return result
+
+
+def _launch(
+    options: dict, env: dict[str, str], record: dict, log, *, recovering: bool = False
+) -> dict:
+    """Prepare and apply a checked operation while its installation lock is held."""
+    project = record["project"]
     STATE.mkdir(mode=0o700, exist_ok=True)
+    private_write(
+        STATE / "settings.env",
+        "\n".join(f"{key}=" + json.dumps(value, ensure_ascii=False) for key, value in env.items())
+        + "\n",
+    )
     # Persist installation credentials across restarts, independently of provider imports.
     identity_file = STATE / "identity.json"
     identity = (
-        json.loads(identity_file.read_text())
+        installation.read_json(identity_file)
         if identity_file.exists()
         else {
             "POSTGRES_PASSWORD": secrets.token_hex(24),
             "ROUTER_DB_PASSWORD": secrets.token_hex(24),
         }
     )
+    if not identity or any(
+        not isinstance(identity.get(key), str) or not identity[key]
+        for key in ("POSTGRES_PASSWORD", "ROUTER_DB_PASSWORD")
+    ):
+        raise ValueError(
+            "identity.json не содержит пароли этой установки. Восстановите файл из копии."
+        )
     private_write(identity_file, json.dumps(identity))
     env.update(identity)
     env.update(
@@ -223,34 +357,37 @@ def launch(options: dict, env_text: str, log=print) -> dict:
             }
         )
     # Resolve the canonical YAML via Compose, substituting env_file before it is loaded.
-    source = (ROOT / "infra/docker-compose.yml").read_text()
+    source = (ROOT / "infra/docker-compose.yml").read_text(encoding="utf-8")
     if source.count("path: ../.env") != 1:
         raise ValueError("Формат Compose изменился: обновите лаунчер.")
-    source = source.replace(
-        "path: ../.env", "path: " + json.dumps(str(STATE / "input.env"))
-    )
+    source = source.replace("path: ../.env", "path: " + json.dumps(str(STATE / "input.env")))
     private_write(
         STATE / "input.env",
         "\n".join(
-            f"{k}=" + json.dumps(v, ensure_ascii=False).replace("$", "\\$")
-            for k, v in env.items()
+            f"{k}=" + json.dumps(v, ensure_ascii=False).replace("$", "\\$") for k, v in env.items()
         )
         + "\n",
     )
-    fd, temporary = tempfile.mkstemp(
-        prefix=".launcher-", suffix=".yml", dir=ROOT / "infra"
-    )
+    fd, temporary = tempfile.mkstemp(prefix=".launcher-", suffix=".yml", dir=ROOT / "infra")
     try:
-        with os.fdopen(fd, "w") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(source)
         process_env = {
             k: v
             for k, v in os.environ.items()
-            if k
+            if k.upper()
             in (
                 "PATH",
                 "HOME",
                 "USERPROFILE",
+                "APPDATA",
+                "LOCALAPPDATA",
+                "PROGRAMDATA",
+                "PROGRAMFILES",
+                "PROGRAMFILES(X86)",
+                "HOMEDRIVE",
+                "HOMEPATH",
+                "SYSTEMDRIVE",
                 "SYSTEMROOT",
                 "SystemRoot",
                 "TEMP",
@@ -265,7 +402,6 @@ def launch(options: dict, env_text: str, log=print) -> dict:
         for key in list(process_env):
             if key.startswith("COMPOSE_"):
                 process_env.pop(key)
-        process_env.update(env)
         proc = subprocess.run(
             [
                 "docker",
@@ -273,7 +409,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                 "--env-file",
                 str(STATE / "input.env"),
                 "-p",
-                PROJECT,
+                project,
                 "-f",
                 temporary,
                 "config",
@@ -284,6 +420,8 @@ def launch(options: dict, env_text: str, log=print) -> dict:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=60,
         )
         if proc.returncode:
@@ -296,6 +434,9 @@ def launch(options: dict, env_text: str, log=print) -> dict:
     finally:
         os.unlink(temporary)
     services = config["services"]
+    ownership = {installation.OWNER_LABEL: record["id"], installation.ROOT_LABEL: record["root"]}
+    for resource in (*config.get("volumes", {}).values(), *config.get("networks", {}).values()):
+        resource.setdefault("labels", {}).update(ownership)
     selected = {"postgres", "migrate", "router-db-bootstrap", "router", "api"}
     if options["mode"] == "full":
         selected.add("web")
@@ -303,10 +444,10 @@ def launch(options: dict, env_text: str, log=print) -> dict:
         selected.update(("osrm", "road-api"))
     if options["online"]:
         selected.add("sys1")
-    config["services"] = {
-        name: svc for name, svc in services.items() if name in selected
-    }
+    config["services"] = {name: svc for name, svc in services.items() if name in selected}
+    build_id = package_fingerprint()
     for name, svc in config["services"].items():
+        svc.setdefault("labels", {}).update(ownership)
         svc.pop("ports", None)
         svc.pop("profiles", None)
         svc["restart"] = (
@@ -315,7 +456,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
             else "unless-stopped"
         )
         if "build" in svc:
-            svc["image"] = f"{PROJECT}-{name}:local"
+            svc["image"] = f"{PROJECT}-{name}:{build_id}"
         if name == "api":
             svc["environment"].update(env)
             svc["environment"].update(
@@ -326,9 +467,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                     "NAVIX_STRAIGHT_ROUTES": "false" if options["osrm"] else "true",
                 }
             )
-            svc["environment"]["DATABASE_URL"] = services["migrate"]["environment"][
-                "DATABASE_URL"
-            ]
+            svc["environment"]["DATABASE_URL"] = services["migrate"]["environment"]["DATABASE_URL"]
             for key in ("API_ROAD_API_URL", "ROUTER_ROAD_API_URL"):
                 if not options["osrm"]:
                     svc["environment"].pop(key, None)
@@ -349,15 +488,16 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                     "protocol": "tcp",
                 }
             ]
-            urls[name] = f"http://localhost:{port}"
+            urls[name] = f"http://127.0.0.1:{port}"
     if not options["online"]:
         config.setdefault("networks", {}).setdefault("default", {})["internal"] = True
-        config["networks"]["edge"] = {}
+        config["networks"]["edge"] = {"labels": ownership}
         if "web" in config["services"]:
             config["services"]["web"]["networks"] = {"default": None, "edge": None}
         if options.get("api_port"):
             api = config["services"]["api"]
             config["services"]["gateway"] = {
+                "labels": ownership,
                 "image": api["image"],
                 "entrypoint": ["node", "/launch/gateway.cjs"],
                 "ports": api.pop("ports"),
@@ -389,9 +529,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
     if "web" in config["services"]:
         private_write(
             STATE / "navix-runtime.js",
-            "window.navixOffline = "
-            + ("false" if options["online"] else "true")
-            + ";\n",
+            "window.navixOffline = " + ("false" if options["online"] else "true") + ";\n",
         )
         os.chmod(STATE / "navix-runtime.js", 0o644)
         config["services"]["web"].setdefault("volumes", []).append(
@@ -405,7 +543,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
         if not options["online"]:
             nginx = (
                 (ROOT / "apps/web/nginx.conf")
-                .read_text()
+                .read_text(encoding="utf-8")
                 .replace(
                     "server_name _;",
                     """server_name _;
@@ -423,17 +561,15 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                 }
             )
     serialized = json.dumps(config, ensure_ascii=False).replace("$", "$$")
-    old_config = (
-        json.loads((STATE / "active.json").read_text())
-        if (STATE / "active.json").exists()
-        else None
+    old_config = installation.read_json(STATE / "active.json") or installation.read_json(
+        STATE / "compose.json"
     )
     private_write(STATE / "compose.json", serialized)
-    command = ["docker", "compose", "-p", PROJECT, "-f", str(STATE / "compose.json")]
+    command = ["docker", "compose", "-p", project, "-f", str(STATE / "compose.json")]
 
     def run(args):
         # Docker output can contain imported settings: retain only a private diagnostic file.
-        with open(STATE / "docker.log", "w", encoding="utf-8") as output:
+        with open(STATE / "docker.log", "a", encoding="utf-8") as output:
             os.chmod(STATE / "docker.log", 0o600)
             result = subprocess.run(
                 command + args, check=False, stdout=output, stderr=subprocess.STDOUT
@@ -443,12 +579,27 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                 "Docker не завершил операцию. Диагностика: .launch/docker.log (может содержать настройки)."
             )
 
-    if options["online"]:
+    missing_build = any(
+        "build" in svc
+        and subprocess.run(
+            ["docker", "image", "inspect", svc["image"]],
+            check=False,
+            capture_output=True,
+            timeout=25,
+        ).returncode
+        for svc in config["services"].values()
+    )
+    if options["online"] and missing_build:
         log("Сборка Docker-образов…")
         run(["build"])
-    else:
+    elif not options["online"]:
+        missing_images = []
+        checked_images = set()
         for svc in config["services"].values():
             image = svc.get("image")
+            if not image or image in checked_images:
+                continue
+            checked_images.add(image)
             if (
                 image
                 and subprocess.run(
@@ -457,11 +608,13 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                     capture_output=True,
                 ).returncode
             ):
-                raise ValueError(
-                    "Для офлайн-запуска подготовьте Docker-образы при доступной сети: "
-                    + image
-                )
-    if old_config and old_config.get("networks") != config.get("networks"):
+                missing_images.append(image)
+        if missing_images:
+            raise ValueError(
+                "Для офлайн-запуска подготовьте Docker-образы при доступной сети: "
+                + ", ".join(missing_images)
+            )
+    if old_config and (recovering or old_config.get("networks") != config.get("networks")):
         # Docker cannot mutate an existing network's internal flag. Recreate only this
         # installation's containers/network; named database volumes are retained.
         private_write(STATE / "previous.json", json.dumps(old_config))
@@ -470,7 +623,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                 "docker",
                 "compose",
                 "-p",
-                PROJECT,
+                project,
                 "-f",
                 str(STATE / "previous.json"),
                 "down",
@@ -489,7 +642,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                     "docker",
                     "compose",
                     "-p",
-                    PROJECT,
+                    project,
                     "-f",
                     str(STATE / "previous.json"),
                     "stop",
@@ -499,9 +652,7 @@ def launch(options: dict, env_text: str, log=print) -> dict:
                 capture_output=True,
             )
             if stopped.returncode:
-                raise ValueError(
-                    "Не удалось остановить исключённые сервисы предыдущего запуска."
-                )
+                raise ValueError("Не удалось остановить исключённые сервисы предыдущего запуска.")
     log("Запуск и проверка готовности…")
     run(
         [
@@ -515,20 +666,111 @@ def launch(options: dict, env_text: str, log=print) -> dict:
             "240",
         ]
     )
+    local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for name, url in urls.items():
         endpoint = url + ("/health/ready" if name == "api" else "/")
         for attempt in range(10):
             try:
-                with urllib.request.urlopen(endpoint, timeout=3) as response:
+                with local_http.open(endpoint, timeout=3) as response:
                     if response.status == 200:
                         break
             except OSError:
                 pass
             if attempt == 9:
-                raise ValueError(
-                    "Контейнеры запущены, но опубликованный порт недоступен: " + url
-                )
+                raise ValueError("Контейнеры запущены, но опубликованный порт недоступен: " + url)
             time.sleep(0.5)
     private_write(STATE / "active.json", serialized)
     log("Navix запущен.")
     return urls
+
+
+def removal_preview() -> dict:
+    """Identify exact installation resources before presenting either removal choice."""
+    status = installation_status()
+    record = status["record"]
+    if record is None:
+        raise ValueError("В этой папке нет подготовленной установки Navix.")
+    return {
+        "project": record["project"],
+        "volumes": installation.owned_volumes(STATE, record),
+        "root": record["root"],
+        "status": status["status"],
+    }
+
+
+def remove_installation(*, purge_data: bool = False, confirmation: str = "", log=print) -> None:
+    """Remove this installation's containers; purge only reviewed owned volumes with an exact confirmation."""
+    with installation.operation(STATE):
+        preview = removal_preview()
+        record = installation.ensure(STATE, ROOT)
+        project = record["project"]
+        if purge_data and confirmation != f"DELETE {project}":
+            raise ValueError(f"Для удаления данных введите DELETE {project}.")
+        config_path = STATE / "active.json"
+        if not config_path.is_file():
+            config_path = STATE / "compose.json"
+        if config_path.is_file():
+            with (STATE / "docker.log").open("a", encoding="utf-8") as output:
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "compose",
+                        "-p",
+                        project,
+                        "-f",
+                        str(config_path),
+                        "down",
+                        "--remove-orphans",
+                    ],
+                    check=False,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    timeout=180,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+            if result.returncode:
+                raise ValueError(
+                    "Удаление контейнеров не завершено. Данные сохранены; проверьте .launch/docker.log."
+                )
+        if purge_data:
+            # Recheck ownership after shutdown; do not trust a dialog's older inventory.
+            volumes = installation.owned_volumes(STATE, record)
+            if set(volumes) != set(preview["volumes"]):
+                raise ValueError(
+                    "Состав томов изменился. Повторите просмотр перед удалением данных."
+                )
+            if volumes:
+                result = subprocess.run(
+                    ["docker", "volume", "rm", *volumes],
+                    check=False,
+                    capture_output=True,
+                    timeout=90,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                if result.returncode:
+                    raise ValueError(
+                        "Не все тома удалось удалить. Состояние сохранено для повторной проверки."
+                    )
+            for name in (
+                "installation.json",
+                "identity.json",
+                "settings.env",
+                "input.env",
+                "active.json",
+                "compose.json",
+                "previous.json",
+                "navix-runtime.js",
+                "offline-nginx.conf",
+                "docker.log",
+            ):
+                path = STATE / name
+                if not path.resolve().is_relative_to(STATE.resolve()):
+                    raise ValueError(
+                        "Файл состояния находится за пределами установки. Удаление остановлено."
+                    )
+                path.unlink(missing_ok=True)
+            log("Экземпляр и его данные удалены. Общие Docker-образы сохранены.")
+        else:
+            record["phase"] = "removed"
+            installation.save(STATE, record)
+            log("Экземпляр удалён. Данные и настройки сохранены для повторного запуска.")
