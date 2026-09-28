@@ -769,10 +769,12 @@ function Bubble({
             /*
              * Only this side. The assistant answers in Markdown — lists, bold, code — and
              * a dispatcher typing into the box below writes plain text, which Markdown
-             * would only find stray asterisks in. `AiMarkdown` already renders at the
-             * frame's 20/medium on a light background, which is exactly this bubble.
+             * would only find stray asterisks in. `AiMarkdown` takes its size from here,
+             * so the bubble states the frame's 20/medium itself.
              */
-            <AiMarkdown text={message.text} />
+            <span className="block text-[20px]">
+              <AiMarkdown text={message.text} />
+            </span>
           )}
         </div>
       </motion.div>

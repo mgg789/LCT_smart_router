@@ -551,13 +551,20 @@ export function ClientApp() {
                 onOpenRequest={(id) => void openOwned(session, id)}
               />
             ) : (
-              <button
-                type="button"
-                className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
-                onClick={() => setGate({ purpose: 'support', email: draft.email, codeStep: false })}
-              >
-                {t('figma-client.ClientApp.b050495194')}
-              </button>
+              // The sign-in prompt is the whole screen at this point, so it sits in the
+              // middle of it. Left in the flow it clung to the top-left corner under the
+              // burger with the rest of the screen empty beneath.
+              <div className="flex h-full flex-col items-center justify-center px-6">
+                <button
+                  type="button"
+                  className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
+                  onClick={() =>
+                    setGate({ purpose: 'support', email: draft.email, codeStep: false })
+                  }
+                >
+                  {t('figma-client.ClientApp.b050495194')}
+                </button>
+              </div>
             )}
           </div>
         ) : null}

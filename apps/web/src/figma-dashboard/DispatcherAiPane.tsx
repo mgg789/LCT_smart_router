@@ -239,7 +239,7 @@ export function DashboardAi({
           </div>
         ) : (
           <>
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[160px]">
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[200px]">
               <div className="mx-auto flex w-full max-w-[1036px] flex-col gap-[28px]">
                 {chat.loading && spoken.length === 0 ? (
                   <p className="text-center text-[16px] text-figma-muted">

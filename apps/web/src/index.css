@@ -98,14 +98,6 @@ summary:focus-visible {
   box-shadow: 0 0 0 3px var(--color-figma-canvas);
 }
 
-input:focus,
-input:focus-visible,
-textarea:focus,
-textarea:focus-visible {
-  outline: none;
-  box-shadow: none;
-}
-
 /* Phone chats keep the transcript flush; a native scrollbar reads as a broken gutter. */
 .lct-chat-scroll {
   scrollbar-width: none;
@@ -115,6 +107,19 @@ textarea:focus-visible {
   display: none;
   width: 0;
   height: 0;
+}
+
+/*
+ * Text fields focus on a plain click, not only from the keyboard, so the halo above
+ * drew a near-white ring around every field the moment it was tapped -- on the dark
+ * composer and the dark request panel it read as a stray white border. The brand
+ * yellow carries the same contrast on both shades without the halo, and the caret
+ * already says which field is live.
+ */
+:where(input, textarea, select, [contenteditable]):focus-visible {
+  outline: 2px solid var(--color-figma-bee);
+  outline-offset: 1px;
+  box-shadow: none;
 }
 
 .tabular-control-input {

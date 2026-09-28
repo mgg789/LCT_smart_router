@@ -42,13 +42,13 @@ export function AiMarkdown({
 }) {
   const components: Components = {
     h1: ({ children }) => (
-      <h2 className="mb-[8px] text-[24px] font-semibold leading-[1.3]">{children}</h2>
+      <h2 className="mb-[8px] text-[1.2em] font-semibold leading-[1.3]">{children}</h2>
     ),
     h2: ({ children }) => (
-      <h3 className="mb-[8px] text-[22px] font-semibold leading-[1.3]">{children}</h3>
+      <h3 className="mb-[8px] text-[1.1em] font-semibold leading-[1.3]">{children}</h3>
     ),
     h3: ({ children }) => (
-      <h4 className="mb-[6px] text-[20px] font-semibold leading-[1.3]">{children}</h4>
+      <h4 className="mb-[6px] text-[1em] font-semibold leading-[1.3]">{children}</h4>
     ),
     p: ({ children }) => <p className="mb-[12px] leading-[1.45] last:mb-0">{children}</p>,
     strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
@@ -97,20 +97,20 @@ export function AiMarkdown({
     hr: () => <hr className="my-[16px] border-figma-track" />,
     code: ({ className, children }) =>
       className ? (
-        <code className="font-mono text-[15px]">{children}</code>
+        <code className="font-mono text-[0.75em]">{children}</code>
       ) : (
-        <code className="rounded-[6px] bg-figma-track px-[6px] py-[1px] font-mono text-[15px]">
+        <code className="rounded-[6px] bg-figma-track px-[6px] py-[1px] font-mono text-[0.75em]">
           {children}
         </code>
       ),
     pre: ({ children }) => (
-      <pre className="mb-[12px] overflow-x-auto rounded-[16px] bg-figma-ink px-[16px] py-[14px] text-[15px] leading-[1.45] text-white last:mb-0">
+      <pre className="mb-[12px] overflow-x-auto rounded-[16px] bg-figma-ink px-[16px] py-[14px] text-[0.75em] leading-[1.45] text-white last:mb-0">
         {children}
       </pre>
     ),
     table: ({ children }) => (
       <div className="mb-[12px] overflow-x-auto last:mb-0">
-        <table className="w-full border-collapse text-left text-[16px]">{children}</table>
+        <table className="w-full border-collapse text-left text-[0.8em]">{children}</table>
       </div>
     ),
     th: ({ children }) => (
@@ -129,7 +129,7 @@ export function AiMarkdown({
     ),
   };
   return (
-    <div className="ai-markdown text-[20px] font-medium tracking-[-0.272px] text-figma-ink">
+    <div className="ai-markdown text-[length:inherit] font-medium tracking-[-0.272px] text-figma-ink">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>
