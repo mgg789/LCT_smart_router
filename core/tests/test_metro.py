@@ -270,3 +270,81 @@ def test_storm_keeps_a_modest_metro_detour_and_clear_weather_does_not():
     assert choose_metro(100, 150, shelter=True) is True
     assert choose_metro(100, 176, shelter=True) is False
     assert choose_metro(100, None, shelter=True) is False
+
+
+class _SnappedWalkingTravel:
+    """Pedestrian provider whose geometry stops short of the platform, as a graph does.
+
+    A real foot route ends on the nearest routable node, not on the station point the
+    metro geometry starts from -- the case the segment join has to survive.
+    """
+
+    version = "snapped-walking-fixture"
+
+    def quote(self, origin, destination, profile):
+        if origin == destination:
+            return TravelQuote(0, 0, (origin, destination), "road_matrix")
+        snapped = GeoPoint(lat=destination.lat + 0.0004, lon=destination.lon - 0.0004)
+        return TravelQuote(1_800, 5_000, (origin, snapped), "road_matrix")
+
+
+def _reversed_geometry_network() -> MetroNetwork:
+    """One ride whose stored line runs target-to-source, as half the real artifact does."""
+    line = [{"lat": 55.750, "lon": 37.600}, {"lat": 55.752, "lon": 37.610}, {"lat": 55.755, "lon": 37.620}]
+    return MetroNetwork.model_validate(
+        {
+            "version": "fixture-reversed",
+            "source": "test reviewed graph",
+            "boundary_geojson": {"type": "MultiPolygon", "coordinates": [[[
+                [37.50, 55.70], [37.80, 55.70], [37.80, 55.90], [37.50, 55.90],
+            ]]]},
+            "stations": [
+                {"station_id": "a", "name": "a", "line_id": "1", "location": {"lat": 55.750, "lon": 37.600}},
+                {"station_id": "b", "name": "b", "line_id": "1", "location": {"lat": 55.755, "lon": 37.620}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "duration_sec": 120, "distance_m": 1500,
+                 "geometry": [[point["lat"], point["lon"]] for point in line]},
+                # Same physical track, stored without being turned round -- the defect.
+                {"source": "b", "target": "a", "duration_sec": 120, "distance_m": 1500,
+                 "geometry": [[point["lat"], point["lon"]] for point in line]},
+            ],
+            "enter_sec": 180,
+            "exit_sec": 120,
+            "wait_sec": 120,
+            "transfer_sec": 240,
+        }
+    )
+
+
+def test_ride_geometry_is_turned_to_face_its_own_direction():
+    """A back-to-front stored line must not make the ride start at the wrong station."""
+    network = _reversed_geometry_network()
+    there = MetroTravel(_WalkingTravel(), network).quote(
+        GeoPoint(lat=55.750, lon=37.600), GeoPoint(lat=55.755, lon=37.620), "transit"
+    )
+    back = MetroTravel(_WalkingTravel(), network).quote(
+        GeoPoint(lat=55.755, lon=37.620), GeoPoint(lat=55.750, lon=37.600), "transit"
+    )
+
+    assert there is not None and back is not None
+    assert there.segments[1].points[0] == GeoPoint(lat=55.750, lon=37.600)
+    assert there.segments[1].points[-1] == GeoPoint(lat=55.755, lon=37.620)
+    # The opposite direction reads the very same stored line and must run the other way.
+    assert back.segments[1].points[0] == GeoPoint(lat=55.755, lon=37.620)
+    assert back.segments[1].points[-1] == GeoPoint(lat=55.750, lon=37.600)
+
+
+def test_composite_segments_join_at_their_endpoints():
+    """The System Layer rejects a leg whose segments leave a gap (result.types.ts)."""
+    quote = MetroTravel(_SnappedWalkingTravel(), _network()).quote(
+        GeoPoint(lat=55.750, lon=37.600), GeoPoint(lat=55.760, lon=37.650), "transit"
+    )
+
+    assert quote is not None
+    assert len(quote.segments) == 3
+    for before, after in zip(quote.segments, quote.segments[1:]):
+        assert before.points[-1] == after.points[0]
+    # Stitching adds the connector only; the costs stay exactly what was quoted.
+    assert sum(segment.duration_sec for segment in quote.segments) == quote.duration_sec
+    assert sum(segment.distance_m for segment in quote.segments) == quote.distance_m
