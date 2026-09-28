@@ -232,7 +232,7 @@ class MetroTravel:
                 if distances[station] != (seconds, metres):
                     continue
                 for edge in self.adjacency[station]:
-                    transfer = self.network.transfer_sec if edge.kind == "transfer" else 0
+                    transfer = 0  # walk time on the transfer edge already covers the interchange
                     cost = (seconds + edge.duration_sec + transfer, metres + edge.distance_m)
                     if edge.target not in distances or cost < distances[edge.target]:
                         distances[edge.target] = cost

@@ -141,7 +141,7 @@ class MetroService:
             if cost > distances.get(node, (math.inf, ()))[0]:
                 continue
             for edge in self.adjacency.get(node, []):
-                penalty = self.transfer_sec if edge["kind"] == "transfer" else 0
+                penalty = 0  # walk time on the transfer edge already covers the interchange
                 candidate = cost + edge["duration_sec"] + penalty
                 target = edge["target"]
                 if candidate < distances.get(target, (math.inf, ()))[0]:

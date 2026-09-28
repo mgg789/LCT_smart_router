@@ -36,7 +36,7 @@ EARTH_RADIUS_M = 6_371_000.0
 # real timetable (Кожуховская → Таганская: 20.5 predicted vs ~12 actual).
 RIDE_SPEED_MPS = 50_000.0 / 3_600.0
 RIDE_STRETCH = 1.15
-WALK_SPEED_MPS = 1.4
+WALK_SPEED_MPS = 1.75  # transfer walking: escalators, brisk pace; was 1.4 — inflated interchange times ~2x
 MIN_RIDE_SEC = 60
 MIN_TRANSFER_SEC = 60
 
@@ -313,7 +313,7 @@ def _corridor_geometry(
     projected = []
     for node in track_nodes:
         t = ((node[0] - source_point[0]) * axis_lat + (node[1] - source_point[1]) * axis_lon) / denominator
-        if not 0.08 <= t <= 0.92:
+        if not 0.0 <= t <= 1.0:
             continue
         foot = (source_point[0] + t * axis_lat, source_point[1] + t * axis_lon)
         if haversine_m(node, foot) <= corridor_tolerance:
@@ -328,6 +328,8 @@ def _corridor_geometry(
         if haversine_m(kept[-1], node) < 400.0:
             kept.append(node)
     simplified = _simplify(kept)
+    if len(simplified) < 3:
+        return None
     return [[round(point[0], 7), round(point[1], 7)] for point in simplified]
 
 
