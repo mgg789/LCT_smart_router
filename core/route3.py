@@ -44,6 +44,7 @@ from core.geo import (
     TravelSource,
     TravelUnavailable,
     content_hash,
+    stitch_segments,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -221,7 +222,9 @@ def quote_from_route3(body: dict, origin: GeoPoint, destination: GeoPoint) -> Tr
         provenance,
         float(body.get("effective_factor") or 1.0),
         geometry_exact=mode in ("road", "metro_composite"),
-        segments=tuple(segments),
+        # The engine already stitches its composites; this keeps an older or
+        # differently configured engine from failing result validation downstream.
+        segments=stitch_segments(tuple(segments)),
     )
 
 

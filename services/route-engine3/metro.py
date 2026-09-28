@@ -150,6 +150,29 @@ class MetroService:
         self._trees[source] = distances
         return distances
 
+    def _oriented(self, edge: dict, source: str, target: str) -> list[list[float]]:
+        """Return one edge's line geometry running from its source to its target.
+
+        The artifact keeps a single reviewed polyline per physical track and reuses
+        it for both directed edges of the pair, so half of them are stored back to
+        front. Used as-is the ride starts at the wrong end of the line, kilometres
+        from the station it claims to leave. Orientation is decided by which way
+        round puts the ends nearest their own stations, so a corrected artifact is
+        left untouched.
+        """
+        chord = [
+            [self.stations[source]["lat"], self.stations[source]["lon"]],
+            [self.stations[target]["lat"], self.stations[target]["lon"]],
+        ]
+        line = edge["geometry"]
+        if not line:
+            return chord
+        head, tail = (line[0][0], line[0][1]), (line[-1][0], line[-1][1])
+        origin, destination = (chord[0][0], chord[0][1]), (chord[1][0], chord[1][1])
+        forward = haversine_m(head, origin) + haversine_m(tail, destination)
+        backward = haversine_m(tail, origin) + haversine_m(head, destination)
+        return list(reversed(line)) if backward < forward else line
+
     def ride_path(self, source: str, target: str) -> dict | None:
         """Fastest ride between two stations with joined geometry.
 
@@ -176,11 +199,14 @@ class MetroService:
             if edge is None:
                 continue
             distance += edge["distance_m"]
-            leg = edge["geometry"] or [
-                [self.stations[current]["lat"], self.stations[current]["lon"]],
-                [self.stations[nxt]["lat"], self.stations[nxt]["lon"]],
-            ]
-            geometry = geometry[:-1] + leg if geometry else [point[:] for point in leg]
+            leg = self._oriented(edge, current, nxt)
+            if not geometry:
+                geometry = [point[:] for point in leg]
+                continue
+            # Drop the join only when the legs really share it: an edge whose line
+            # stops short of the platform must stay connected, not be cut open.
+            tail = leg[1:] if leg[0] == geometry[-1] else leg
+            geometry += [point[:] for point in tail]
         return {
             "from_station": source,
             "to_station": target,

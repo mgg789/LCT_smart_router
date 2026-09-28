@@ -17,7 +17,15 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from core.contracts import GeoPoint, Record, Transport
-from core.geo import TravelQuote, TravelSegment, TravelSource, content_hash, haversine_m, quote_at
+from core.geo import (
+    TravelQuote,
+    TravelSegment,
+    TravelSource,
+    content_hash,
+    haversine_m,
+    quote_at,
+    stitch_segments,
+)
 
 
 class MetroStation(Record):
@@ -296,15 +304,17 @@ class MetroTravel:
                 if egress is None:
                     continue
                 metro_points = _path_points(path, self.stations)
-                segments = (
-                    TravelSegment(access.points, access.provenance, access.duration_sec, access.distance_m),
-                    TravelSegment(
-                        metro_points,
-                        "metro",
-                        self.network.enter_sec + self.network.wait_sec + path.duration_sec + self.network.exit_sec,
-                        path.distance_m,
-                    ),
-                    TravelSegment(egress.points, egress.provenance, egress.duration_sec, egress.distance_m),
+                segments = stitch_segments(
+                    (
+                        TravelSegment(access.points, access.provenance, access.duration_sec, access.distance_m),
+                        TravelSegment(
+                            metro_points,
+                            "metro",
+                            self.network.enter_sec + self.network.wait_sec + path.duration_sec + self.network.exit_sec,
+                            path.distance_m,
+                        ),
+                        TravelSegment(egress.points, egress.provenance, egress.duration_sec, egress.distance_m),
+                    )
                 )
                 candidate = TravelQuote(
                     duration_sec=sum(segment.duration_sec for segment in segments),
@@ -330,19 +340,38 @@ class MetroTravel:
         return quote_at(self.travel, origin, destination, "walk", departure_at)
 
 
+def _oriented(
+    edge: MetroEdge, stations: dict[str, "MetroStation"]
+) -> tuple[GeoPoint, ...]:
+    """Return one edge's line geometry running from its source to its target.
+
+    The artifact stores a single reviewed polyline per physical track and reuses it
+    for both directed edges of the pair, so half of them are drawn back to front.
+    Taken as-is that produces a ride that starts at the wrong end of the line: in the
+    bundled Moscow resource 260 of 521 edges with geometry are reversed, up to 5.2 km
+    away from the station they claim to leave. Orientation is decided by which way
+    round puts the ends nearest their own stations, so a corrected artifact keeps
+    working unchanged.
+    """
+    polyline = tuple(edge.geometry or ())
+    if not polyline:
+        return (stations[edge.source].location, stations[edge.target].location)
+    source, target = stations[edge.source].location, stations[edge.target].location
+    forward = haversine_m(polyline[0], source) + haversine_m(polyline[-1], target)
+    backward = haversine_m(polyline[-1], source) + haversine_m(polyline[0], target)
+    return tuple(reversed(polyline)) if backward < forward else polyline
+
+
 def _path_points(path: _Path, stations: dict[str, "MetroStation"]) -> tuple[GeoPoint, ...]:
     """Middle-segment polyline: per-edge line geometry when present, else chords.
 
-    Edges are already in travel order; the join keeps only shared endpoints so
-    the result is one continuous polyline from entry to exit station.
+    Edges are already in travel order; each one is oriented to its own direction
+    first (see `_oriented`), and the join keeps only shared endpoints so the result
+    is one continuous polyline from entry to exit station.
     """
     points: list[GeoPoint] = []
     for edge in path.edges:
-        polyline = edge.geometry or (
-            stations[edge.source].location,
-            stations[edge.target].location,
-        )
-        for point in polyline:
+        for point in _oriented(edge, stations):
             if not points or point != points[-1]:
                 points.append(point)
     return tuple(points)

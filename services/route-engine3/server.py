@@ -370,18 +370,8 @@ def _metro_composite(runtime, a, b, direct_quote: dict, profile: str) -> dict | 
     )
     if total >= direct_quote["duration_s"]:
         return None
-    return {
-        "mode": "metro_composite",
-        "profile": profile,
-        "duration_s": total,
-        "distance_m": round(
-            access_origin["distance_m"]
-            + ride["distance_m"]
-            + access_destination["distance_m"],
-            1,
-        ),
-        "geometry": access_origin["geometry"],
-        "segments": [
+    segments = _stitched(
+        [
             {
                 "kind": "walk",
                 "travel_source": "foot_graph",
@@ -408,7 +398,20 @@ def _metro_composite(runtime, a, b, direct_quote: dict, profile: str) -> dict | 
                 "geometry": access_destination["geometry"],
                 "from_station": destination_station["name"],
             },
-        ],
+        ]
+    )
+    return {
+        "mode": "metro_composite",
+        "profile": profile,
+        "duration_s": total,
+        "distance_m": round(
+            access_origin["distance_m"]
+            + ride["distance_m"]
+            + access_destination["distance_m"],
+            1,
+        ),
+        "geometry": _joined([segment["geometry"] for segment in segments]),
+        "segments": segments,
         "metro": {
             "entered": origin_station["station_id"],
             "exited": destination_station["station_id"],
@@ -420,6 +423,36 @@ def _metro_composite(runtime, a, b, direct_quote: dict, profile: str) -> dict | 
         "graph_id": runtime.spec.graph_id,
         "map_version": runtime.spec.map_version,
     }
+
+
+def _stitched(segments: list[dict]) -> list[dict]:
+    """Make consecutive segments share an endpoint, as the result contract demands.
+
+    Each component is drawn on its own graph, so a walk snapped to the pedestrian
+    network does not end on the exact platform coordinate the ride geometry starts
+    from. A leg whose segments do not join is rejected by the System Layer
+    (`apps/api/src/routing/router-gateway/result.types.ts`), so the short connector
+    between them is drawn rather than left as a gap. Costs are untouched.
+    """
+    previous_end: list[float] | None = None
+    for segment in segments:
+        geometry = [point[:] for point in (segment.get("geometry") or [])]
+        if previous_end is not None and (not geometry or geometry[0] != previous_end):
+            geometry.insert(0, previous_end[:])
+        if geometry:
+            previous_end = geometry[-1]
+        segment["geometry"] = geometry
+    return segments
+
+
+def _joined(parts: list[list[list[float]]]) -> list[list[float]]:
+    """Concatenate stitched component polylines without repeating the shared joins."""
+    points: list[list[float]] = []
+    for part in parts:
+        for point in part or []:
+            if not points or point != points[-1]:
+                points.append(point[:])
+    return points
 
 
 def _access_leg(runtime, origin, destination, speed: float) -> dict | None:

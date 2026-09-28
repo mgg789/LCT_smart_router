@@ -147,6 +147,30 @@ class TravelSegment:
     distance_m: int
 
 
+def stitch_segments(segments: tuple[TravelSegment, ...]) -> tuple[TravelSegment, ...]:
+    """Make consecutive segments share an endpoint, as the result contract demands.
+
+    Every component of a composite quote is drawn on its own graph: a walk snapped to
+    the pedestrian network does not end on the exact platform coordinate the ride
+    geometry starts from. The System Layer rejects a leg whose segments do not join
+    (``apps/api/src/routing/router-gateway/result.types.ts``), so the short connector
+    between them is drawn explicitly here rather than left as a gap that fails
+    validation. Costs are untouched: only the shared endpoint is added.
+    """
+    stitched: list[TravelSegment] = []
+    previous_end: GeoPoint | None = None
+    for segment in segments:
+        points = list(segment.points)
+        if previous_end is not None and (not points or points[0] != previous_end):
+            points.insert(0, previous_end)
+        if points:
+            previous_end = points[-1]
+        stitched.append(
+            TravelSegment(tuple(points), segment.provenance, segment.duration_sec, segment.distance_m)
+        )
+    return tuple(stitched)
+
+
 class TravelSource(Protocol):
     """Minimal immutable provider contract accepted by timing-policy decoration."""
 
