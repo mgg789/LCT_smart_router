@@ -178,4 +178,4 @@ def test_straight_travel_walk_factor_is_calibrated():
     walk = StraightTravel().quote(origin, destination, "walk")
     assert walk is not None
     assert walk.distance_m == math.ceil(haversine_m(origin, destination) * 1.35)
-    assert walk.version == "straight-v2"
+    assert StraightTravel.version == "straight-v2"
