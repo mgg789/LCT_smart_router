@@ -1,0 +1,16 @@
+{
+  "date": "2026-09-28",
+  "validated_source_commit": "498cd31cb38a1d07c5511e02dfece17906dd016c",
+  "status": "smoke_green",
+  "lockfile_repaired": true,
+  "api_frozen_build": "passed",
+  "web_frozen_build": "passed",
+  "command": "bash scripts/ci/run-regression.sh",
+  "isolated_project": "lct-regression-20260928t183738-772-30471",
+  "smoke_result": "SMOKE GATE GREEN — 21/21 checks passed",
+  "api_image": "sha256:eacae541bd03cba201b209e038adf890b8a9f6363bcd5b25b23ba0790ed5e84d",
+  "router_image": "sha256:ab4b5f7cbad29b16a533b1870606a9b97e2feb0eb7a8ac569ed152a78014fad8",
+  "scope": "Redis benchmark integration and repaired lockfile, before the subsequent metrics-authentication patch.",
+  "original_benchmark_source_commit": "547fd0e36a97018f4e5e1e879de0e82bd076bed4",
+  "original_benchmark_data_modified": false
+}

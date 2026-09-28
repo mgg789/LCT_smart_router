@@ -1,0 +1,367 @@
+{
+  "label": "8000-3-off",
+  "python": "3.14.7",
+  "code_version": "673a2ab11bab66e2f1e3",
+  "input_hash": "cefeb7b62c15ee16992ef5cc42d82063b609d0a11c972a0e4d3b02d30bec94cc",
+  "graph_hash": "1aef933bfbcfc4aaf88008f200c081ec668fe1daf98e0f0c618ef98f00cfdcfd",
+  "settings": {
+    "time_limit_ms": 8000,
+    "solution_limit": 10000,
+    "lunches_enabled": false,
+    "traffic_enabled": true,
+    "equipment_enabled": true,
+    "equipment_transfers_enabled": false,
+    "metro_enabled": false,
+    "strict_time_windows": true,
+    "window_lateness_tolerance_sec": 600,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600,
+    "tolerance_sec": null
+  },
+  "requests": 66,
+  "route3": {
+    "required": true,
+    "verified_legs": 57,
+    "report_digest": "357b224a39d28d33017643660d740eafc352fa28a8f30e23bcf2de517dc44d68",
+    "routes": [
+      {
+        "engineer_id": "east-team-01",
+        "profile": "car",
+        "legs": 5,
+        "straight_duration_sec": 5568,
+        "corrected_duration_sec": 4498,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-02",
+        "profile": "car",
+        "legs": 5,
+        "straight_duration_sec": 2596,
+        "corrected_duration_sec": 3584,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-03",
+        "profile": "bike",
+        "legs": 4,
+        "straight_duration_sec": 671,
+        "corrected_duration_sec": 2756,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-04",
+        "profile": "car",
+        "legs": 4,
+        "straight_duration_sec": 1031,
+        "corrected_duration_sec": 1780,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-05",
+        "profile": "transit",
+        "legs": 4,
+        "straight_duration_sec": 12285,
+        "corrected_duration_sec": 5917,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-06",
+        "profile": "car",
+        "legs": 5,
+        "straight_duration_sec": 1395,
+        "corrected_duration_sec": 2224,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-07",
+        "profile": "transit",
+        "legs": 3,
+        "straight_duration_sec": 8874,
+        "corrected_duration_sec": 7255,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-08",
+        "profile": "car",
+        "legs": 5,
+        "straight_duration_sec": 926,
+        "corrected_duration_sec": 1667,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-09",
+        "profile": "bike",
+        "legs": 5,
+        "straight_duration_sec": 3067,
+        "corrected_duration_sec": 3926,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-10",
+        "profile": "car",
+        "legs": 7,
+        "straight_duration_sec": 6217,
+        "corrected_duration_sec": 2794,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-11",
+        "profile": "transit",
+        "legs": 4,
+        "straight_duration_sec": 3910,
+        "corrected_duration_sec": 3606,
+        "window_breach": null
+      },
+      {
+        "engineer_id": "east-team-12",
+        "profile": "car",
+        "legs": 6,
+        "straight_duration_sec": 646,
+        "corrected_duration_sec": 5374,
+        "window_breach": null
+      }
+    ]
+  },
+  "active_summary": {
+    "distance_km": 203.734,
+    "travel_time_sec": 86689,
+    "work_time_sec": 204600,
+    "waiting_time_sec": 107266,
+    "lunch_time_sec": 0,
+    "assigned_count": 57,
+    "requests_total": 66,
+    "unassigned_count": 9,
+    "urgent_total": 13,
+    "urgent_assigned_count": 9,
+    "engineers_used": 12,
+    "late_assigned_count": 0,
+    "total_lateness_sec": 0,
+    "min_window_slack_sec": 11,
+    "workload_spread_sec": 15615,
+    "max_workload_sec": 37800
+  },
+  "ready_ms": 6587.021,
+  "first_catalog_ms": 13134.039,
+  "warm_catalog_ms": [
+    575.882,
+    523.35,
+    305.323,
+    507.277,
+    503.732
+  ],
+  "status_ms": [
+    2.91,
+    0.891,
+    0.807,
+    0.863,
+    0.842,
+    0.762,
+    1.045,
+    1.371,
+    1.282,
+    0.857,
+    0.63,
+    0.649,
+    0.695,
+    0.883,
+    0.826,
+    0.804,
+    0.968,
+    0.731,
+    0.651,
+    0.937
+  ],
+  "result_ms": [
+    61.248,
+    60.48,
+    62.858,
+    58.802,
+    59.086,
+    57.547,
+    64.49,
+    55.794,
+    239.28,
+    61.593
+  ],
+  "active_plan_digest": "afbfdd86af6d09a96e5d294638f790b39c141597f52c21b496ba24fd16d17a4a",
+  "comparison_digest": "f57e0051475a7ca5f54546166eea7244fca8ac6a477244be7efc86bad055ee43",
+  "catalog_plans_digest": "ee8362675bd65dd29d67364f46667ce1371128e44951bc136c2c5b65dc74d47b",
+  "rows": [
+    {
+      "strategy_id": "fast",
+      "summary": {
+        "distance_km": 226.237,
+        "travel_time_sec": 77484,
+        "work_time_sec": 211200,
+        "waiting_time_sec": 87764,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 10,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 198,
+        "workload_spread_sec": 22800,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "compact",
+      "summary": {
+        "distance_km": 210.042,
+        "travel_time_sec": 80743,
+        "work_time_sec": 211200,
+        "waiting_time_sec": 99548,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 10,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 198,
+        "workload_spread_sec": 19069,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "sla",
+      "summary": {
+        "distance_km": 226.237,
+        "travel_time_sec": 77484,
+        "work_time_sec": 211200,
+        "waiting_time_sec": 87764,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 10,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 198,
+        "workload_spread_sec": 22800,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "balanced",
+      "summary": {
+        "distance_km": 250.275,
+        "travel_time_sec": 86698,
+        "work_time_sec": 211200,
+        "waiting_time_sec": 104823,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 10,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 128,
+        "workload_spread_sec": 7493,
+        "max_workload_sec": 37200
+      }
+    },
+    {
+      "strategy_id": "eco",
+      "summary": {
+        "distance_km": 210.042,
+        "travel_time_sec": 80743,
+        "work_time_sec": 211200,
+        "waiting_time_sec": 99548,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 10,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 198,
+        "workload_spread_sec": 19069,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "covering",
+      "summary": {
+        "distance_km": 265.041,
+        "travel_time_sec": 102769,
+        "work_time_sec": 238200,
+        "waiting_time_sec": 162882,
+        "lunch_time_sec": 0,
+        "assigned_count": 66,
+        "requests_total": 66,
+        "unassigned_count": 0,
+        "urgent_total": 13,
+        "urgent_assigned_count": 13,
+        "engineers_used": 17,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 11,
+        "workload_spread_sec": 28965,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "baseline",
+      "summary": {
+        "distance_km": 161.816,
+        "travel_time_sec": 62598,
+        "work_time_sec": 92400,
+        "waiting_time_sec": 261989,
+        "lunch_time_sec": 0,
+        "assigned_count": 27,
+        "requests_total": 66,
+        "unassigned_count": 39,
+        "urgent_total": 13,
+        "urgent_assigned_count": 1,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 57,
+        "workload_spread_sec": 10059,
+        "max_workload_sec": 39459
+      }
+    }
+  ],
+  "cache": {
+    "enabled": false
+  },
+  "resources_before": {
+    "cpu_usec": 890019,
+    "memory_current_bytes": 50782208,
+    "memory_peak_bytes": 50782208
+  },
+  "resources_ready": {
+    "cpu_usec": 7841079,
+    "memory_current_bytes": 521842688,
+    "memory_peak_bytes": 521842688
+  },
+  "resources_first_catalog": {
+    "cpu_usec": 21476913,
+    "memory_current_bytes": 721645568,
+    "memory_peak_bytes": 758575104
+  },
+  "resources_final": {
+    "cpu_usec": 24878467,
+    "memory_current_bytes": 513191936,
+    "memory_peak_bytes": 758575104
+  },
+  "total_ms": 23304.595
+}

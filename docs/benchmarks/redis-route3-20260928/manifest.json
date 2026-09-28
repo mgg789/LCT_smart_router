@@ -1,0 +1,762 @@
+{
+  "created_at_utc": "2026-09-28T18:15:48.671785+00:00",
+  "source_commit": "547fd0e36a97018f4e5e1e879de0e82bd076bed4",
+  "source_status": "",
+  "host": "Windows-11-10.0.26200-SP0",
+  "docker": "29.7.2",
+  "docker_cpus": 20,
+  "docker_memory_bytes": 16567869440,
+  "repeats": 3,
+  "budgets_ms": [
+    1000,
+    8000
+  ],
+  "limits": {
+    "router": {
+      "cpus": 2,
+      "memory_mib": 1536
+    },
+    "route3": {
+      "cpus": 2,
+      "memory_mib": 2048
+    },
+    "redis": {
+      "cpus": 1,
+      "memory_mib": 192
+    }
+  },
+  "images": {
+    "router": "sha256:3bf16620203a58c6d0cbae2186fa41ae0a4814e10df290a23097ea81fa1963e3",
+    "route3": "sha256:651a9f8d1d45cd3dcfc816fe01b81ac485e0f3f2e038c1b919602b12ef428503",
+    "redis": "sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635"
+  },
+  "graph_files_sha256": {
+    "services/route-engine3/graphs/car/graph.json": "f2eb43ed238db5dc46506140a7a2706dd1f3b8eb3af3a288a3c81da09e9f7a9d",
+    "services/route-engine3/graphs/car/moscow-mkad.osm.pbf": "b69e7f81c92b9cf641f301b8f083582871167e94c6774fa26730539aaf964034",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.cell_metrics": "90bfcae47aeb45fd0c0e742b08e450217dd52d36efb4aa8be96a9b49d9d508db",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.cells": "25e531d490536273d1556f11a1403b3a74ae3b6f89cd8cef7f9d7453d6f39600",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.cnbg": "71f1a90b3daa4c4ec67c7efccd273e664a04d8076c45dcbd5c6aac7a66892d3c",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.cnbg_to_ebg": "8caf531efbbe95a6e7296c7ca91caeaf6303421ad30d555446d30b4c50446374",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.datasource_names": "c768468352b87887cbfb054d035b2e43ded5e3ab1f7a39f40e4d63d05613ae22",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.ebg": "e8920aa5335e65be022bc39f2cccd5643af82f424d3b66ad37795e861d5cd407",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.ebg_nodes": "fe1d1bd99e7b4523cbd2f4c6a86995a1e9b2a08ae424f0ac23b53f6ba3cae0a3",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.edges": "7bba6dbb7b01d64b33206ffe739bae1ba9164be5a94f4592cb9c8e54a633ba66",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.enw": "9f1202114e37ea73b0894b96f4320fd1f8e5b8f39f04ccbc34d000bb5ad853ed",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.fileIndex": "6b73398bf597ff4ecddd19c55b872102f2720931e8e76ce9fce96438188ff2f5",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.geometry": "01b285d55bfca82c7236c7b8bc034a060584530debbc963f1ed5389c4b2bdacb",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.icd": "92ea4379640ca69eed9abc92b644a847e589d5d49ad8c5de203b88c79901d42c",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.maneuver_overrides": "69b76031742f695a566fb905b7c5a591f1811d7517127b0b25abff136a8f0aac",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.mldgr": "b7172498c8830b7bdd7ea66c857eb74df3c39c2f6a09ac972791050d1071190a",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.names": "8ea6f18cb10717c27f1fd314b139dbce0a6cfd2a3b7ee3acea4c4bb5ec72f74d",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.nbg_nodes": "5efdeec60ef60713ad4efa6ed25bc02f914b25b9a9b72bffbafcc3c2fb574936",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.partition": "37e84e7ac8813ca957e10cb74fcd5cea333c35ef37d9b0d524947044518e9f4b",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.properties": "32115c2fb53084f4b712377351a1107f5adec7c6a685407811651253c4b74833",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.ramIndex": "c289cdd97ec5a504fe4cb9c7427c6848f95fbef8182fcf2780ade918eb6e71f6",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.restrictions": "35b450bd9b2b30306c28a7e2cb6306e3cfed2836468cf7a01937bae7581db47d",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.timestamp": "3c75d889834ff9d6f59eadd8290f5bb177c3b3028b6669cb9706cf5795f7f934",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.tld": "b2048821f9b8b8a2114642aa80ff5ec755d04cc98022d8b78dc4b9f1b6d8f6eb",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.tls": "ec561b138e4e9e2356d535c2c73afa5a0ce40217b460dac46b80c9df2fdca313",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.turn_duration_penalties": "cc8eacf7d42dd24a57134cc8ba07c1c0bfc99bce43993ee97672a2d647f1b124",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.turn_penalties_index": "ecfeb68541ba94368b5e1c0b1376968998c90382e6a76e14f9fd49efedd65ae6",
+    "services/route-engine3/graphs/car/moscow-mkad.osrm.turn_weight_penalties": "f602443ea4c685c71d40d612c4762f74539f965570affc592d3d88dc3d4571dc",
+    "services/route-engine3/graphs/foot/graph.json": "e357eb9e790d03b01ca519311e0f01f75a92be121dc07086b92e505b27ea643e",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osm.pbf": "0c3eea1d7c6c99085ae139cbcfa9360159505b6ddb897333b767367215c6e255",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.cell_metrics": "193ba5c374940822b0f0efbfadc45496501ea283babddbfb4fdeaaf2945e3e77",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.cells": "94c4fe2f11bc04249f6415567264621238cc920fde2cc19e2908899bc900a3b9",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.cnbg": "3a579a262df78d90b6388e6c4ec99829e447ceb05a47758f2e944959cf204126",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.cnbg_to_ebg": "b7bf863593e1c64a03b7285a22b47684866363578f54105f5095588463cbdccc",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.datasource_names": "c768468352b87887cbfb054d035b2e43ded5e3ab1f7a39f40e4d63d05613ae22",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.ebg": "33eeac69ae9b66765b5e1010e7932b4ad45367b3464d2c65643957b91dbbba5a",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.ebg_nodes": "7316183da5532fbf1251228a72d53c5518db1f5753b3869624306a863494cee5",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.edges": "f2c68f0b9972e0967acc2b89de737c7504c79064a73d4f9a3430f7fe37c0bb25",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.enw": "927c4e63207c377d8841dd280cf34dff69cdaad26786c9308c3f5ec0add5b007",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.fileIndex": "30dca107387e1591a05f96b2b4cc2e513d9ed5de76bcec96a3c0cc4a6c90a6a4",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.geometry": "521ba598896a87eb95def992b476dba361216cdfc067d8535f06212134c7d080",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.icd": "f9739afc10a780cc9b794560438b44753d88d34eba0f6deb794cafb5810111ee",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.maneuver_overrides": "69b76031742f695a566fb905b7c5a591f1811d7517127b0b25abff136a8f0aac",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.mldgr": "3b584b959244d0131992cfb7bd7e06891671bb40c712804191637b17adf9ff78",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.names": "6c60ca9343f61092b92e72df9e5a6766855269f2f349d2a19e80414c65ec17f6",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.nbg_nodes": "85b319f2a203e97bc2c88d155303ee42479ff9ad4eea730b1b382aaaf630aa59",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.partition": "f36df4f02bf545fc21efc8f9219aa152bec71db103b1af6b0c7b32b17d6930ce",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.properties": "e6065aea8f8ebd6413a8a1caef6aa5f6a21501e9f08277de1a5e4a585a0e163c",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.ramIndex": "08bde0cc28e3bbb85359a89f9a9b4e085dbaabd9e2a1ac90401d9aa5f4ae79ca",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.restrictions": "35b450bd9b2b30306c28a7e2cb6306e3cfed2836468cf7a01937bae7581db47d",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.timestamp": "3c75d889834ff9d6f59eadd8290f5bb177c3b3028b6669cb9706cf5795f7f934",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.tld": "1afb30d67484a990f9ca2eade7f2c4bfe7c8fc9d33daa6807005262033d2f6e6",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.tls": "df2f4f808fbd94f0b36322caaa551b802b72d7487a8e9fb0df2a64e93499380f",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.turn_duration_penalties": "ebe73e03a09bf260f07dfe0f032d965a0df6e41883345fa2f9afd6add73f9005",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.turn_penalties_index": "96f4d5a856d2e5485cd36661427b36c1a741ad0508a7190a7123490ea0b70143",
+    "services/route-engine3/graphs/foot/moscow-mkad-foot.osrm.turn_weight_penalties": "7f3d1a0ca93949817c65d5537bfb29f2b0bee06cb66a93536026a864a9bef928"
+  },
+  "metro_data_sha256": "be0917d3a944f97192c43b2642c4ef892c2a8a41140a26a440f8216933882e3c",
+  "background_containers": [
+    "code-sim-node codex/simolyot-test:20260928-publication",
+    "code-sim-orch codex/simolyot-test:20260928-publication",
+    "navix-launch-e6a522cc81b8-web-1 navix-launch-web:6869c6f85f04",
+    "navix-launch-e6a522cc81b8-gateway-1 navix-launch-api:6869c6f85f04",
+    "navix-launch-e6a522cc81b8-api-1 navix-launch-api:6869c6f85f04",
+    "navix-launch-e6a522cc81b8-router-1 navix-launch-router:6869c6f85f04",
+    "navix-launch-e6a522cc81b8-postgres-1 pgvector/pgvector:pg17",
+    "navix-launch-e6a522cc81b8-redis-1 redis:8.2-alpine",
+    "code-sim-launcher web-simulation-wspace-launcher:latest",
+    "code-sim-edge web-simulation-wspace-edge:latest",
+    "code-sim-ide web-simulation-wspace-ide:latest",
+    "code-sim-gitea gitea/gitea:1.24.6",
+    "navix-launch-web-1 navix-launch-web:ff1e4474c0e1",
+    "navix-launch-api-1 navix-launch-api:ff1e4474c0e1",
+    "navix-launch-router-1 navix-launch-router:ff1e4474c0e1",
+    "navix-launch-road-api-1 navix-launch-road-api:ff1e4474c0e1",
+    "navix-launch-sys1-1 navix-launch-sys1:ff1e4474c0e1",
+    "navix-launch-postgres-1 pgvector/pgvector:pg17",
+    "navix-launch-osrm-1 ghcr.io/project-osrm/osrm-backend:latest",
+    "robofirst-postgres-local pgvector/pgvector:pg16",
+    "robofirst-fsp-minio-local minio/minio:RELEASE.2025-04-22T22-12-26Z"
+  ],
+  "methodology": "Fresh router per trial, fixed East66 publication; off/miss alternate; hit reuses the preceding miss namespace. Five local warm reads. One paused-Redis outage per budget. Route3 and Redis stay resident throughout. Route3 counters include small exec/probe overhead. Host background load is uncontrolled. No public network or host ports during trials.",
+  "trials": [
+    {
+      "label": "1000-1-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 719616,
+        "used_memory_rss_bytes": 17707008,
+        "used_cpu_sec": 0.046428,
+        "keyspace_hits": 0,
+        "keyspace_misses": 0,
+        "keyspace": ""
+      },
+      "redis_after": {
+        "used_memory_bytes": 744304,
+        "used_memory_rss_bytes": 17707008,
+        "used_cpu_sec": 0.145531,
+        "keyspace_hits": 0,
+        "keyspace_misses": 0,
+        "keyspace": ""
+      },
+      "route3_before": {
+        "cpu_usec": 813977,
+        "memory_current_bytes": 601387008,
+        "memory_peak_bytes": 605577216
+      },
+      "route3_after": {
+        "cpu_usec": 1195100,
+        "memory_current_bytes": 625504256,
+        "memory_peak_bytes": 627204096
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-1-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 744304,
+        "used_memory_rss_bytes": 17707008,
+        "used_cpu_sec": 0.146193,
+        "keyspace_hits": 0,
+        "keyspace_misses": 0,
+        "keyspace": ""
+      },
+      "redis_after": {
+        "used_memory_bytes": 1738752,
+        "used_memory_rss_bytes": 18870272,
+        "used_cpu_sec": 0.232821,
+        "keyspace_hits": 0,
+        "keyspace_misses": 1,
+        "keyspace": "keys=1,expires=1,avg_ttl=598245,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 1218916,
+        "memory_current_bytes": 625553408,
+        "memory_peak_bytes": 627204096
+      },
+      "route3_after": {
+        "cpu_usec": 1439505,
+        "memory_current_bytes": 629424128,
+        "memory_peak_bytes": 632782848
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-1-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 1738752,
+        "used_memory_rss_bytes": 18870272,
+        "used_cpu_sec": 0.23329,
+        "keyspace_hits": 0,
+        "keyspace_misses": 1,
+        "keyspace": "keys=1,expires=1,avg_ttl=598147,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 1738752,
+        "used_memory_rss_bytes": 18829312,
+        "used_cpu_sec": 0.287439,
+        "keyspace_hits": 1,
+        "keyspace_misses": 1,
+        "keyspace": "keys=1,expires=1,avg_ttl=584107,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 1465940,
+        "memory_current_bytes": 629153792,
+        "memory_peak_bytes": 632782848
+      },
+      "route3_after": {
+        "cpu_usec": 1670665,
+        "memory_current_bytes": 630607872,
+        "memory_peak_bytes": 632782848
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-2-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 1738752,
+        "used_memory_rss_bytes": 18829312,
+        "used_cpu_sec": 0.288012,
+        "keyspace_hits": 1,
+        "keyspace_misses": 1,
+        "keyspace": "keys=1,expires=1,avg_ttl=583922,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19910656,
+        "used_cpu_sec": 0.37413300000000005,
+        "keyspace_hits": 1,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=569309,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 1694172,
+        "memory_current_bytes": 630140928,
+        "memory_peak_bytes": 632782848
+      },
+      "route3_after": {
+        "cpu_usec": 1916622,
+        "memory_current_bytes": 631750656,
+        "memory_peak_bytes": 632782848
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-2-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19910656,
+        "used_cpu_sec": 0.37466299999999997,
+        "keyspace_hits": 1,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=569311,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19902464,
+        "used_cpu_sec": 0.460279,
+        "keyspace_hits": 1,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=544682,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 1937747,
+        "memory_current_bytes": 631377920,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_after": {
+        "cpu_usec": 2155779,
+        "memory_current_bytes": 632496128,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-2-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19902464,
+        "used_cpu_sec": 0.460815,
+        "keyspace_hits": 1,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=544582,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 20713472,
+        "used_cpu_sec": 0.512342,
+        "keyspace_hits": 2,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=527231,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 2180185,
+        "memory_current_bytes": 632496128,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_after": {
+        "cpu_usec": 2387318,
+        "memory_current_bytes": 632946688,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-3-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 20713472,
+        "used_cpu_sec": 0.512881,
+        "keyspace_hits": 2,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=527130,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19857408,
+        "used_cpu_sec": 0.597891,
+        "keyspace_hits": 2,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=498307,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 2411731,
+        "memory_current_bytes": 632999936,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_after": {
+        "cpu_usec": 2669314,
+        "memory_current_bytes": 633409536,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-3-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 2656448,
+        "used_memory_rss_bytes": 19857408,
+        "used_cpu_sec": 0.598715,
+        "keyspace_hits": 2,
+        "keyspace_misses": 2,
+        "keyspace": "keys=2,expires=2,avg_ttl=498106,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20668416,
+        "used_cpu_sec": 0.681889,
+        "keyspace_hits": 2,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=500824,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 2694611,
+        "memory_current_bytes": 633139200,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_after": {
+        "cpu_usec": 2888935,
+        "memory_current_bytes": 633778176,
+        "memory_peak_bytes": 634359808
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-3-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20668416,
+        "used_cpu_sec": 0.682677,
+        "keyspace_hits": 2,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=501081,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 21471232,
+        "used_cpu_sec": 0.733143,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=494757,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 2924077,
+        "memory_current_bytes": 633839616,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_after": {
+        "cpu_usec": 3119661,
+        "memory_current_bytes": 634302464,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "1000-4-outage",
+      "mode": "outage",
+      "redis_before": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 21471232,
+        "used_cpu_sec": 0.733708,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=494664,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20615168,
+        "used_cpu_sec": 0.735653,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=492472,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 3142907,
+        "memory_current_bytes": 634138624,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_after": {
+        "cpu_usec": 3345695,
+        "memory_current_bytes": 634474496,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-1-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20615168,
+        "used_cpu_sec": 0.736439,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=491191,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20615168,
+        "used_cpu_sec": 0.823285,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=434630,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 3376491,
+        "memory_current_bytes": 634519552,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_after": {
+        "cpu_usec": 3606578,
+        "memory_current_bytes": 634740736,
+        "memory_peak_bytes": 636977152
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-1-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 3574176,
+        "used_memory_rss_bytes": 20615168,
+        "used_cpu_sec": 0.823817,
+        "keyspace_hits": 3,
+        "keyspace_misses": 3,
+        "keyspace": "keys=3,expires=3,avg_ttl=434528,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 4491872,
+        "used_memory_rss_bytes": 21426176,
+        "used_cpu_sec": 0.910388,
+        "keyspace_hits": 3,
+        "keyspace_misses": 4,
+        "keyspace": "keys=4,expires=4,avg_ttl=440050,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 3637667,
+        "memory_current_bytes": 634757120,
+        "memory_peak_bytes": 637829120
+      },
+      "route3_after": {
+        "cpu_usec": 3843652,
+        "memory_current_bytes": 635420672,
+        "memory_peak_bytes": 637829120
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-1-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 4491872,
+        "used_memory_rss_bytes": 21426176,
+        "used_cpu_sec": 0.910866,
+        "keyspace_hits": 3,
+        "keyspace_misses": 4,
+        "keyspace": "keys=4,expires=4,avg_ttl=440215,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 4491872,
+        "used_memory_rss_bytes": 22495232,
+        "used_cpu_sec": 0.962078,
+        "keyspace_hits": 4,
+        "keyspace_misses": 4,
+        "keyspace": "keys=4,expires=4,avg_ttl=435367,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 3875501,
+        "memory_current_bytes": 635047936,
+        "memory_peak_bytes": 637829120
+      },
+      "route3_after": {
+        "cpu_usec": 4067978,
+        "memory_current_bytes": 635731968,
+        "memory_peak_bytes": 637829120
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-2-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 4491872,
+        "used_memory_rss_bytes": 22495232,
+        "used_cpu_sec": 0.962915,
+        "keyspace_hits": 4,
+        "keyspace_misses": 4,
+        "keyspace": "keys=4,expires=4,avg_ttl=435181,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22441984,
+        "used_cpu_sec": 1.048459,
+        "keyspace_hits": 4,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=434329,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 4091027,
+        "memory_current_bytes": 635727872,
+        "memory_peak_bytes": 637829120
+      },
+      "route3_after": {
+        "cpu_usec": 4310843,
+        "memory_current_bytes": 638849024,
+        "memory_peak_bytes": 640106496
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-2-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22441984,
+        "used_cpu_sec": 1.049328,
+        "keyspace_hits": 4,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=434537,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22339584,
+        "used_cpu_sec": 1.1346990000000001,
+        "keyspace_hits": 4,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=415008,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 4334932,
+        "memory_current_bytes": 638857216,
+        "memory_peak_bytes": 640106496
+      },
+      "route3_after": {
+        "cpu_usec": 4558874,
+        "memory_current_bytes": 638816256,
+        "memory_peak_bytes": 640106496
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-2-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22339584,
+        "used_cpu_sec": 1.135256,
+        "keyspace_hits": 4,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=414908,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 23093248,
+        "used_cpu_sec": 1.1880950000000001,
+        "keyspace_hits": 5,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=397269,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 4596518,
+        "memory_current_bytes": 638611456,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_after": {
+        "cpu_usec": 4839733,
+        "memory_current_bytes": 639119360,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-3-off",
+      "mode": "off",
+      "redis_before": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 23093248,
+        "used_cpu_sec": 1.188617,
+        "keyspace_hits": 5,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=397168,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22151168,
+        "used_cpu_sec": 1.276568,
+        "keyspace_hits": 5,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=367042,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 4879769,
+        "memory_current_bytes": 639250432,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_after": {
+        "cpu_usec": 5143175,
+        "memory_current_bytes": 639053824,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-3-miss",
+      "mode": "miss",
+      "redis_before": {
+        "used_memory_bytes": 5409600,
+        "used_memory_rss_bytes": 22151168,
+        "used_cpu_sec": 1.277074,
+        "keyspace_hits": 5,
+        "keyspace_misses": 5,
+        "keyspace": "keys=5,expires=5,avg_ttl=366941,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 6327296,
+        "used_memory_rss_bytes": 22962176,
+        "used_cpu_sec": 1.364349,
+        "keyspace_hits": 5,
+        "keyspace_misses": 6,
+        "keyspace": "keys=6,expires=6,avg_ttl=368419,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 5173737,
+        "memory_current_bytes": 639098880,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_after": {
+        "cpu_usec": 5389581,
+        "memory_current_bytes": 639406080,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-3-hit",
+      "mode": "hit",
+      "redis_before": {
+        "used_memory_bytes": 6327296,
+        "used_memory_rss_bytes": 22962176,
+        "used_cpu_sec": 1.365102,
+        "keyspace_hits": 5,
+        "keyspace_misses": 6,
+        "keyspace": "keys=6,expires=6,avg_ttl=368683,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 6327296,
+        "used_memory_rss_bytes": 22908928,
+        "used_cpu_sec": 1.419224,
+        "keyspace_hits": 6,
+        "keyspace_misses": 6,
+        "keyspace": "keys=6,expires=6,avg_ttl=360827,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 5424900,
+        "memory_current_bytes": 639528960,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_after": {
+        "cpu_usec": 5656053,
+        "memory_current_bytes": 639307776,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_http_200": 57
+    },
+    {
+      "label": "8000-4-outage",
+      "mode": "outage",
+      "redis_before": {
+        "used_memory_bytes": 6327296,
+        "used_memory_rss_bytes": 22908928,
+        "used_cpu_sec": 1.419808,
+        "keyspace_hits": 6,
+        "keyspace_misses": 6,
+        "keyspace": "keys=6,expires=6,avg_ttl=360732,subexpiry=0"
+      },
+      "redis_after": {
+        "used_memory_bytes": 6327296,
+        "used_memory_rss_bytes": 22908928,
+        "used_cpu_sec": 1.4291049999999998,
+        "keyspace_hits": 6,
+        "keyspace_misses": 6,
+        "keyspace": "keys=6,expires=6,avg_ttl=357763,subexpiry=0"
+      },
+      "route3_before": {
+        "cpu_usec": 5698416,
+        "memory_current_bytes": 639504384,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_after": {
+        "cpu_usec": 5932119,
+        "memory_current_bytes": 639803392,
+        "memory_peak_bytes": 644284416
+      },
+      "route3_http_200": 57
+    }
+  ],
+  "route3_health": {
+    "service": "route-engine3-v1",
+    "ready": true,
+    "graphs": {
+      "car": true,
+      "foot": true
+    }
+  },
+  "route3_startup_ms": 5841.014,
+  "route3_ready_resources": {
+    "cpu_usec": 792677,
+    "memory_current_bytes": 601538560,
+    "memory_peak_bytes": 605577216
+  },
+  "semantic_equality_by_budget": true,
+  "redis_restored": {
+    "used_memory_bytes": 6327296,
+    "used_memory_rss_bytes": 22908928,
+    "used_cpu_sec": 1.429721,
+    "keyspace_hits": 6,
+    "keyspace_misses": 6,
+    "keyspace": "keys=6,expires=6,avg_ttl=357121,subexpiry=0"
+  },
+  "cleanup_complete": true
+}
