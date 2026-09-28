@@ -301,6 +301,13 @@ def launch(options: dict, env_text: str, log=print) -> dict:
         selected.add("web")
     if options["osrm"]:
         selected.update(("osrm", "road-api"))
+    # route3 follows the OSRM option unless explicitly overridden: the engine
+    # needs no extra wizard question when the road contour is already on.
+    route3 = options.get("route3")
+    if route3 is None:
+        route3 = bool(options["osrm"])
+    if route3:
+        selected.add("route-engine3")
     if options["online"]:
         selected.add("sys1")
     config["services"] = {
@@ -332,11 +339,15 @@ def launch(options: dict, env_text: str, log=print) -> dict:
             for key in ("API_ROAD_API_URL", "ROUTER_ROAD_API_URL"):
                 if not options["osrm"]:
                     svc["environment"].pop(key, None)
+            if not route3:
+                svc["environment"].pop("ROUTE3_URL", None)
         if name == "router" and not options["osrm"]:
             svc["environment"].pop("ROUTER_ROAD_API_URL", None)
             svc["environment"].update(
                 {"ROUTER_ROAD_API_OFFLINE": "true", "ROUTER_OSRM_OFFLINE": "true"}
             )
+        if name == "router" and not route3:
+            svc["environment"].pop("ROUTE3_URL", None)
     urls = {}
     for name, key, target in [("api", "api_port", 8000), ("web", "ui_port", 80)]:
         port = options.get(key)
