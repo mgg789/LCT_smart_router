@@ -17,6 +17,7 @@ import os
 import platform
 import subprocess
 import time as monotonic_time
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,7 @@ _STRATEGY_FIFO = "fifo"
 _STRATEGY_NEAREST = "greedy_nearest"
 _STRATEGY_URGENT = "greedy_urgency"
 _STRATEGY_ROUTER = "router"
+_STRATEGY_ROUTER_STATIC = "router_static"
 
 
 def _machine_meta(label: str) -> dict:
@@ -141,7 +143,13 @@ def _add_fifo_deltas(rows: list[dict]) -> list[dict]:
 
 
 def _run_strategies(scenario, settings: SearchSettings) -> tuple[list[dict], Any, Any, float]:
-    """Time every strategy on one scenario; return rows plus the router output."""
+    """Time every strategy on one scenario; return rows plus the router output.
+
+    The router row runs the product path with the departure-time traffic
+    forecast enabled; ``router_static`` reruns the same solve on the static
+    matrix (forecast disabled), which is also the policy-catalog context. The
+    pair makes the cost of the traffic forecast measurable per region.
+    """
     travel = configure_travel(
         GraphTravel(scenario.graph), settings.technical(), scenario.snapshot.planning_as_of
     )
@@ -158,6 +166,14 @@ def _run_strategies(scenario, settings: SearchSettings) -> tuple[list[dict], Any
     run = run_official_benchmark(scenario, settings, event_settings=None)
     router_elapsed_ms = (monotonic_time.perf_counter() - started) * 1000
     rows.append(_strategy_row(_STRATEGY_ROUTER, run.output.main, router_elapsed_ms))
+    started = monotonic_time.perf_counter()
+    static = solve(
+        scenario.snapshot,
+        travel,
+        replace(settings, traffic_enabled=False),
+    )
+    static_elapsed_ms = (monotonic_time.perf_counter() - started) * 1000
+    rows.append(_strategy_row(_STRATEGY_ROUTER_STATIC, static.main, static_elapsed_ms))
     return _add_fifo_deltas(rows), run, travel, router_elapsed_ms / 1000
 
 
