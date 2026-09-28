@@ -7,9 +7,11 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import type { DashboardSnapshot } from '../api/types';
 import { t } from '../i18n';
 import { ChatsView } from './ChatsView';
 import { DashboardAi } from './DispatcherAiPane';
+import { engineerProfilesFromSnapshot } from './engineerRoster';
 
 export { DashboardAi };
 
@@ -17,9 +19,13 @@ export { DashboardAi };
 export function DashboardChats({
   token,
   focusChatId,
+  snapshot,
+  onOpenEngineer,
 }: {
   token: string | null;
   focusChatId?: string | null;
+  snapshot: DashboardSnapshot | null;
+  onOpenEngineer: (engineerId: string) => Promise<DispatchChatView>;
 }) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -78,6 +84,21 @@ export function DashboardChats({
         onMarkRead={(conversationId, seq) => {
           if (!token) return;
           void readDispatchChat(token, conversationId, crypto.randomUUID(), seq);
+        }}
+        engineers={engineerProfilesFromSnapshot(snapshot).map(
+          ({ id, displayName, hasAccount }) => ({
+            id,
+            displayName,
+            canChat: hasAccount,
+          }),
+        )}
+        onOpenEngineer={async (engineerId) => {
+          const chat = await onOpenEngineer(engineerId);
+          setChats((current) => [
+            chat,
+            ...(current ?? []).filter((item) => item.handoff.id !== chat.handoff.id),
+          ]);
+          return chat;
         }}
       />
     </div>

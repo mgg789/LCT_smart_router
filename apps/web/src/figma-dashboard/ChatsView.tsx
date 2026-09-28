@@ -4,6 +4,8 @@ import type { AiMessage, AiRoleProfile, DispatchChatView } from '../api/ai';
 import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { AiMarkdown } from './AiMarkdown';
+import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
+import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -29,6 +31,12 @@ export interface ChatsViewProps {
   readonly onSendMessage: (conversationId: string, text: string) => Promise<void>;
   readonly onFinish: (conversationId: string) => Promise<void>;
   readonly onMarkRead: (conversationId: string, seq: number) => void;
+  readonly engineers: readonly {
+    readonly id: string;
+    readonly displayName: string;
+    readonly canChat: boolean;
+  }[];
+  readonly onOpenEngineer: (engineerId: string) => Promise<DispatchChatView>;
 }
 
 type SideFilter = 'engineer' | 'client';
@@ -127,16 +135,20 @@ export function ChatsView({
   onSendMessage,
   onFinish,
   onMarkRead,
+  engineers,
+  onOpenEngineer,
 }: ChatsViewProps) {
   const { dx, dy } = useArtboardStretch();
   const reduceMotion = useReducedMotion();
-  const [sidePicked, setSidePicked] = useState<SideFilter | null>(null);
+  const [side, setSide] = useState<SideFilter>('engineer');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openingEngineerId, setOpeningEngineerId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
   useEffect(() => {
     if (!focusChatId) return;
     setSelectedId(focusChatId);
-    setSidePicked('engineer');
+    setSide('engineer');
   }, [focusChatId]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -149,18 +161,6 @@ export function ChatsView({
     return [...live, ...done];
   }, [chats]);
 
-  /*
-   * Which side the switch starts on is derived, not stored: the tab should open on the
-   * side that actually has someone waiting, and an effect correcting it afterwards would
-   * paint an empty «Инженеры» first and would not survive a server render.
-   */
-  const side: SideFilter =
-    sidePicked ??
-    sideOf(
-      (all.find((chat) => chat.handoff.state === 'waiting') ?? all[0])?.conversation.roleProfile ??
-        'engineer',
-    );
-
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return all.filter((chat) => {
@@ -171,7 +171,28 @@ export function ChatsView({
     });
   }, [all, query, side]);
 
+  const engineersToStart = useMemo(() => {
+    if (side !== 'engineer') return [];
+    const activeEngineerIds = new Set(
+      all
+        .filter(
+          (chat) =>
+            chat.handoff.state !== 'closed' && sideOf(chat.conversation.roleProfile) === 'engineer',
+        )
+        .flatMap((chat) => chat.handoff.engineerIds),
+    );
+    const needle = query.trim().toLocaleLowerCase('ru-RU');
+    return engineers.filter(
+      (engineer) =>
+        !activeEngineerIds.has(engineer.id) &&
+        (needle.length === 0 || engineer.displayName.toLocaleLowerCase('ru-RU').includes(needle)),
+    );
+  }, [all, engineers, query, side]);
+
   const selected = rows.find((chat) => chat.handoff.id === selectedId) ?? rows[0] ?? null;
+  const liveRows = rows.filter((chat) => chat.handoff.state !== 'closed');
+  const closedRows = rows.filter((chat) => chat.handoff.state === 'closed');
+  const displayRows = side === 'engineer' ? [...liveRows, ...closedRows] : rows;
 
   useEffect(() => {
     if (!selected || selected.unreadCount === 0) return;
@@ -223,81 +244,117 @@ export function ChatsView({
         className="absolute overflow-hidden rounded-[30px] bg-white"
         style={{ left: 0, top: 67, width: CARD_WIDTH, height: 881 + dy }}
       >
-        <label
-          className="absolute flex items-center rounded-[27px] bg-figma-canvas"
-          style={{ left: 20, top: 20, width: 390, height: 51, paddingLeft: 16, paddingRight: 60 }}
-        >
-          <span className="sr-only">{t('figma-dashboard.ChatsView.900c3c858b')}</span>
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t('figma-dashboard.ChatsView.180f58ab97')}
-            className="figma-nowrap w-full bg-transparent font-semibold text-[18px] text-figma-ink outline-none placeholder:text-[#727478]"
-          />
-        </label>
-        <span
-          className="pointer-events-none absolute flex items-center justify-center rounded-full bg-figma-ink"
-          style={{ left: 363, top: 24, width: 43, height: 43 }}
-        >
-          <FigmaIcon src={FIGMA_ASSETS.searchPanel} alt="" width={22} height={22} />
-        </span>
+        <AnimatedEngineerSearch
+          value={query}
+          onChange={setQuery}
+          motionOn={!reduceMotion}
+          placeholder={
+            side === 'engineer'
+              ? t('figma-dashboard.EngineersView.6614a726f7')
+              : t('figma-dashboard.ChatsView.180f58ab97')
+          }
+          className="h-[51px] w-[390px] rounded-[27px] px-[16px] pr-[60px] [&>input]:font-semibold [&>input]:text-[18px] [&>input]:placeholder:text-[#727478]"
+          style={{ left: 20, top: 20 }}
+        />
 
-        <div
-          role="tablist"
-          aria-label={t('figma-dashboard.ChatsView.cd06cc7991')}
-          className="absolute flex items-center justify-center rounded-[100px] border-[1.5px] border-[#727478] border-solid"
-          style={{ left: 68, top: 91, width: 294, height: 51, gap: 20 }}
-        >
-          {(
-            [
-              ['engineer', t('figma-dashboard.ChatsView.960ef88466')],
-              ['client', t('figma-dashboard.ChatsView.ff296ddaed')],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={side === id}
-              onClick={() => setSidePicked(id)}
-              className={`figma-nowrap flex items-center font-medium text-[20px] leading-none ${
-                side === id
-                  ? 'rounded-[100px] border-[0.5px] border-[#727478] border-solid bg-figma-ink text-white'
-                  : 'rounded-[10px] bg-white text-figma-ink'
-              }`}
-              style={side === id ? { padding: '10px 20px' } : { padding: 10 }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <AnimatedCapsuleTabs
+          items={[
+            { id: 'engineer' as const, label: t('figma-dashboard.ChatsView.960ef88466') },
+            { id: 'client' as const, label: t('figma-dashboard.ChatsView.ff296ddaed') },
+          ]}
+          value={side}
+          onChange={setSide}
+          motionOn={!reduceMotion}
+          label={t('figma-dashboard.ChatsView.cd06cc7991')}
+          className="absolute left-[68px] top-[91px] h-[51px] w-[294px] rounded-[100px] border-[1.5px] border-[#727478] border-solid bg-white p-[3px]"
+          textClassName="figma-nowrap font-medium text-[20px] leading-none"
+        />
 
         <div
           className="absolute overflow-y-auto overflow-x-hidden"
           style={{ left: 13, top: 174, width: 405, height: 680 + dy }}
         >
-          {loading && all.length === 0 ? (
-            <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
-              {t('figma-dashboard.ChatsView.1c1f3c812b')}
-            </FigmaText>
-          ) : rows.length === 0 ? (
-            <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
-              {side === 'engineer'
-                ? t('figma-dashboard.ChatsView.ee9fa4a3f5')
-                : t('figma-dashboard.ChatsView.6e4935aea3')}
-            </FigmaText>
-          ) : (
-            rows.map((chat, index) => (
-              <ChatRow
-                key={chat.handoff.id}
-                chat={chat}
-                top={index * ROW_STEP}
-                last={index === rows.length - 1}
-                selected={selected?.handoff.id === chat.handoff.id}
-                onSelect={() => setSelectedId(chat.handoff.id)}
-              />
-            ))
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={side}
+              initial={reduceMotion ? false : { opacity: 0, x: side === 'engineer' ? -18 : 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: side === 'engineer' ? 18 : -18 }}
+              transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              {loading &&
+              all.length === 0 &&
+              (side !== 'engineer' || engineersToStart.length === 0) ? (
+                <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
+                  {t('figma-dashboard.ChatsView.1c1f3c812b')}
+                </FigmaText>
+              ) : rows.length === 0 && engineersToStart.length === 0 ? (
+                <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
+                  {side === 'engineer'
+                    ? t('figma-dashboard.ChatsView.ee9fa4a3f5')
+                    : t('figma-dashboard.ChatsView.6e4935aea3')}
+                </FigmaText>
+              ) : (
+                <>
+                  {displayRows
+                    .slice(0, side === 'engineer' ? liveRows.length : displayRows.length)
+                    .map((chat, index) => (
+                      <ChatRow
+                        key={chat.handoff.id}
+                        chat={chat}
+                        top={index * ROW_STEP}
+                        last={
+                          index ===
+                            (side === 'engineer' ? liveRows.length : displayRows.length) - 1 &&
+                          engineersToStart.length === 0 &&
+                          (side !== 'engineer' || closedRows.length === 0)
+                        }
+                        selected={selected?.handoff.id === chat.handoff.id}
+                        onSelect={() => setSelectedId(chat.handoff.id)}
+                      />
+                    ))}
+                  {engineersToStart.map((engineer, index) => (
+                    <EngineerStartRow
+                      key={engineer.id}
+                      engineer={engineer}
+                      top={(liveRows.length + index) * ROW_STEP}
+                      last={
+                        index === engineersToStart.length - 1 &&
+                        (side !== 'engineer' || closedRows.length === 0)
+                      }
+                      opening={openingEngineerId === engineer.id}
+                      writesDisabled={writesDisabled}
+                      onSelect={() => {
+                        setOpenError(null);
+                        setOpeningEngineerId(engineer.id);
+                        void onOpenEngineer(engineer.id)
+                          .catch((cause: unknown) => {
+                            setOpenError(
+                              cause instanceof Error
+                                ? cause.message
+                                : t('figma-dashboard.ChatsView.engineerOpenFailed'),
+                            );
+                          })
+                          .finally(() => setOpeningEngineerId(null));
+                      }}
+                    />
+                  ))}
+                  {side === 'engineer'
+                    ? closedRows.map((chat, index) => (
+                        <ChatRow
+                          key={chat.handoff.id}
+                          chat={chat}
+                          top={(liveRows.length + engineersToStart.length + index) * ROW_STEP}
+                          last={index === closedRows.length - 1}
+                          selected={selected?.handoff.id === chat.handoff.id}
+                          onSelect={() => setSelectedId(chat.handoff.id)}
+                        />
+                      ))
+                    : null}
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
 
@@ -413,19 +470,33 @@ export function ChatsView({
       ) : (
         <FigmaText
           className="absolute font-semibold text-[20px] text-[#727478]"
-          style={{ left: THREAD_LEFT, top: 90 }}
+          style={{
+            left: THREAD_LEFT + (THREAD_WIDTH + dx) / 2,
+            top: 67 + (881 + dy) / 2,
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+          }}
         >
           {error ?? t('figma-dashboard.ChatsView.1fefed6d5c')}
         </FigmaText>
       )}
 
-      {error && selected ? (
+      {(error || openError) && selected ? (
         <p
           role="alert"
           className="figma-text absolute font-semibold text-[16px] text-[#d92d20]"
           style={{ left: THREAD_LEFT, top: 20 }}
         >
-          {error}
+          {openError ?? error}
+        </p>
+      ) : null}
+      {openError && !selected ? (
+        <p
+          role="alert"
+          className="absolute text-[16px] text-[#d92d20]"
+          style={{ left: THREAD_LEFT, top: 20 }}
+        >
+          {openError}
         </p>
       ) : null}
     </section>
@@ -503,6 +574,65 @@ function ChatRow({
           {chat.unreadCount}
         </span>
       ) : null}
+      {last ? null : (
+        <span
+          aria-hidden
+          className="absolute"
+          style={{ left: 0, top: ROW_HEIGHT, width: 390, height: 1, background: HAIRLINE }}
+        />
+      )}
+    </button>
+  );
+}
+
+function EngineerStartRow({
+  engineer,
+  top,
+  last,
+  opening,
+  writesDisabled,
+  onSelect,
+}: {
+  engineer: { readonly id: string; readonly displayName: string; readonly canChat: boolean };
+  top: number;
+  last: boolean;
+  opening: boolean;
+  writesDisabled: boolean;
+  onSelect: () => void;
+}) {
+  const canStart = engineer.canChat && !writesDisabled;
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      disabled={opening || !canStart}
+      className="absolute block w-[390px] text-left disabled:opacity-60"
+      style={{ left: 7, top, height: ROW_HEIGHT }}
+    >
+      <img
+        alt=""
+        src={portraitFor(engineer.id)}
+        className="absolute rounded-full object-cover"
+        style={{ left: 0, top: 0, width: 60, height: 60 }}
+      />
+      <FigmaText
+        className="figma-nowrap absolute overflow-hidden text-ellipsis font-murs text-[20px] text-figma-ink"
+        style={{ left: 74, top: 8, maxWidth: 262 }}
+      >
+        {engineer.displayName}
+      </FigmaText>
+      <FigmaText
+        className="figma-nowrap absolute font-semibold text-[18px] text-[#727478]"
+        style={{ left: 74, top: 39, maxWidth: 262 }}
+      >
+        {opening
+          ? t('figma-dashboard.ChatsView.openingEngineer')
+          : canStart
+            ? t('figma-dashboard.ChatsView.startEngineerChat')
+            : writesDisabled
+              ? t('figma-dashboard.ChatsView.chatsReadOnly')
+              : t('figma-dashboard.ChatsView.engineerChatUnavailable')}
+      </FigmaText>
       {last ? null : (
         <span
           aria-hidden

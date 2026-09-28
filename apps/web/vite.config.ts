@@ -31,6 +31,12 @@ const config = {
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}'],
+      thresholds: { lines: 40, functions: 50, branches: 65 },
+    },
   },
 };
 

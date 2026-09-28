@@ -25,6 +25,7 @@ import type {
 import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { formatMoscowDate, moscowAt } from '../lib/time';
+import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
 import { downloadMcpSetupMd, generateMcpPin } from './mcpSetup';
@@ -32,7 +33,6 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
-const CAPSULE_SPRING = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.72 };
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
@@ -378,43 +378,23 @@ function TabSwitch({
   onChange: (tab: SettingsTab) => void;
   offline: boolean;
 }) {
-  const index = TABS.findIndex((item) => item.id === tab);
   return (
-    <div className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
-      <div className="relative grid h-full grid-cols-4">
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/4 rounded-full bg-figma-ink"
-          initial={false}
-          animate={{ x: `${index * 100}%` }}
-          transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
-        />
-        {TABS.map((item) => {
-          const active = item.id === tab;
-          const disabled = offline && (item.id === 'ai' || item.id === 'maps');
-          return (
-            <button
-              key={item.id}
-              type="button"
-              disabled={disabled}
-              title={disabled ? t('common.offlineContour') : undefined}
-              onClick={() => {
-                if (!disabled) onChange(item.id);
-              }}
-              className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <span
-                className={`font-semibold text-[16px] tracking-[-0.3px] ${
-                  active ? 'text-white' : 'text-figma-ink'
-                }`}
-              >
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <AnimatedCapsuleTabs
+      items={TABS.map((item) => ({
+        ...item,
+        disabled: offline && (item.id === 'ai' || item.id === 'maps'),
+        title:
+          offline && (item.id === 'ai' || item.id === 'maps')
+            ? t('common.offlineContour')
+            : undefined,
+      }))}
+      value={tab}
+      onChange={onChange}
+      motionOn={motionOn}
+      label={t('figma-dashboard.SettingsModal.985b5e0f2c')}
+      className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]"
+      textClassName="font-semibold text-[16px] tracking-[-0.3px]"
+    />
   );
 }
 

@@ -18,6 +18,7 @@ import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { regionStyle } from '../domain/regions';
 import { t } from '../i18n';
 import { transportLabel } from '../lib/reasons';
+import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { ARTBOARD_BLEED } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
@@ -130,7 +131,6 @@ export function EngineersView({
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
   const [scrollHint, setScrollHint] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -149,7 +149,6 @@ export function EngineersView({
   const ringRef = useRef<HTMLDivElement | null>(null);
   const bindsRef = useRef(new Map<string, CardBind>());
   const animRef = useRef<ReturnType<typeof animate> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const appliedIdRef = useRef<string | null>(null);
   const prevSelectedRef = useRef<string | null | undefined>(undefined);
   const goGenRef = useRef(0);
@@ -678,39 +677,14 @@ export function EngineersView({
         </>
       ) : null}
 
-      <motion.label
-        data-eng-chrome
-        className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
+      <AnimatedEngineerSearch
+        value={query}
+        onChange={onSearchChange}
+        motionOn={motionOn}
+        placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
+        className="h-[51px] w-[284px]"
         style={{ left: 895, top: RING_SEARCH_TOP }}
-        animate={
-          !motionOn || reduceMotion
-            ? undefined
-            : searchFocused
-              ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
-              : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
-        }
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <input
-          ref={searchInputRef}
-          value={query}
-          onChange={(event) => onSearchChange(event.target.value)}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
-          className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
-        />
-        <motion.button
-          type="button"
-          className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
-          aria-label={t('figma-dashboard.EngineersView.6614a726f7')}
-          onClick={() => searchInputRef.current?.focus()}
-          animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
-        </motion.button>
-      </motion.label>
+      />
       <AnimatePresence>
         {scrollHint ? (
           <motion.div

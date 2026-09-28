@@ -145,7 +145,7 @@ tasks:
         script:
           - pip install --disable-pip-version-check -r core/requirements-dev.txt
           - python -m pyright
-          - python -m pytest core/tests -q
+          - python -m pytest core/tests -q --cov=core --cov-config=core/.coveragerc --cov-report=term:skip-covered --cov-fail-under=80
           - python scripts/ci/evaluate_health_services.py --self-test
   - name: secrets
     cubes:

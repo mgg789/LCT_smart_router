@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
+import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
 import { isNavixOffline } from '../domain/mapAvailability';
@@ -870,6 +871,27 @@ export function MainDashboardPage() {
                 setHistoryError(null);
                 setHistoryOpen(true);
               }}
+              onDownloadPlan={() => {
+                setUserMenuOpen(false);
+                if (!dash.token || !dash.snapshot?.plan.plan) {
+                  pushToast({
+                    id: 'plan-export',
+                    kind: 'error',
+                    title: t('figma-dashboard.DashboardHeaderControls.downloadPlan'),
+                    body: t('figma-dashboard.MainDashboardPage.exportUnavailable'),
+                  });
+                  return;
+                }
+                dismissToast('plan-export');
+                void downloadCurrentPlan(dash.token).catch(() =>
+                  pushToast({
+                    id: 'plan-export',
+                    kind: 'error',
+                    title: t('figma-dashboard.DashboardHeaderControls.downloadPlan'),
+                    body: t('figma-dashboard.MainDashboardPage.exportFailed'),
+                  }),
+                );
+              }}
               onEndDay={() => {
                 setUserMenuOpen(false);
                 setResultsOpen(true);
@@ -1077,7 +1099,22 @@ export function MainDashboardPage() {
                   onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
                 >
                   {stackViewKey(stackNav) === 'chats' ? (
-                    <DashboardChats token={dash.token} focusChatId={focusedChatId} />
+                    <DashboardChats
+                      token={dash.token}
+                      focusChatId={focusedChatId}
+                      snapshot={visibleSnapshot}
+                      onOpenEngineer={async (engineerId) => {
+                        if (!dash.token) {
+                          throw new Error(t('figma-dashboard.DashboardAssist.df8d670234'));
+                        }
+                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
+                          kind: 'engineer',
+                          engineerId,
+                        });
+                        setFocusedChatId(chat.handoff.id);
+                        return chat;
+                      }}
+                    />
                   ) : null}
                   {stackViewKey(stackNav) === 'ai' ? (
                     <DashboardAi

@@ -27,6 +27,14 @@ MCP `POST /api/v1/mcp` принимает Bearer либо `X-MCP-Pin`; SSE от�
 `text/event-stream`, месячный экспорт — `application/pdf`. Health остаётся вне префикса:
 `/health/live`, `/health/ready`, `/health/services`.
 
+Диспетчерская сессия и интеграционный Bearer-ключ с ролью диспетчера могут скачать
+текущий применённый план через `GET /api/v1/dispatch/plan/export.xlsx`.
+Файл содержит два листа: график по инженерам и полный список заявок с нормативом,
+окном, плановыми временами, доступными данными клиента и сохранённым паспортом объекта.
+Если применённого плана нет, API возвращает 404. Шаблон импорта заявок доступен через
+`GET /api/v1/dispatch/data/requests/template.csv`: UTF-8 CSV с BOM и заголовками,
+которые принимает текущий импортёр. Оба ответа возвращают `Content-Disposition: attachment`.
+
 ## LIVE-день
 
 При `NAVIX_STRAIGHT_ROUTES=true` API не обращается к road/OSRM geometry endpoint и отдаёт

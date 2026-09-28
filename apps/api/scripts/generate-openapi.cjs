@@ -547,12 +547,20 @@ function main() {
                 description: 'Server-sent events',
                 content: { 'text/event-stream': { schema: { type: 'string' } } },
               };
-            else if (member.type?.getText().includes('StreamableFile'))
+            else if (member.type?.getText().includes('StreamableFile')) {
+              const produces = decorators(member).find(
+                (item) => decoratorName(item) === 'ApiProduces',
+              );
+              const mediaType = produces ? stringArg(produces) : 'application/pdf';
+              if (!mediaType)
+                throw new Error(
+                  `${fileName}:${member.name.getText()}: ApiProduces needs a media type`,
+                );
               response['200'] = {
-                description: 'PDF report',
-                content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+                description: mediaType === 'application/pdf' ? 'PDF report' : 'File download',
+                content: { [mediaType]: { schema: { type: 'string', format: 'binary' } } },
               };
-            else if (fileName.endsWith(path.join('mcp', 'mcp.controller.ts'))) {
+            } else if (fileName.endsWith(path.join('mcp', 'mcp.controller.ts'))) {
               if (verb === 'post') {
                 response['200'] = {
                   description: 'MCP JSON-RPC response',

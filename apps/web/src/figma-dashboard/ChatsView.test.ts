@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AiHandoffState, DispatchChatView } from '../api/ai';
-import { ChatsView, chatName } from './ChatsView';
+import { ChatsView, chatName, originLabel } from './ChatsView';
 
 /** Every chat this endpoint lists is already in `dispatcher` mode (the server only ever
  *  returns those) -- the state under test here is the handoff's own `state`, not
@@ -19,7 +19,7 @@ function chat(
   } = {},
 ): DispatchChatView {
   const conversationId = overrides.conversationId ?? 'c-1';
-  const roleProfile = overrides.roleProfile ?? 'client';
+  const roleProfile = overrides.roleProfile ?? 'engineer';
   return {
     handoff: {
       id: overrides.handoffId ?? 'h-1',
@@ -70,6 +70,7 @@ function chat(
 }
 
 const noop = async () => {};
+const noopOpenEngineer = async (): Promise<DispatchChatView> => chat('waiting');
 
 describe('chatName', () => {
   /** The switch above the list already says which side is being read; repeating it on
@@ -116,6 +117,8 @@ describe('ChatsView', () => {
         onSendMessage: noop,
         onFinish: noop,
         onMarkRead: () => {},
+        engineers: [],
+        onOpenEngineer: noopOpenEngineer,
       }),
     );
     expect(html).toContain('Ожидает ответа');
@@ -134,6 +137,8 @@ describe('ChatsView', () => {
         onSendMessage: noop,
         onFinish: noop,
         onMarkRead: () => {},
+        engineers: [],
+        onOpenEngineer: noopOpenEngineer,
       }),
     );
     expect(html).toContain('Диалог ведёт диспетчер');
@@ -151,6 +156,8 @@ describe('ChatsView', () => {
         onSendMessage: noop,
         onFinish: noop,
         onMarkRead: () => {},
+        engineers: [],
+        onOpenEngineer: noopOpenEngineer,
       }),
     );
     expect(html).toContain('Чат завершён');
@@ -163,8 +170,11 @@ describe('ChatsView', () => {
   /** The frame previews the newest line. A chat with none yet has nothing to preview, and
    *  falls back to how it started — which differs per side and must not be confused. */
   it('previews an empty chat by its own origin, not the other side’s copy', () => {
-    const empty = (initiatedBy: 'user' | 'dispatcher'): DispatchChatView => ({
-      ...chat('waiting', { initiatedBy }),
+    const empty = (
+      initiatedBy: 'user' | 'dispatcher',
+      roleProfile: 'client' | 'engineer' = 'engineer',
+    ): DispatchChatView => ({
+      ...chat('waiting', { initiatedBy, roleProfile }),
       messages: [],
     });
 
@@ -178,25 +188,14 @@ describe('ChatsView', () => {
         onSendMessage: noop,
         onFinish: noop,
         onMarkRead: () => {},
+        engineers: [],
+        onOpenEngineer: noopOpenEngineer,
       }),
     );
     expect(mine).toContain('Вы написали первым');
     expect(mine).not.toContain('попросил диспетчера');
 
-    const theirs = renderToStaticMarkup(
-      createElement(ChatsView, {
-        token: 'tok',
-        chats: [empty('user')],
-        loading: false,
-        error: null,
-        writesDisabled: false,
-        onSendMessage: noop,
-        onFinish: noop,
-        onMarkRead: () => {},
-      }),
-    );
-    expect(theirs).toContain('Клиент попросил диспетчера');
-    expect(theirs).not.toContain('Вы написали первым');
+    expect(originLabel(empty('user', 'client'))).toBe('Клиент попросил диспетчера');
   });
 
   it('renders two handover episodes of the same conversation as two distinct rows', () => {
@@ -213,6 +212,8 @@ describe('ChatsView', () => {
         onSendMessage: noop,
         onFinish: noop,
         onMarkRead: () => {},
+        engineers: [],
+        onOpenEngineer: noopOpenEngineer,
       }),
     );
     // One row per episode: the same conversation handed over twice is two rows.
@@ -221,5 +222,35 @@ describe('ChatsView', () => {
     // conversation id — a closed chat has no «Завершить чат».
     expect(html).toContain('Ожидает ответа');
     expect(html).toContain('>Завершить чат<');
+  });
+
+  it('opens on the engineer roster and keeps uncontacted engineers searchable', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatsView, {
+        token: 'tok',
+        chats: [],
+        loading: true,
+        error: null,
+        writesDisabled: false,
+        engineers: [
+          { id: 'eng-1', displayName: 'Анна Волкова', canChat: true },
+          { id: 'eng-2', displayName: 'Борис Петров', canChat: true },
+          { id: 'eng-3', displayName: 'Вера Смирнова', canChat: false },
+        ],
+        onOpenEngineer: noopOpenEngineer,
+        onSendMessage: noop,
+        onFinish: noop,
+        onMarkRead: () => {},
+      }),
+    );
+
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain('Анна Волкова');
+    expect(html).toContain('Борис Петров');
+    expect(html).toContain('Вера Смирнова');
+    expect(html).toContain('Написать инженеру');
+    expect(html).toContain('Нет аккаунта для чата');
+    expect(html).toContain('Выберите диалог слева.');
+    expect(html).toContain('transform:translate(-50%, -50%)');
   });
 });

@@ -218,6 +218,7 @@ export function UserMenu({
   onToggle,
   onSettings,
   onOpenPreviousPlan,
+  onDownloadPlan,
   onEndDay,
   onRestartDay,
   onReset,
@@ -232,6 +233,7 @@ export function UserMenu({
   onToggle: () => void;
   onSettings: () => void;
   onOpenPreviousPlan: () => void;
+  onDownloadPlan: () => void;
   onEndDay: () => void;
   onRestartDay: () => void;
   onReset: () => void;
@@ -299,6 +301,9 @@ export function UserMenu({
                   {t('figma-dashboard.DashboardHeaderControls.fbde84ea39')}
                 </MenuAction>
               ) : null}
+              <MenuAction motionOn={motionOn} tone="bee" onClick={onDownloadPlan}>
+                {t('figma-dashboard.DashboardHeaderControls.downloadPlan')}
+              </MenuAction>
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
