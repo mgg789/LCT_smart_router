@@ -46,6 +46,20 @@ def digest(value) -> str:
     ).hexdigest()
 
 
+def route3_evidence(result: dict, required: bool) -> dict:
+    """Reject a silent hybrid fallback when a trial claims to use route-engine3."""
+    report = result.get("verification") or {}
+    legs = report.get("verified_legs", 0)
+    if required and (not isinstance(legs, int) or legs <= 0):
+        raise RuntimeError("BENCHMARK_ROUTE3_VERIFICATION_MISSING")
+    return {
+        "required": required,
+        "verified_legs": legs,
+        "report_digest": digest(report),
+        "routes": report.get("routes", []),
+    }
+
+
 class FixedReader:
     """Keep the exact official input publication identical across processes and beta modes."""
 
@@ -86,6 +100,7 @@ def main() -> None:
     parser.add_argument("--budget-ms", type=int, default=1000)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--label", required=True)
+    parser.add_argument("--require-route3", action="store_true")
     args = parser.parse_args()
     before_resources = cgroup()
     if before_resources.get("unavailable"):
@@ -128,6 +143,7 @@ def main() -> None:
             raise RuntimeError("BENCHMARK_READY_TIMEOUT")
         ready_ms = (time.perf_counter() - started) * 1000
         ready_resources = cgroup()
+        verification = route3_evidence(initial, args.require_route3)
         comparison, first_ms = measured("/v1/policy-comparison")
         first_resources = cgroup()
         warm_ms = []
@@ -148,6 +164,8 @@ def main() -> None:
             "graph_hash": content_hash(scenario.graph.model_dump_json().encode()),
             "settings": asdict(settings),
             "requests": len(scenario.snapshot.requests),
+            "route3": verification,
+            "active_summary": initial["main"]["summary"],
             "ready_ms": round(ready_ms, 3),
             "first_catalog_ms": first_ms,
             "warm_catalog_ms": warm_ms,
