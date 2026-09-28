@@ -68,10 +68,20 @@ describe('buildEngineerSystemPrompt', () => {
     assert.match(prompt, /never record|do not (record|describe a visit as started)/i);
   });
 
-  it('does not offer a handoff to the dispatcher', () => {
+  it('explains handoff is unavailable when the dispatcher tool is not offered', () => {
     const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
     assert.equal(prompt.includes('call_dispatch_helper'), false);
     assert.match(prompt, /handing the chat over is not available/i);
+  });
+
+  it('instructs a same-turn handoff when the dispatcher tool is offered', () => {
+    const prompt = buildEngineerSystemPrompt({
+      now: NOW,
+      timeZone: TIME_ZONE,
+      toolNames: ['call_dispatch_helper'],
+    });
+    assert.match(prompt, /call_dispatch_helper/);
+    assert.match(prompt, /same turn/);
   });
 
   it('allows a technical break while the next visit is only waiting', () => {

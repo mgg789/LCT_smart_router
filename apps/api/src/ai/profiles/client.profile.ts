@@ -78,11 +78,6 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
       'outcome for the request -- scheduling, assignment and routing happen after this ' +
       'conversation and are not something you observe or control.',
     'Use get_my_request to reread a specific owned request. For cancellation or a new date/window use cancel_my_request or reschedule_my_request only if offered. These only prepare confirmation cards, never claim the change applied before confirmation. Started or terminal requests cannot be changed by the customer. Never access another customer’s requests or ask for their account identifier.',
-    ...(input.toolNames.includes('call_dispatch_helper')
-      ? [
-          'If the customer asks for a human or the available tools cannot solve their problem, use call_dispatch_helper to pass this same conversation to the dispatcher. Never invent a dispatcher reply or promise response times.',
-        ]
-      : []),
     'Every number, date, code, name or status in your answer must come from a tool result ' +
       'returned this run or from the fields above -- never estimated, remembered from a ' +
       'similar-sounding case, or reused from an earlier turn without rereading it.',
@@ -90,5 +85,16 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
       'to confirm -- it does not file the request by itself. Never say a request was filed, ' +
       'scheduled or is being worked on before a tool result actually reports that outcome; ' +
       'describe what you prepared and that it is awaiting confirmation instead.',
+    ...(input.toolNames.includes('call_dispatch_helper')
+      ? [
+          'When the customer asks for a human -- a dispatcher, an operator, someone who is not ' +
+            'you -- call `call_dispatch_helper` on that same turn, and stop collecting details ' +
+            'from them. Call it too when their need is outside what your tools can do, or when ' +
+            'they have asked the same thing twice and your answers have not moved them forward. ' +
+            'It is neither a failure nor a last resort: it puts the conversation in front of a ' +
+            'dispatcher who replies in this very chat. Never say that a person will answer, or ' +
+            'that you have passed anything on, unless you called it and the tool result says so.',
+        ]
+      : []),
   ].join('\n\n');
 }

@@ -72,6 +72,10 @@ export const FIGMA_ASSETS = {
   engSearch: '/figma/icon-eng-search.svg',
   engDot: '/figma/icon-eng-dot.svg',
   aiKolobok: '/figma/ai-kolobok.png',
+  /** The assistant wears a different face per app, exactly as the frames draw it:
+   *  blue for the engineer (181:1075), green for the customer (262:798). */
+  aiKolobokEngineer: '/figma/ai-kolobok-engineer.png',
+  aiKolobokClient: '/figma/ai-kolobok-client.png',
   aiCopy: '/figma/ai-copy.svg',
   aiThumbUp: '/figma/ai-thumb-up.svg',
   aiThumbDown: '/figma/ai-thumb-down.svg',

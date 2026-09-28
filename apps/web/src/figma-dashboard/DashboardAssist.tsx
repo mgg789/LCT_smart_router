@@ -7,8 +7,8 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
-import { ChatsPage } from '../components/ChatsPage';
 import { t } from '../i18n';
+import { ChatsView } from './ChatsView';
 import { DashboardAi } from './DispatcherAiPane';
 
 export { DashboardAi };
@@ -51,14 +51,13 @@ export function DashboardChats({ token }: { token: string | null }) {
   }, [refresh]);
 
   return (
-    <div className="absolute inset-0 overflow-auto bg-figma-canvas p-[32px]">
-      <ChatsPage
+    <div className="absolute inset-0 overflow-hidden bg-figma-canvas">
+      <ChatsView
         token={token}
         chats={chats}
         loading={loading}
         error={error}
         writesDisabled={!token}
-        onRefresh={refresh}
         onSendMessage={async (conversationId, text) => {
           if (!token) return;
           await sendDispatchChatMessage(token, conversationId, crypto.randomUUID(), text);
