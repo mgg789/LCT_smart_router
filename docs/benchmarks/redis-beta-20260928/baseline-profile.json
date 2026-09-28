@@ -1,0 +1,44 @@
+{
+  "case": "east",
+  "requests": 66,
+  "elapsedMs": 10918.6,
+  "cpuMs": 10916.92,
+  "peakRssKiB": 299812,
+  "rows": [
+    {
+      "id": "fast",
+      "assigned": 59,
+      "ms": 1853
+    },
+    {
+      "id": "compact",
+      "assigned": 59,
+      "ms": 489
+    },
+    {
+      "id": "sla",
+      "assigned": 59,
+      "ms": 531
+    },
+    {
+      "id": "balanced",
+      "assigned": 59,
+      "ms": 787
+    },
+    {
+      "id": "eco",
+      "assigned": 59,
+      "ms": 366
+    },
+    {
+      "id": "covering",
+      "assigned": 66,
+      "ms": 6169
+    },
+    {
+      "id": "baseline",
+      "assigned": 27,
+      "ms": 191
+    }
+  ]
+}

@@ -251,7 +251,13 @@ def inspect(state: Path, root: Path) -> dict:
         status = "removed"
     else:
         status = "partial"
-    return {"status": status, "options": options, "ports": sorted(ports), "record": record}
+    return {
+        "status": status,
+        "options": options,
+        "ports": sorted(ports),
+        "record": record,
+        "redis_ready": "redis" in running if options.get("redis_beta", False) else None,
+    }
 
 
 def owned_volumes(state: Path, record: dict) -> list[str]:

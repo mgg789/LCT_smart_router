@@ -95,6 +95,11 @@ services:
       ROUTER_SENTRY_DSN: ${ROUTER_SENTRY_DSN:-}
       ROUTER_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
       ROUTER_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # Optional read-only catalog cache. No dependency: Router keeps working if Redis is down.
+      ROUTER_REDIS_BETA: ${ROUTER_REDIS_BETA:-false}
+      ROUTER_REDIS_URL: ${ROUTER_REDIS_URL:-}
+      ROUTER_REDIS_NAMESPACE: ${ROUTER_REDIS_NAMESPACE:-lct-smart-router}
+      ROUTER_REDIS_TTL_SEC: ${ROUTER_REDIS_TTL_SEC:-600}
     command:
       - serve
       - --official-regions
@@ -119,6 +124,32 @@ services:
         condition: service_completed_successfully
     ports:
       - '127.0.0.1:${ROUTER_PORT:-8100}:8100'
+
+  redis:
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
+    profiles: [redis-beta]
+    restart: unless-stopped
+    user: redis
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    pids_limit: 64
+    tmpfs: ['/data:mode=1777,size=16m']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        test -n "$${REDIS_PASSWORD}" || { echo 'Redis beta password is required' >&2; exit 1; };
+        exec redis-server --requirepass "$${REDIS_PASSWORD}" --save '' --appendonly no
+        --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 2s
+      retries: 3
 
   api:
     build:

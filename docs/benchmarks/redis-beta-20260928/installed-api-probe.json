@@ -1,0 +1,11 @@
+{
+  "public_api_comparison_equal_after_router_restart": true,
+  "public_api_catalog_read_keeps_working_plan": true,
+  "cached_settings_during_router_outage_http_200": true,
+  "api_survives_background_refresh_failure": true,
+  "redis_hit_delta": 1,
+  "after_restart_ms": 583.48,
+  "transient_retries_during_restart": 4,
+  "rows": 7,
+  "comparison_digest": "98c7610fdf1f3df8626f0498de8617530b1f590352d8ffba35d1ab3a160f90bd"
+}

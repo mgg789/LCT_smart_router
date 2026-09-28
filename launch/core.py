@@ -13,6 +13,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import quote
 
 from . import installation, versions
 
@@ -192,6 +193,9 @@ def override_dispatcher_credentials(env_text: str, email: str, password: str) ->
 
 def validate_options(options: dict) -> None:
     """Reject inconsistent modes and invalid or duplicated published ports."""
+    for key in ("online", "osrm", "autostart", "redis_beta"):
+        if key in options and not isinstance(options[key], bool):
+            raise ValueError(f"Параметр {key} должен быть включён или выключен.")
     if options.get("mode") not in ("full", "headless"):
         raise ValueError("Выберите Full или headless.")
     if options["mode"] == "headless" and not options.get("api_port"):
@@ -304,6 +308,7 @@ def _launch(
 ) -> dict:
     """Prepare and apply a checked operation while its installation lock is held."""
     project = record["project"]
+    build_id = package_fingerprint()
     STATE.mkdir(mode=0o700, exist_ok=True)
     private_write(
         STATE / "settings.env",
@@ -327,8 +332,21 @@ def _launch(
         raise ValueError(
             "identity.json не содержит пароли этой установки. Восстановите файл из копии."
         )
+    redis_beta = options.get("redis_beta", False)
+    if redis_beta:
+        identity.setdefault("REDIS_PASSWORD", secrets.token_hex(24))
+        if not isinstance(identity["REDIS_PASSWORD"], str) or len(identity["REDIS_PASSWORD"]) < 16:
+            raise ValueError(
+                "В identity.json повреждён пароль Redis-beta. Восстановите файл из копии."
+            )
     private_write(identity_file, json.dumps(identity))
     env.update(identity)
+    env["ROUTER_REDIS_BETA"] = "true" if redis_beta else "false"
+    env["ROUTER_REDIS_URL"] = (
+        f"redis://:{quote(identity['REDIS_PASSWORD'], safe='')}@redis:6379/0" if redis_beta else ""
+    )
+    env["ROUTER_REDIS_NAMESPACE"] = f"{record['id']}:{build_id}"
+    env["ROUTER_REDIS_TTL_SEC"] = "600"
     env.update(
         {
             "POSTGRES_USER": "lct",
@@ -406,6 +424,7 @@ def _launch(
             [
                 "docker",
                 "compose",
+                *(["--profile", "redis-beta"] if redis_beta else []),
                 "--env-file",
                 str(STATE / "input.env"),
                 "-p",
@@ -444,8 +463,9 @@ def _launch(
         selected.update(("osrm", "road-api"))
     if options["online"]:
         selected.add("sys1")
+    if redis_beta:
+        selected.add("redis")
     config["services"] = {name: svc for name, svc in services.items() if name in selected}
-    build_id = package_fingerprint()
     for name, svc in config["services"].items():
         svc.setdefault("labels", {}).update(ownership)
         svc.pop("ports", None)
@@ -459,6 +479,9 @@ def _launch(
             svc["image"] = f"{PROJECT}-{name}:{build_id}"
         if name == "api":
             svc["environment"].update(env)
+            for key in list(svc["environment"]):
+                if key == "REDIS_PASSWORD" or key.startswith("ROUTER_REDIS_"):
+                    svc["environment"].pop(key)
             svc["environment"].update(
                 {
                     "PORT": "8000",
@@ -595,7 +618,7 @@ def _launch(
     elif not options["online"]:
         missing_images = []
         checked_images = set()
-        for svc in config["services"].values():
+        for service_name, svc in config["services"].items():
             image = svc.get("image")
             if not image or image in checked_images:
                 continue
@@ -608,7 +631,10 @@ def _launch(
                     capture_output=True,
                 ).returncode
             ):
-                missing_images.append(image)
+                if service_name == "redis":
+                    log("Образ Redis-beta не подготовлен; будет использован обычный расчёт.")
+                else:
+                    missing_images.append(image)
         if missing_images:
             raise ValueError(
                 "Для офлайн-запуска подготовьте Docker-образы при доступной сети: "
@@ -653,6 +679,30 @@ def _launch(
             )
             if stopped.returncode:
                 raise ValueError("Не удалось остановить исключённые сервисы предыдущего запуска.")
+    if redis_beta:
+        log("Запуск Redis-beta…")
+        with (STATE / "docker.log").open("a", encoding="utf-8") as output:
+            try:
+                redis_start = subprocess.run(
+                    command
+                    + [
+                        "up",
+                        "-d",
+                        "--no-build",
+                        "--pull",
+                        "missing" if options["online"] else "never",
+                        "redis",
+                    ],
+                    check=False,
+                    stdout=output,
+                    stderr=subprocess.STDOUT,
+                    timeout=60,
+                )
+                redis_started = redis_start.returncode == 0
+            except subprocess.SubprocessError:
+                redis_started = False
+        if not redis_started:
+            log("Redis-beta недоступен; основные сервисы продолжат обычный расчёт.")
     log("Запуск и проверка готовности…")
     run(
         [
@@ -664,6 +714,7 @@ def _launch(
             "--wait",
             "--wait-timeout",
             "240",
+            *[name for name in config["services"] if name != "redis"],
         ]
     )
     local_http = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -680,6 +731,8 @@ def _launch(
                 raise ValueError("Контейнеры запущены, но опубликованный порт недоступен: " + url)
             time.sleep(0.5)
     private_write(STATE / "active.json", serialized)
+    if redis_beta and not installation_status().get("redis_ready"):
+        log("Redis-beta пока не готов; приложение работает с обычным расчётом.")
     log("Navix запущен.")
     return urls
 

@@ -85,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--autostart", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--env", help="Путь к .env")
     parser.add_argument(
+        "--redis-beta",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Экспериментальный кэш каталогов Redis; по умолчанию выключен",
+    )
+    parser.add_argument(
         "--action",
         choices=("start", "configure", "status", "remove", "purge"),
         help="Действие с существующей установкой; без аргумента открывается меню",
@@ -101,6 +107,11 @@ def existing_action(status: dict) -> str:
         "removed": "удалена, данные сохранены",
     }
     print(f"Установка {status['record']['project']}: {labels[status['status']]}")
+    if status.get("options", {}).get("redis_beta"):
+        print(
+            "Redis-beta: "
+            + ("готов" if status.get("redis_ready") else "недоступен, обычный расчёт сохранён")
+        )
     print(
         "1 — запустить / перезапустить с сохранёнными настройками\n2 — изменить настройки и запустить\n3 — удалить экземпляр, сохранив данные\n4 — удалить экземпляр и его данные\n0 — выйти"
     )
@@ -180,7 +191,7 @@ def run(args: argparse.Namespace) -> int:
         if not saved_env or not saved_options:
             raise ValueError("Сохранённых настроек недостаточно. Выберите изменение настроек.")
         start_options = dict(saved_options)
-        for key in ("mode", "api_port", "ui_port", "osrm", "autostart"):
+        for key in ("mode", "api_port", "ui_port", "osrm", "autostart", "redis_beta"):
             value = getattr(args, key, None)
             if value is not None:
                 start_options[key] = value
@@ -214,6 +225,12 @@ def run(args: argparse.Namespace) -> int:
         and yes("Автозапуск при старте Docker?", saved_options.get("autostart", False)),
         "api_port": args.api_port,
         "ui_port": args.ui_port if mode == "full" else None,
+        "redis_beta": getattr(args, "redis_beta", None)
+        if getattr(args, "redis_beta", None) is not None
+        else interactive
+        and yes(
+            "Включить Redis-beta (экспериментальный кэш)?", saved_options.get("redis_beta", False)
+        ),
     }
     if interactive:
         if options["api_port"] is None:
