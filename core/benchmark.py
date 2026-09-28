@@ -29,6 +29,7 @@ class EventRun:
     evidence: PlanEvidence
     changed_assignments: int
     context_changed: bool
+    elapsed_sec: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -391,6 +392,7 @@ def run_replanning_events(
     for event_id, trigger, snapshot, graph, travel in event_inputs:
         travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
         event_context_version = routing_context_version(travel, settings.technical())
+        started = monotonic_time.perf_counter()
         output = solve(
             snapshot,
             travel,
@@ -398,6 +400,7 @@ def run_replanning_events(
             memory=initial.memory,
             context_version=event_context_version,
         )
+        elapsed = monotonic_time.perf_counter() - started
         effective_snapshot = output.memory.snapshot
         validate_plan(effective_snapshot, output.main, travel)
         current = _assignment_map(output.main)
@@ -415,6 +418,7 @@ def run_replanning_events(
                 evidence=build_plan_evidence(effective_snapshot, output.main, travel, labels),
                 changed_assignments=changed,
                 context_changed=event_context_version != base_context_version,
+                elapsed_sec=elapsed,
             )
         )
     return tuple(runs)

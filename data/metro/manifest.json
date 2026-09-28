@@ -17,10 +17,10 @@
     {
       "filename": "moscow_subway_routes.json",
       "origin": "raw/moscow_subway_routes.json.gz",
-      "bytes": 1881008,
-      "sha256": "d3942682ed9e7cec936c061c01b4909506d51905ce5cf1f5908563df49f232b5",
-      "gzip_bytes": 222902,
-      "gzip_sha256": "322ee83b331bfb5e7b179c319c108d049821fdb1321454734ce2463ab5b0141e"
+      "bytes": 1883532,
+      "sha256": "c99c4a106ca3ead63f9a8ffcf7eb89bba8e13101569683b08b6c7cbb5ddda87b",
+      "gzip_bytes": 222858,
+      "gzip_sha256": "2fe4c8e8740773910071deeaf102edb5848ec29525fd3775da998c7315555172"
     },
     {
       "filename": "moscow_boundary_nominatim.json",
@@ -33,8 +33,8 @@
   ],
   "artifact": {
     "path": "core/resources/metro/moscow.json",
-    "bytes": 1029996,
-    "sha256": "b3a05c91574f86cb45fb9bf1d0c8f15b344ecd0dd74ae575d4283160ce966efb"
+    "bytes": 1031721,
+    "sha256": "7d2677147f0a2bbf98751ddc4880f74066e9563f54054ff2e89018aa24dc9ce8"
   },
   "counts": {
     "stations": 278,
