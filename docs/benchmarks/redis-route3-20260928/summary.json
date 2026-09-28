@@ -1,0 +1,370 @@
+{
+  "source_commit": "547fd0e36a97018f4e5e1e879de0e82bd076bed4",
+  "method": "Median over trials; local warm reads pooled; p95 nearest rank pooled. Router CPU is cgroup delta; Redis CPU is INFO delta. Route3 peak is cumulative across the service lifetime, not per trial. Units are in keys.",
+  "groups": {
+    "1000": {
+      "off": {
+        "count": 3,
+        "ready_ms_median": 6187.759,
+        "first_catalog_ms_median": 12317.366,
+        "first_catalog_ms_min": 12244.519,
+        "first_catalog_ms_max": 12792.998,
+        "warm_catalog_ms_median": 512.539,
+        "catalog_cpu_sec_median": 12.769955,
+        "router_trial_cpu_sec_median": 23.169593,
+        "router_peak_mib_median": 719.828125,
+        "redis_rss_mib_median": 18.9375,
+        "redis_cpu_sec_median": 0.08561600000000003,
+        "route3_cpu_sec_median": 0.257583,
+        "route3_current_mib_median": 603.1953125,
+        "route3_cumulative_peak_mib_median": 604.97265625,
+        "status_ms_p95": 1.427,
+        "result_ms_p95": 222.629,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": false
+          },
+          {
+            "enabled": false
+          },
+          {
+            "enabled": false
+          }
+        ]
+      },
+      "miss": {
+        "count": 3,
+        "ready_ms_median": 6217.871,
+        "first_catalog_ms_median": 12344.276,
+        "first_catalog_ms_min": 12342.486,
+        "first_catalog_ms_max": 12513.394,
+        "warm_catalog_ms_median": 508.714,
+        "catalog_cpu_sec_median": 12.792137,
+        "router_trial_cpu_sec_median": 22.962537,
+        "router_peak_mib_median": 727.40234375,
+        "redis_rss_mib_median": 18.98828125,
+        "redis_cpu_sec_median": 0.08612100000000006,
+        "route3_cpu_sec_median": 0.220589,
+        "route3_current_mib_median": 602.484375,
+        "route3_cumulative_peak_mib_median": 603.46875,
+        "status_ms_p95": 1.472,
+        "result_ms_p95": 239.486,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          }
+        ]
+      },
+      "hit": {
+        "count": 3,
+        "ready_ms_median": 6103.212,
+        "first_catalog_ms_median": 579.735,
+        "first_catalog_ms_min": 575.846,
+        "first_catalog_ms_max": 611.227,
+        "warm_catalog_ms_median": 499.358,
+        "catalog_cpu_sec_median": 0.552705,
+        "router_trial_cpu_sec_median": 10.736317,
+        "router_peak_mib_median": 594.53515625,
+        "redis_rss_mib_median": 19.75390625,
+        "redis_cpu_sec_median": 0.05152699999999999,
+        "route3_cpu_sec_median": 0.204725,
+        "route3_current_mib_median": 603.625,
+        "route3_cumulative_peak_mib_median": 604.97265625,
+        "status_ms_p95": 2.634,
+        "result_ms_p95": 224.206,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          }
+        ]
+      },
+      "outage": {
+        "count": 1,
+        "ready_ms_median": 6008.249,
+        "first_catalog_ms_median": 12880.185,
+        "first_catalog_ms_min": 12880.185,
+        "first_catalog_ms_max": 12880.185,
+        "warm_catalog_ms_median": 506.558,
+        "catalog_cpu_sec_median": 12.808131,
+        "router_trial_cpu_sec_median": 22.651162,
+        "router_peak_mib_median": 727.7890625,
+        "redis_rss_mib_median": 19.66015625,
+        "redis_cpu_sec_median": 0.0019449999999999745,
+        "route3_cpu_sec_median": 0.202788,
+        "route3_current_mib_median": 605.08203125,
+        "route3_cumulative_peak_mib_median": 607.46875,
+        "status_ms_p95": 1.189,
+        "result_ms_p95": 259.443,
+        "route3_http_200_each": [
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 2,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          }
+        ]
+      },
+      "identity": {
+        "code_version": "673a2ab11bab66e2f1e3",
+        "input_hash": "cefeb7b62c15ee16992ef5cc42d82063b609d0a11c972a0e4d3b02d30bec94cc",
+        "graph_hash": "1aef933bfbcfc4aaf88008f200c081ec668fe1daf98e0f0c618ef98f00cfdcfd",
+        "active_plan_digest": "aea5eeac30e3782e1554880622a588ca51ecedb2b7c5f62ea7b0efd2615956b3",
+        "comparison_digest": "f12953640e19ce64529a156157b8ff799d4c2ffd32990befd866dc33f51b4f1e",
+        "catalog_plans_digest": "d7b306c42a26af22948f094e79400df88c511167507f7ce7c3a319ff3e67b3ed"
+      },
+      "speedup_catalog_http_off_over_hit": 21.246545404365786,
+      "speedup_catalog_cpu_off_over_hit": 23.104468025438525
+    },
+    "8000": {
+      "off": {
+        "count": 3,
+        "ready_ms_median": 6587.021,
+        "first_catalog_ms_median": 12839.953,
+        "first_catalog_ms_min": 12669.566,
+        "first_catalog_ms_max": 13134.039,
+        "warm_catalog_ms_median": 507.277,
+        "catalog_cpu_sec_median": 13.338191,
+        "router_trial_cpu_sec_median": 23.988448,
+        "router_peak_mib_median": 723.43359375,
+        "redis_rss_mib_median": 21.125,
+        "redis_cpu_sec_median": 0.08684600000000009,
+        "route3_cpu_sec_median": 0.230087,
+        "route3_current_mib_median": 609.22265625,
+        "route3_cumulative_peak_mib_median": 610.453125,
+        "status_ms_p95": 1.371,
+        "result_ms_p95": 240.564,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": false
+          },
+          {
+            "enabled": false
+          },
+          {
+            "enabled": false
+          }
+        ]
+      },
+      "miss": {
+        "count": 3,
+        "ready_ms_median": 6357.331,
+        "first_catalog_ms_median": 12688.255,
+        "first_catalog_ms_min": 12680.042,
+        "first_catalog_ms_max": 13146.675,
+        "warm_catalog_ms_median": 514.93,
+        "catalog_cpu_sec_median": 13.220242,
+        "router_trial_cpu_sec_median": 23.330855,
+        "router_peak_mib_median": 725.08203125,
+        "redis_rss_mib_median": 21.40234375,
+        "redis_cpu_sec_median": 0.08657099999999995,
+        "route3_cpu_sec_median": 0.215844,
+        "route3_current_mib_median": 609.25390625,
+        "route3_cumulative_peak_mib_median": 610.453125,
+        "status_ms_p95": 1.62,
+        "result_ms_p95": 235.117,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 1,
+            "oversized": 0
+          }
+        ]
+      },
+      "hit": {
+        "count": 3,
+        "ready_ms_median": 6705.912,
+        "first_catalog_ms_median": 629.113,
+        "first_catalog_ms_min": 589.92,
+        "first_catalog_ms_max": 696.995,
+        "warm_catalog_ms_median": 513.649,
+        "catalog_cpu_sec_median": 0.60543,
+        "router_trial_cpu_sec_median": 11.394761,
+        "router_peak_mib_median": 595.37890625,
+        "redis_rss_mib_median": 21.84765625,
+        "redis_cpu_sec_median": 0.05283900000000008,
+        "route3_cpu_sec_median": 0.231153,
+        "route3_current_mib_median": 609.51171875,
+        "route3_cumulative_peak_mib_median": 614.4375,
+        "status_ms_p95": 1.27,
+        "result_ms_p95": 218.614,
+        "route3_http_200_each": [
+          57,
+          57,
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          },
+          {
+            "enabled": true,
+            "hits": 1,
+            "misses": 0,
+            "errors": 0,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          }
+        ]
+      },
+      "outage": {
+        "count": 1,
+        "ready_ms_median": 6098.202,
+        "first_catalog_ms_median": 13145.675,
+        "first_catalog_ms_min": 13145.675,
+        "first_catalog_ms_max": 13145.675,
+        "warm_catalog_ms_median": 494.87,
+        "catalog_cpu_sec_median": 13.091579,
+        "router_trial_cpu_sec_median": 22.769008,
+        "router_peak_mib_median": 727.67578125,
+        "redis_rss_mib_median": 21.84765625,
+        "redis_cpu_sec_median": 0.009296999999999889,
+        "route3_cpu_sec_median": 0.233703,
+        "route3_current_mib_median": 610.1640625,
+        "route3_cumulative_peak_mib_median": 614.4375,
+        "status_ms_p95": 1.093,
+        "result_ms_p95": 246.219,
+        "route3_http_200_each": [
+          57
+        ],
+        "cache_each": [
+          {
+            "enabled": true,
+            "hits": 0,
+            "misses": 1,
+            "errors": 2,
+            "invalid": 0,
+            "writes": 0,
+            "oversized": 0
+          }
+        ]
+      },
+      "identity": {
+        "code_version": "673a2ab11bab66e2f1e3",
+        "input_hash": "cefeb7b62c15ee16992ef5cc42d82063b609d0a11c972a0e4d3b02d30bec94cc",
+        "graph_hash": "1aef933bfbcfc4aaf88008f200c081ec668fe1daf98e0f0c618ef98f00cfdcfd",
+        "active_plan_digest": "afbfdd86af6d09a96e5d294638f790b39c141597f52c21b496ba24fd16d17a4a",
+        "comparison_digest": "f57e0051475a7ca5f54546166eea7244fca8ac6a477244be7efc86bad055ee43",
+        "catalog_plans_digest": "ee8362675bd65dd29d67364f46667ce1371128e44951bc136c2c5b65dc74d47b"
+      },
+      "speedup_catalog_http_off_over_hit": 20.40961321733933,
+      "speedup_catalog_cpu_off_over_hit": 22.030938341344168
+    }
+  }
+}

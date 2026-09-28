@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-28",
+  "application_base_commit": "6f18e09bb3881c369c1c503e3641d5ec8c9d754f",
+  "benchmark_commit": "547fd0e36a97018f4e5e1e879de0e82bd076bed4",
+  "command": "docker build -t navix-redis-bench-api:current -f apps/api/Dockerfile .",
+  "exit_code": 1,
+  "failed_steps": [
+    "pnpm install --frozen-lockfile --filter api...",
+    "pnpm install --frozen-lockfile --prod --filter api..."
+  ],
+  "error_code": "ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY",
+  "message": "Broken lockfile: no entry for 'lodash.camelcase@4.3.0' in pnpm-lock.yaml",
+  "scope": "Pre-existing API build failure; benchmark changes do not modify package manifests or pnpm-lock.yaml.",
+  "smoke_on_fresh_app_build": "not_run_build_blocked",
+  "python_benchmark_blocked": false,
+  "lockfile_modified_by_benchmark_task": false
+}
