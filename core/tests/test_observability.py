@@ -3,9 +3,13 @@
 import builtins
 from unittest.mock import Mock
 
+import pytest
 from core.observability import RouterObservability
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+METRICS_TOKEN = "metrics-test-" * 4
+METRICS_HEADERS = {"Authorization": f"Bearer {METRICS_TOKEN}"}
 
 
 def make_app():
@@ -42,14 +46,77 @@ def test_disabled_does_not_import_or_initialize_sdks(monkeypatch):
     telemetry.close()
 
 
+@pytest.mark.parametrize(
+    "token", [None, "", "short", METRICS_TOKEN + " ", METRICS_TOKEN + "\n", "ю" * 40, "a" * 513]
+)
+def test_invalid_metrics_token_disables_only_the_optional_endpoint(monkeypatch, token, caplog):
+    monkeypatch.setenv("ROUTER_METRICS_ENABLED", "true")
+    if token is None:
+        monkeypatch.delenv("ROUTER_METRICS_TOKEN", raising=False)
+    else:
+        monkeypatch.setenv("ROUTER_METRICS_TOKEN", token)
+    app, telemetry = make_app()
+    with TestClient(app) as client:
+        assert client.get("/metrics").status_code == 404
+        assert client.get("/requests/id").status_code == 200
+    assert METRICS_TOKEN not in caplog.text
+    telemetry.close()
+
+
+def test_metrics_require_one_exact_bearer_and_protect_decoded_paths(monkeypatch):
+    monkeypatch.setenv("ROUTER_METRICS_ENABLED", "true")
+    monkeypatch.setenv("ROUTER_METRICS_TOKEN", METRICS_TOKEN)
+    app, telemetry = make_app()
+    with TestClient(app) as client:
+        for value in [
+            None,
+            "Basic invalid",
+            "Bearer wrong",
+            f"Bearer {METRICS_TOKEN} extra",
+            f"Bearer {METRICS_TOKEN}, Bearer wrong",
+        ]:
+            response = client.get(
+                "/metrics", headers={} if value is None else {"Authorization": value}
+            )
+            assert response.status_code == 401
+            assert "router_http_requests" not in response.text
+        assert (
+            client.get(
+                f"/metrics?token={METRICS_TOKEN}", headers={"Cookie": f"token={METRICS_TOKEN}"}
+            ).status_code
+            == 401
+        )
+        for values in [
+            (f"Bearer {METRICS_TOKEN}", "Bearer wrong"),
+            ("Bearer wrong", f"Bearer {METRICS_TOKEN}"),
+        ]:
+            assert (
+                client.get(
+                    "/metrics", headers=[("Authorization", value) for value in values]
+                ).status_code
+                == 401
+            )
+        for path in ["/metrics", "/metrics/", "/%6detrics", "/metrics%2f"]:
+            assert client.get(path).status_code == 401
+            assert client.get(path, headers=METRICS_HEADERS).status_code == 200
+        assert (
+            client.get("/metrics", headers={"Authorization": f"bearer {METRICS_TOKEN}"}).status_code
+            == 200
+        )
+        assert client.get("/Metrics").status_code == 404
+        assert client.get("/requests/id").status_code == 200
+    telemetry.close()
+
+
 def test_metrics_use_template_and_bounded_unknown_routes(monkeypatch):
     monkeypatch.setenv("ROUTER_METRICS_ENABLED", "true")
+    monkeypatch.setenv("ROUTER_METRICS_TOKEN", METRICS_TOKEN)
     app, telemetry = make_app()
     with TestClient(app, raise_server_exceptions=False) as client:
         client.get("/requests/private-id?secret=hidden")
         client.get("/unknown-secret")
         client.get("/failure")
-        body = client.get("/metrics").text
+        body = client.get("/metrics", headers=METRICS_HEADERS).text
     assert 'route="/requests/{request_id}"' in body
     assert 'route="unmatched"' in body
     assert 'status="500"' in body
@@ -109,13 +176,14 @@ def test_sentry_reports_sanitized_exception_and_closes(monkeypatch):
 
 def test_bad_trace_config_does_not_disable_metrics(monkeypatch):
     monkeypatch.setenv("ROUTER_METRICS_ENABLED", "true")
+    monkeypatch.setenv("ROUTER_METRICS_TOKEN", METRICS_TOKEN)
     monkeypatch.setenv("ROUTER_OTEL_ENABLED", "true")
     monkeypatch.setenv("ROUTER_OTEL_TRACE_SAMPLE_RATIO", "nan")
     app, telemetry = make_app()
     telemetry.start()
     with TestClient(app) as client:
         assert client.get("/requests/id").status_code == 200
-        assert client.get("/metrics").status_code == 200
+        assert client.get("/metrics", headers=METRICS_HEADERS).status_code == 200
     telemetry.close()
 
 

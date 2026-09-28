@@ -92,6 +92,7 @@ services:
       ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
       ROUTER_HYBRID: ${ROUTER_HYBRID:-false}
       ROUTER_METRICS_ENABLED: ${ROUTER_METRICS_ENABLED:-false}
+      ROUTER_METRICS_TOKEN: ${ROUTER_METRICS_TOKEN:-}
       ROUTER_OTEL_ENABLED: ${ROUTER_OTEL_ENABLED:-false}
       ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       ROUTER_OTEL_TRACE_SAMPLE_RATIO: ${ROUTER_OTEL_TRACE_SAMPLE_RATIO:-0.1}
@@ -176,6 +177,8 @@ services:
     # contour runs production mode with SMTP and must never return them over HTTP.
     environment:
       PORT: 8000
+      # Use the same shell/.env precedence as the Prometheus credential file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       # This local contour is the feature demo: today's walking engineer, passports
       # and the rewind action. Unset DEMO_STAND in the shell env to keep a plain day.
       DEMO_STAND: ${DEMO_STAND:-true}
@@ -308,6 +311,23 @@ services:
     image: prom/prometheus:v3.5.0
     profiles: [observability]
     restart: unless-stopped
+    # Keep credentials out of the YAML and support a tracing-only profile with
+    # metrics disabled. The unprivileged process owns its private tmpfs files.
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      ROUTER_METRICS_TOKEN: ${ROUTER_METRICS_TOKEN:-}
+    tmpfs: ['/run/metrics:mode=1777,size=64k']
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /run/metrics/credentials
+        printf '%s' "$${METRICS_TOKEN}" > /run/metrics/credentials/api-token
+        printf '%s' "$${ROUTER_METRICS_TOKEN}" > /run/metrics/credentials/router-token
+        unset METRICS_TOKEN ROUTER_METRICS_TOKEN
+        exec /bin/prometheus "$$@"
+      - --
     command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=7d', '--storage.tsdb.retention.size=1GB']
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro

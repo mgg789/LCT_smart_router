@@ -1,9 +1,11 @@
-import type { RequestHandler } from 'express';
+import type { Request, RequestHandler } from 'express';
 import { z } from 'zod';
+import { hashToken, secretsMatch } from '../../auth/secrets';
 
 /** Independent opt-in controls; disabled integrations do not require connection settings. */
 export const observabilityEnv = {
   METRICS_ENABLED: z.enum(['true', 'false']).default('false'),
+  METRICS_TOKEN: z.string().default(''),
   OTEL_ENABLED: z.enum(['true', 'false']).default('false'),
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: z.string().default('http://otel-collector:4318/v1/traces'),
   OTEL_TRACE_SAMPLE_RATIO: z.coerce.number().min(0).max(1).default(0.1),
@@ -14,6 +16,43 @@ export const observabilityEnv = {
 };
 const settingsSchema = z.object(observabilityEnv);
 type Settings = z.infer<typeof settingsSchema>;
+
+/** Require a header-safe scraper secret only when metrics are explicitly enabled. */
+export function validateMetricsConfiguration(options: {
+  METRICS_ENABLED: string;
+  METRICS_TOKEN: string;
+}): void {
+  if (options.METRICS_ENABLED !== 'true') return;
+  const token = options.METRICS_TOKEN;
+  if (
+    token.length < 32 ||
+    token.length > 512 ||
+    /^[A-Za-z0-9._~+/-]+=*$/.exec(token)?.[0] !== token
+  ) {
+    throw new Error(
+      'METRICS_TOKEN must be a 32-512 character bearer token when METRICS_ENABLED=true',
+    );
+  }
+}
+
+/** Reject duplicate headers and partial matches before constant-time comparison of fixed-size hashes. */
+function metricsAuthorized(request: Request, expectedHash: Buffer): boolean {
+  const count = request.rawHeaders.reduce(
+    (total, name, index) =>
+      total + (index % 2 === 0 && name.toLowerCase() === 'authorization' ? 1 : 0),
+    0,
+  );
+  const header = request.headers.authorization;
+  if (count !== 1 || !header || header.length > 519) return false;
+  const match = /^Bearer ([A-Za-z0-9._~+/-]+=*)$/i.exec(header);
+  const credential = match?.[1];
+  return (
+    !!match &&
+    credential !== undefined &&
+    match[0] === header &&
+    secretsMatch(Buffer.from(hashToken(credential), 'hex'), expectedHash)
+  );
+}
 
 /** Never record raw URLs, parameters, query strings, request headers or error messages. */
 export function safeRoute(request: { route?: { path?: unknown } }): string {
@@ -32,6 +71,8 @@ export class Observability {
   /** Initialize only enabled SDKs. Batches and timeouts bound exporter overhead. */
   static async create(env: Record<string, unknown>): Promise<Observability> {
     const options: Settings = settingsSchema.parse(env);
+    validateMetricsConfiguration(options);
+    const metricsTokenHash = Buffer.from(hashToken(options.METRICS_TOKEN), 'hex');
     const result = new Observability();
     const metrics = options.METRICS_ENABLED === 'true' ? await import('prom-client') : null;
     const registry = metrics ? new metrics.Registry() : null;
@@ -128,6 +169,10 @@ export class Observability {
         }
         if (request.method !== 'GET') {
           response.sendStatus(405);
+          return;
+        }
+        if (!metricsAuthorized(request, metricsTokenHash)) {
+          response.set('WWW-Authenticate', 'Bearer').sendStatus(401);
           return;
         }
         void registry

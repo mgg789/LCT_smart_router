@@ -40,6 +40,23 @@ describe('environment validation', () => {
     assert.equal(validateEnv({ ...REQUIRED, PORT: '9100' }).PORT, 9100);
   });
 
+  it('requires a separate valid scraper token only when metrics are enabled', () => {
+    for (const token of [undefined, '', 'short', `${'x'.repeat(40)}\n`]) {
+      assert.throws(
+        () => validateEnv({ ...REQUIRED, METRICS_ENABLED: 'true', METRICS_TOKEN: token }),
+        /METRICS_TOKEN/,
+      );
+    }
+    assert.equal(
+      validateEnv({ ...REQUIRED, METRICS_ENABLED: 'true', METRICS_TOKEN: 'x'.repeat(40) })
+        .METRICS_ENABLED,
+      'true',
+    );
+    assert.doesNotThrow(() =>
+      validateEnv({ ...REQUIRED, METRICS_TOKEN: 'ignored while disabled' }),
+    );
+  });
+
   it('stops the process on an unusable value and names the key', () => {
     assert.throws(() => validateEnv({ ...REQUIRED, PORT: 'not-a-port' }), /PORT/);
     assert.throws(() => validateEnv({ ...REQUIRED, LOG_LEVEL: 'chatty' }), /LOG_LEVEL/);
