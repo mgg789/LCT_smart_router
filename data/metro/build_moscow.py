@@ -221,13 +221,6 @@ def _nearest_distance_any(
     return min((_nearest_distance(chain, point) for chain in segments), default=math.inf)
 
 
-def _candidate_indices(
-    chain: list[tuple[float, float]], point: tuple[float, float], tolerance_m: float
-) -> list[int]:
-    """All chain indices whose node lies within `tolerance_m` of the point."""
-    return [index for index, node in enumerate(chain) if haversine_m(node, point) <= tolerance_m]
-
-
 def _simplify(points: list[tuple[float, float]], min_step_m: float = 20.0) -> list[tuple[float, float]]:
     """Drop intermediate points closer than `min_step_m` to the previous kept one.
 
@@ -243,107 +236,98 @@ def _simplify(points: list[tuple[float, float]], min_step_m: float = 20.0) -> li
     return kept
 
 
-def _stitch_ways(way_path: list[int], ways: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
-    """Concatenate ways along a way-graph path, orienting each continuation."""
-    chain = list(ways[way_path[0]])
-    for index in way_path[1:]:
-        way = ways[index]
-        if chain[-1] == way[0]:
-            chain.extend(way[1:])
-        elif chain[-1] == way[-1]:
-            chain.extend(reversed(way[:-1]))
-        elif chain[0] == way[0]:
-            chain = list(reversed(chain)) + way[1:]
-        elif chain[0] == way[-1]:
-            chain = list(reversed(chain)) + list(reversed(way[:-1]))
-        else:
-            return []  # the BFS path broke; caller falls back to a chord
-    return chain
+MAX_TRACK_STEP_M = 400.0  # a real track never teleports between nodes
 
 
-def _way_graph(polylines: dict[int, list[tuple[float, float]]]) -> tuple[list, dict]:
-    """Ways list plus an endpoint index: ways join only at coinciding endpoints."""
-    ways = list(polylines.values())
-    index: dict[tuple[float, float], list[int]] = {}
-    for position, way in enumerate(ways):
-        for endpoint in (way[0], way[-1]):
-            index.setdefault(tuple(endpoint), []).append(position)
-    return ways, index
-
-
-def _ways_near(
-    ways: list[list[tuple[float, float]]], point: tuple[float, float], tolerance_m: float = 400.0
+def _candidate_indices(
+    chain: list[tuple[float, float]], point: tuple[float, float], tolerance_m: float
 ) -> list[int]:
-    """Ways passing within `tolerance_m` of the point."""
-    return [
-        position
-        for position, way in enumerate(ways)
-        if min(haversine_m(node, point) for node in way) <= tolerance_m
-    ]
+    """All chain indices whose node lies within `tolerance_m` of the point."""
+    return [index for index, node in enumerate(chain) if haversine_m(node, point) <= tolerance_m]
 
 
-def _way_route(
-    start: int,
-    goal: int,
-    ways: list[list[tuple[float, float]]],
-    endpoint_index: dict[tuple[float, float], list[int]],
-) -> list[int] | None:
-    """Fewest-ways route over the way graph (BFS on shared endpoints)."""
-    from collections import deque
+def _track_spans(
+    chain: list[tuple[float, float]],
+) -> list[tuple[list[tuple[float, float]], list[float]]]:
+    """Cut a chained track into continuous spans with per-span length prefixes.
 
-    previous: dict[int, int | None] = {start: None}
-    queue: deque[int] = deque([start])
-    while queue:
-        current = queue.popleft()
-        if current == goal:
-            path = []
-            while current is not None:
-                path.append(current)
-                current = previous[current]
-            return list(reversed(path))
-        way = ways[current]
-        for endpoint in (way[0], way[-1]):
-            for neighbor in endpoint_index.get(tuple(endpoint), ()):
-                if neighbor not in previous:
-                    previous[neighbor] = current
-                    queue.append(neighbor)
-    return None
+    Chained ways may interleave the parallel directional tracks with offsets; a
+    span boundary at every oversized step guarantees each span is one
+    continuous polyline, so any slice inside it never teleports. The prefix
+    gives O(1) slice length when choosing the shortest span between stations.
+    """
+    spans: list[tuple[list[tuple[float, float]], list[float]]] = []
+    current: list[tuple[float, float]] = [chain[0]]
+    prefix: list[float] = [0.0]
+    for node in chain[1:]:
+        step = haversine_m(current[-1], node)
+        if step > MAX_TRACK_STEP_M:
+            spans.append((current, prefix))
+            current = [node]
+            prefix = [0.0]
+        else:
+            current.append(node)
+            prefix.append(prefix[-1] + step)
+    spans.append((current, prefix))
+    return spans
 
 
 def _edge_geometry(
-    way_graph, source_point: tuple[float, float], target_point: tuple[float, float]
+    polylines: list[list[tuple[float, float]]],
+    source_point: tuple[float, float],
+    target_point: tuple[float, float],
 ) -> list[list[float]] | None:
-    """Route the ride over the line's own way graph, one directional track.
+    """Ride geometry: the line's own track nodes inside the station corridor.
 
-    The old slice-by-index approach zigzagged whenever the chained track
-    interleaved the two parallel directional ways. Routing over ways (ways join
-    only at coinciding endpoints) keeps the polyline on a single track; among
-    all (start way, end way) candidates the shortest trimmed span wins.
+    OSM line tracks interleave the two directional ways with gaps and
+    out-of-order nodes, so slicing chains or routing way graphs kept producing
+    teleports and figure-eights. The corridor construction is monotone by
+    construction: every node of the line's own track within the station
+    corridor is projected onto the A→B axis and sorted by projection — the
+    polyline is continuous, follows the real bends, and can neither loop nor
+    jump. Nodes outside the corridor (parallel lines, depots) are excluded.
     """
-    ways, endpoint_index = way_graph
-    best = None
-    for start in _ways_near(ways, source_point):
-        for goal in _ways_near(ways, target_point):
-            path = _way_route(start, goal, ways, endpoint_index)
-            if path is None:
-                continue
-            stitched = _stitch_ways(path, ways)
-            if len(stitched) < 4:
-                continue
-            source_index = min(range(len(stitched)), key=lambda i: haversine_m(stitched[i], source_point))
-            target_index = min(range(len(stitched)), key=lambda i: haversine_m(stitched[i], target_point))
-            if abs(target_index - source_index) < 3:
-                continue
-            low, high = min(source_index, target_index), max(source_index, target_index)
-            span = stitched[low : high + 1]
-            if len(span) < 4:
-                continue
-            score = sum(haversine_m(span[i], span[i + 1]) for i in range(len(span) - 1))
-            if best is None or score < best[0]:
-                best = (score, span)
-    if best is None:
+    track_nodes = [node for way in polylines for node in way]
+    return _corridor_geometry(track_nodes, source_point, target_point)
+
+
+def _corridor_geometry(
+    track_nodes: list[tuple[float, float]],
+    source_point: tuple[float, float],
+    target_point: tuple[float, float],
+) -> list[list[float]] | None:
+    """Ride geometry fallback: track nodes inside the station corridor.
+
+    The line's own track nodes projected onto the A→B axis and sorted by
+    projection give a monotone, continuous polyline that follows the real
+    bends; nodes outside the corridor (parallel lines, depots, far deviations
+    of the opposite track) are excluded, so loops, figure-eights and
+    teleports are impossible by construction.
+    """
+    chord = haversine_m(source_point, target_point)
+    axis_lat, axis_lon = target_point[0] - source_point[0], target_point[1] - source_point[1]
+    denominator = axis_lat * axis_lat + axis_lon * axis_lon
+    if denominator == 0:
         return None
-    simplified = _simplify(best[1])
+    corridor_tolerance = 350.0
+    projected = []
+    for node in track_nodes:
+        t = ((node[0] - source_point[0]) * axis_lat + (node[1] - source_point[1]) * axis_lon) / denominator
+        if not 0.08 <= t <= 0.92:
+            continue
+        foot = (source_point[0] + t * axis_lat, source_point[1] + t * axis_lon)
+        if haversine_m(node, foot) <= corridor_tolerance:
+            projected.append((t, node))
+    if len(projected) < 4:
+        return None
+    projected.sort(key=lambda item: item[0])
+    # Incremental 400 m cap on kept steps: sorting by projection alone cannot
+    # create a teleport, but a node from a nearby foreign line could.
+    kept = [projected[0][1]]
+    for _, node in projected[1:]:
+        if haversine_m(kept[-1], node) < 400.0:
+            kept.append(node)
+    simplified = _simplify(kept)
     return [[round(point[0], 7), round(point[1], 7)] for point in simplified]
 
 
@@ -403,7 +387,6 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
     line_segments = {
         line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
     }
-    line_way_graphs = {line: _way_graph(polylines) for line, polylines in line_ways.items()}
     PLATFORM_TRACK_TOLERANCE_M = 300.0
     dropped_stops: list[str] = []
     for relation in relations:
@@ -490,7 +473,9 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
                 # Track-following geometry; the chord between stations stays
                 # the runtime fallback when the line chain cannot resolve it.
                 "geometry": _edge_geometry(
-                    line_way_graphs.get(source_station["line_id"]), source_point, target_point
+                    line_ways.get(source_station["line_id"], {}).values(),
+                    source_point,
+                    target_point,
                 ),
             }
 

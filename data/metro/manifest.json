@@ -33,8 +33,8 @@
   ],
   "artifact": {
     "path": "core/resources/metro/moscow.json",
-    "bytes": 1072377,
-    "sha256": "9fb1a99caefa74571e46a555e3d521c35901dd955e3cfce044852ab755f3373f"
+    "bytes": 944737,
+    "sha256": "a0739ffad6cad08d4144bfd92e2f6d94ff4565f05e041f0af9a56a0df5d07088"
   },
   "counts": {
     "stations": 278,
