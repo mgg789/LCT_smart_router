@@ -1,15 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { expect, readPlan, signIn, test } from './fixtures';
+import { expect, readRequestIds, signIn, test } from './fixtures';
 
 test('tabular analysis and conversion do not mutate the working plan', async ({ live }) => {
   expect(
     (
       await live.api.post('/api/v1/dispatch/mode', {
-        data: { operationId: randomUUID(), mode: 'manual' },
+        data: {
+          operationId: randomUUID(),
+          mode: 'manual',
+          reason: 'E2E import and settings verification',
+        },
       })
     ).ok(),
   ).toBe(true);
-  const before = await readPlan(live.api);
+  const before = await readRequestIds(live.api);
   const source = {
     fileName: 'requests.tsv',
     payloadBase64: Buffer.from(
@@ -56,7 +60,7 @@ test('tabular analysis and conversion do not mutate the working plan', async ({ 
   expect(result.file.requests[0].serviceDurationSec).toBe(1800);
   expect(result.file.engineers).toBeUndefined();
   expect(result.file.depot).toBeUndefined();
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
 });
 
 test('table review can return without import and prepares approved missing values', async ({
@@ -67,11 +71,15 @@ test('table review can return without import and prepares approved missing value
   expect(
     (
       await live.api.post('/api/v1/dispatch/mode', {
-        data: { operationId: randomUUID(), mode: 'manual' },
+        data: {
+          operationId: randomUUID(),
+          mode: 'manual',
+          reason: 'E2E import and settings verification',
+        },
       })
     ).ok(),
   ).toBe(true);
-  const before = await readPlan(live.api);
+  const before = await readRequestIds(live.api);
   await page.getByRole('button', { name: 'Загрузить данные', exact: true }).click();
   const upload = page.getByRole('dialog', { name: 'Загрузить данные', exact: true });
   const input = upload.locator('input[type=file]').first();
@@ -87,7 +95,7 @@ test('table review can return without import and prepares approved missing value
   await expect(review).toBeVisible();
   await review.getByRole('button', { name: 'Вернуться', exact: true }).click();
   await expect(review).toBeHidden();
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
   await input.setInputFiles(file);
   await expect(review).toBeVisible();
   await review.getByLabel('Режим', { exact: true }).selectOption('append_requests');
@@ -95,5 +103,5 @@ test('table review can return without import and prepares approved missing value
   await review.getByRole('button', { name: 'Проверить заполнение', exact: true }).click();
   await expect(review).toBeHidden();
   await expect(upload.getByRole('button', { name: 'Применить', exact: true })).toBeEnabled();
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
 });

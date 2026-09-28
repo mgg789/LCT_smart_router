@@ -48,6 +48,35 @@ it('uses the client role and account cache scope with the original green mascot'
   expect(html).not.toContain('ai-kolobok.png');
   expect(html).toContain('Покажи мои активные заявки');
 });
+it('keeps the client assistant local and disabled in the offline contour', () => {
+  const runtime = globalThis as typeof globalThis & { window?: { navixOffline?: boolean } };
+  const previousWindow = runtime.window;
+  Object.defineProperty(runtime, 'window', {
+    configurable: true,
+    value: {
+      navixOffline: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+  });
+  try {
+    vi.mocked(useAssistantChat).mockReturnValue(base);
+    const html = render();
+    expect(useAssistantChat).toHaveBeenLastCalledWith({
+      token: null,
+      surface: 'client',
+      sessionScope: 'anna@example.test',
+    });
+    expect(html).toContain('disabled=""');
+    expect(html).toContain('Контур запущен в офлайн-режиме');
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(runtime, 'window', { configurable: true, value: previousWindow });
+    } else {
+      Object.defineProperty(runtime, 'window', { configurable: true, value: undefined });
+    }
+  }
+});
 it('renders operation actions, errors and scroll room instead of hiding non-text responses', () => {
   vi.mocked(useAssistantChat).mockReturnValue({
     ...base,

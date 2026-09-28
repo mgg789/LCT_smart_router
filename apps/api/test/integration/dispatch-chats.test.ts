@@ -936,7 +936,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const fullBody = (await full.json()) as { chat: DispatchChatBody | null };
     assert.equal(fullBody.chat?.unreadCount, 0);
   });
-  it('does not offer client handoff while the dispatcher queue is locked', () => {
-    assert.equal(app.get(ToolRegistry).find('client', 'call_dispatch_helper'), undefined);
+  it('offers client handoff when the dispatcher chat screen is available', () => {
+    assert.ok(app.get(ToolRegistry).find('client', 'call_dispatch_helper'));
   });
 });

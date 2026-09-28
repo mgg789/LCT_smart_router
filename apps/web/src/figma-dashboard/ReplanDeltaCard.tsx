@@ -63,6 +63,25 @@ export function ReplanDeltaCard({
           ))}
         </ul>
       ) : null}
+      <p className="mt-4 text-[13px] leading-snug text-white/70">
+        {t('figma-dashboard.ReplanDeltaCard.searchBudgetResult')}{' '}
+        <span className="group relative inline-block">
+          <button
+            type="button"
+            className="cursor-help underline decoration-dotted underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+            aria-describedby="replan-search-limits"
+          >
+            {t('figma-dashboard.ReplanDeltaCard.searchLimitsLabel')}
+          </button>
+          <span
+            id="replan-search-limits"
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-[280px] -translate-x-1/2 rounded-xl bg-white p-3 text-left text-[13px] leading-snug text-figma-ink shadow-lg group-hover:block group-focus-within:block"
+          >
+            {t('figma-dashboard.ReplanDeltaCard.searchLimitsTooltip')}
+          </span>
+        </span>
+      </p>
       <div className="mt-5 flex gap-3">
         {canReject ? (
           <button

@@ -2,6 +2,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
@@ -38,7 +39,6 @@ export function RequestDetails({
   engineer,
   explanation,
   token,
-  roster,
   motionOn,
   onClose,
   onOpenEngineer,
@@ -58,6 +58,7 @@ export function RequestDetails({
   onClose: () => void;
   onOpenEngineer?: () => void;
 }) {
+  const offline = isNavixOffline();
   const { dx, dy } = useArtboardStretch();
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
@@ -160,30 +161,11 @@ export function RequestDetails({
             largeOn={largeOn}
             motionOn={motionOn}
             token={token}
-            context={{
-              explanation,
-              roster: (roster ?? []).slice(0, 8),
-              request: request
-                ? {
-                    id: request.id,
-                    address: request.addressText,
-                    windowStartAt: request.windowStartAt,
-                    windowEndAt: request.windowEndAt,
-                    skill: request.requiredSkill,
-                    status: request.assignmentState,
-                  }
-                : null,
-              engineer: engineer
-                ? {
-                    name: engineer.displayName,
-                    skills: engineer.skills,
-                    transport: engineer.transportType,
-                  }
-                : null,
-            }}
+            requestId={request?.id ?? null}
             explanation={explanation}
             durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
             onToggleAi={() => setAiOn((value) => !value)}
+            disabled={offline}
             onToggleLarge={() => setLargeOn((value) => !value)}
           />
         ) : (
@@ -221,27 +203,28 @@ function RequestReasons({
   largeOn,
   motionOn,
   token,
-  context,
+  requestId,
   explanation,
   durationLabel,
   onToggleAi,
   onToggleLarge,
+  disabled = false,
 }: {
   aiOn: boolean;
   largeOn: boolean;
   motionOn: boolean;
   token: string | null;
-  context: unknown;
+  requestId: string | null;
   explanation: CaseExplanation | null;
   durationLabel: string;
   onToggleAi: () => void;
   onToggleLarge: () => void;
+  disabled?: boolean;
 }) {
   const { text: aiText, ready: aiReady } = useAiExplanation({
-    enabled: aiOn,
+    enabled: aiOn && requestId !== null,
     token,
-    kind: 'reasons',
-    context,
+    target: { scope: 'request', requestId: requestId ?? '' },
   });
   return (
     <div className="mt-[16px]">
@@ -266,6 +249,7 @@ function RequestReasons({
                       : t('figma-dashboard.RequestDetails.f50242f50b')
                   }
                   motionOn={motionOn}
+                  disabled={disabled}
                   onClick={onToggleAi}
                 >
                   {aiOn ? (
@@ -353,11 +337,13 @@ function ReasonIconButton({
   label,
   motionOn,
   onClick,
+  disabled = false,
   children,
 }: {
   label: string;
   motionOn: boolean;
   onClick: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -365,8 +351,9 @@ function ReasonIconButton({
       type="button"
       aria-label={label}
       title={label}
+      disabled={disabled}
       onClick={onClick}
-      className="flex size-[36px] items-center justify-center rounded-full bg-white/10"
+      className="flex size-[36px] items-center justify-center rounded-full bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
       whileHover={motionOn ? { scale: 1.08, backgroundColor: 'rgba(255,255,255,0.18)' } : undefined}
       whileTap={motionOn ? { scale: 0.92 } : undefined}
       transition={{ duration: 0.16 }}

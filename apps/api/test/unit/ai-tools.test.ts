@@ -122,9 +122,11 @@ describe('AI tool schemas never let the model choose the subject', () => {
   it('finds at least the tools this change adds', () => {
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [
+      'cancel_my_request',
       'change_status_to',
       'create_request',
       'finish_technical_break',
+      'get_my_request',
       'get_my_route',
       'get_my_visit_context',
       'list_my_requests',
@@ -132,6 +134,7 @@ describe('AI tool schemas never let the model choose the subject', () => {
       'report_delay',
       'report_eta',
       'report_missing_equipment',
+      'reschedule_my_request',
       'search_documentation',
       'start_technical_break',
     ]);
@@ -211,14 +214,20 @@ describe('AI tool schemas never take a raw epoch number', () => {
 });
 
 describe('AI tool catalogue scoping', () => {
-  it('gives the client its own two operations plus the two shared tools', () => {
+  it('gives the client its own five operations', () => {
     const tools = buildClientTools({
       aiOperations: {} as unknown as AiOperationService,
       requests: {} as unknown as RequestsService,
       prisma: {} as never,
       config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
     });
-    assert.deepEqual(tools.map((tool) => tool.name).sort(), ['create_request', 'list_my_requests']);
+    assert.deepEqual(tools.map((tool) => tool.name).sort(), [
+      'cancel_my_request',
+      'create_request',
+      'get_my_request',
+      'list_my_requests',
+      'reschedule_my_request',
+    ]);
   });
 
   it('gives the engineer exactly the nine action/read tools, no start/finish visit', () => {

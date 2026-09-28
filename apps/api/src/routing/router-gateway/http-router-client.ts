@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
+import { routerFetch } from '../../common/observability/router-fetch';
 import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
@@ -197,7 +198,7 @@ const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
-  strict_time_windows: z.boolean().default(false),
+  strict_time_windows: z.boolean().default(true),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
@@ -391,7 +392,9 @@ export class HttpRouterClient extends RouterClient {
   override getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
     const cached = this.settingsCache;
     const fresh = cached !== null && Date.now() - cached.at < 30_000;
-    if (!fresh) this.kickSettingsRefresh();
+    // A stale cached response must not leave the background rejection unobserved
+    // when Router restarts. First reads still await the original pending promise.
+    if (!fresh) void this.kickSettingsRefresh().catch(() => undefined);
     if (cached) return Promise.resolve(cached.value);
     return this.settingsInflight ?? this.kickSettingsRefresh();
   }
@@ -435,7 +438,7 @@ export class HttpRouterClient extends RouterClient {
       body: JSON.stringify({
         operation_id: input.operationId,
         expected_context_version: input.expectedContextVersion,
-        strict_time_windows: input.strictTimeWindows ?? false,
+        strict_time_windows: input.strictTimeWindows ?? true,
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,
@@ -640,7 +643,7 @@ export class HttpRouterClient extends RouterClient {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     timeout.unref();
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await routerFetch(`${this.baseUrl}${path}`, {
         ...init,
         headers: { accept: 'application/json' },
         ...(init.headers

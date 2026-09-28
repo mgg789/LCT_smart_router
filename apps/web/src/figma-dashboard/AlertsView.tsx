@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { isAlertActionId } from '../domain/alerts';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { AlertActions } from './AlertActions';
 import { runAlertSweep } from './alertSweep';
@@ -76,6 +77,7 @@ export function AlertsView({
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
+  const offline = isNavixOffline();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 5_000);
@@ -186,7 +188,7 @@ export function AlertsView({
     return true;
   }
   async function startSweep() {
-    if (sweepRunning.current || writesDisabled || visibleAlerts.length === 0) return;
+    if (offline || sweepRunning.current || writesDisabled || visibleAlerts.length === 0) return;
     sweepRunning.current = true;
     const generation = sweepGeneration.current;
     const cancelled = () => generation !== sweepGeneration.current;
@@ -235,7 +237,7 @@ export function AlertsView({
       </FigmaText>
       <AiSweepSlider
         top={TITLE_TOP - 16}
-        armed={glassArrow && !writesDisabled}
+        armed={glassArrow && !writesDisabled && !offline}
         engaged={sweeping}
         motionOn={animate}
         onCommit={() => {
@@ -286,7 +288,7 @@ export function AlertsView({
                       token={token}
                       alert={card.sourceAlert}
                       snapshot={snapshot}
-                      disabled={writesDisabled || sweeping}
+                      disabled={offline || writesDisabled || sweeping}
                       onResolve={onResolve}
                       spotlightAction={spotlight?.id === card.id ? spotlight.action : null}
                       thinking={thinkingId === card.id}

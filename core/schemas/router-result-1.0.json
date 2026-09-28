@@ -1507,7 +1507,7 @@
           "type": "boolean"
         },
         "strict_time_windows": {
-          "default": false,
+          "default": true,
           "title": "Strict Time Windows",
           "type": "boolean"
         },
@@ -1741,6 +1741,19 @@
         }
       ],
       "default": null
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verification"
     }
   },
   "required": [

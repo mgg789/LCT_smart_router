@@ -20,7 +20,7 @@ export const FIGMA_ASSETS = {
   searchPanel: '/figma/icon-search-panel.svg',
   bellHeader: '/figma/icon-bell-header.svg',
   chevronDown: '/figma/icon-chevron-down.svg',
-  avatarUser: '/figma/avatar-user.png',
+  avatarUser: '/avatars/dispatcher.png',
   avatarEngineer: '/figma/avatar-engineer.png',
   map: '/figma/map-moscow.png',
   timeline: '/figma/timeline-track.svg',
@@ -72,14 +72,13 @@ export const FIGMA_ASSETS = {
   engSearch: '/figma/icon-eng-search.svg',
   engDot: '/figma/icon-eng-dot.svg',
   aiKolobok: '/figma/ai-kolobok.png',
+  /** The assistant wears a different face per app, exactly as the frames draw it:
+   *  blue for the engineer (181:1075), green for the customer (262:798). */
+  aiKolobokEngineer: '/figma/ai-kolobok-engineer.png',
+  aiKolobokClient: '/figma/ai-kolobok-client.png',
   aiCopy: '/figma/ai-copy.svg',
   aiThumbUp: '/figma/ai-thumb-up.svg',
   aiThumbDown: '/figma/ai-thumb-down.svg',
 } as const;
 
-/** Three Figma portraits cycled on the Engineers ring when the API has no photo. */
-export const ENGINEER_PORTRAITS = [
-  FIGMA_ASSETS.engPortrait1,
-  FIGMA_ASSETS.engPortrait2,
-  FIGMA_ASSETS.engPortrait3,
-] as const;
+export { ENGINEER_PORTRAITS } from './engineerPortrait';

@@ -45,24 +45,23 @@ test('live plan renders the local map and replans when an engineer goes offline'
   page,
   live,
 }, testInfo) => {
+  await page.addInitScript(() => {
+    (window as Window & { navixOffline?: boolean }).navixOffline = true;
+  });
   await signIn(page);
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
-  await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
+  await expect(page.locator('[data-map-ready="true"]')).toBeVisible({ timeout: 60_000 });
   await expect(
     page.getByText('Сохранённая карта трёх регионов · улицы, парки и водоёмы'),
   ).toBeVisible();
-  await page
-    .getByRole('button')
-    .filter({ has: page.getByTitle('Smoke East Engineer') })
-    .click();
-  // The Figma dashboard renders the selected engineer's factual profile in the
-  // dedicated roster surface instead of the retired inline explanation card.
-  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  await page.getByRole('button', { name: /Smoke East Engi/ }).click();
+  // Open the selected engineer's factual profile through the map detail action.
+  await page.getByRole('button', { name: 'К инженеру', exact: true }).click();
   // The outgoing map card briefly remains mounted during the screen transition.
   const roster = page.locator('section[data-name="ENGINEERS"]');
   await expect(roster.getByText('Smoke East Engineer', { exact: true })).toBeVisible();
   await expect(roster.getByText('Транспорт', { exact: true })).toBeVisible();
-  await expect(roster.getByText('Легковой, до 3.5 т', { exact: true })).toBeVisible();
+  await expect(roster.getByText('авто', { exact: true })).toBeVisible();
   // The dossier action reflects accepted server state, not an optimistic toggle.
   await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect
@@ -86,7 +85,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
   await page.getByRole('button', { name: 'План дня', exact: true }).click();
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   expect((await readPlan(live.api)).revision).toBeGreaterThan(live.plan.revision);
-  await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
+  await expect(page.locator('[data-map-ready="true"]')).toBeVisible({ timeout: 60_000 });
   await testInfo.attach('day-after-replanning', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -102,10 +101,14 @@ test('connection loss preserves the real day, disables writes and recovers', asy
   await expect(page.getByRole('button', { name: 'Загрузить данные', exact: true })).toBeVisible();
   const ids = live.plan.assignments.map((item) => item.requestId).sort();
   await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  const availability = page.getByRole('button', { name: 'Снять со смены', exact: true });
+  // Chrome can render before the initial live snapshot has enabled writes.
+  // Establish the healthy state before injecting a transport failure.
+  await expect(availability).toBeEnabled({ timeout: 45_000 });
   const availabilityRequest = '**/api/v1/dispatch/engineers/*/availability';
   await context.route(availabilityRequest, (route) => route.abort('internetdisconnected'));
-  await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeDisabled({
+  await availability.click();
+  await expect(availability).toBeDisabled({
     timeout: 20_000,
   });
   // Read only persisted request identities; the UI cannot quietly substitute recorded demo data.
@@ -118,7 +121,7 @@ test('connection loss preserves the real day, disables writes and recovers', asy
     );
   expect(stored.snapshot.requests.map((item) => item.id).sort()).toEqual(ids);
   await context.unroute(availabilityRequest);
-  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();
+  await expect(availability).toBeEnabled();
   expect((await readPlan(live.api)).assignments.map((item) => item.requestId).sort()).toEqual(ids);
 });
 

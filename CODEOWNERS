@@ -1,0 +1,37 @@
+# Confirmed SourceCraft usernames. Last matching rule takes precedence.
+# Ownership documents review routing; enforcement depends on repository settings.
+# Technical lead: Mikhail Gumenyuk, @mschail, https://t.me/mschail.
+# UI/UX and project: Ilya Burmolichenko, https://t.me/iLyaPuMmm (Telegram only).
+# Request their review directly for architecture, shared contracts, UX and releases.
+
+# General and backend review.
+* @mschail
+/apps/api/ @mschail @gorbunkovsemyon-semen @as1529970
+/packages/shared/ @mschail
+
+# Frontend and browser tests. Coordinate visual changes with Ilya.
+/apps/web/ @raipus-ivanich
+/tests/e2e/ @raipus-ivanich
+/scripts/i18n/ @raipus-ivanich
+
+# AI, MCP, ML and routing.
+/apps/api/src/ai/ @as1529970
+/apps/api/src/orchestrator/ai/ @as1529970
+/apps/api/src/orchestrator/mcp/ @as1529970
+/apps/api/src/api/ai* @as1529970
+/apps/api/src/api/dto/ai* @as1529970
+/core/ @as1529970
+/data/ @as1529970 @gorbunkovsemyon-semen
+
+# Infrastructure and delivery.
+/infra/ @gorbunkovsemyon-semen
+/.sourcecraft/ @gorbunkovsemyon-semen
+/.github/ @gorbunkovsemyon-semen
+/scripts/ci/ @gorbunkovsemyon-semen
+
+# Product documentation: coordinate scope and UX with Ilya, architecture with Mikhail.
+/docs/ @raipus-ivanich @as1529970 @gorbunkovsemyon-semen
+/context/ @raipus-ivanich @as1529970 @gorbunkovsemyon-semen
+/SECURITY.md @mschail @gorbunkovsemyon-semen
+/CONTRIBUTING.md @mschail
+/CODEOWNERS @mschail

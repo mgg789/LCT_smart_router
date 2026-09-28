@@ -1,0 +1,240 @@
+# route-engine 3 — универсальный движок дорожных и пешеходных маршрутов
+
+*Введён 2026-09-28. Статус: активный, самодостаточный юнит.*
+
+route-engine3 — отдельный HTTP-сервис (`services/route-engine3/`), который
+считает маршруты и матрицы времени/расстояния по загружаемым OSRM-графам.
+Он спроектирован как **автономный юнит**: его можно поднять в любом проекте
+одной командой, доложить папку с графом — и обращаться по трём контрактам:
+`/route3`, `/matrix3`, `/metro3`.
+
+В контуре LCT Smart Router сервис обслуживает два графа:
+
+| Граф | Папка | Профиль | Что считает |
+|---|---|---|---|
+| `car` | `graphs/car/` | `car` | Автомобильные маршруты по МКАД-графу, при `traffic=1` — с моделью трафика v2 |
+| `foot` | `graphs/foot/` | `foot` | Пешеходные и велосипедные маршруты (footway/pedestrian/steps/sidewalk/cycleway), **без** каких-либо пробочных движков |
+
+## 1. Быстрый старт (встраивание в другой проект)
+
+Сервис не зависит от кода LCT Smart Router: контейнеру нужна только папка
+с графами и (опционально) JSON-артефакт метро.
+
+```bash
+docker build -t route-engine3 services/route-engine3
+
+docker run -d --name route-engine3 -p 8124:8124 \
+  --tmpfs /graph-pages:size=1024m \
+  -v /путь/к/graphs:/srv/graphs:ro \
+  -e ENGINE3_GRAPHS_DIR=/srv/graphs \
+  -e ENGINE3_PAGE_DIR=/graph-pages \
+  -e METRO_DATA_PATH=/srv/metro/moscow.json \
+  -v /путь/к/metro.json:/srv/metro/moscow.json:ro \
+  route-engine3
+```
+
+### Формат папки графа
+
+Один граф = одна подпапка в `ENGINE3_GRAPHS_DIR`:
+
+```
+graphs/
+  car/
+    moscow-mkad.osrm.cell_metrics
+    moscow-mkad.osrm.cells
+    ...                         # страницы osrm v26.x (MLD)
+    graph.json                  # опционально
+  foot/
+    moscow-mkad-foot.osrm.*     # базовый *.osrm-файл не обязателен
+    graph.json
+```
+
+`graph.json` (все поля кроме имени не обязательны, битый файл деградирует в
+дефолты, сервис не падает):
+
+```json
+{
+  "graph_id": "foot",
+  "profile": "foot",
+  "map_version": "moscow-mkad-foot-v1",
+  "max_table_size": 4096,
+  "speeds_kmh": {"walk": 5.0, "bike": 15.0}
+}
+```
+
+* `profile` — `car` или `foot`; решает, какой граф отвечает на запрос
+  (`car` → профиль `car`, `walk`/`bike`/`transit` → профиль `foot`).
+  При нескольких графах одного профиля побеждает граф, чей `graph_id`
+  совпадает с именем профиля.
+* `speeds_kmh` — плоские средние скорости для пешехода и велосипеда
+  (длительность = протяжённость дороги / скорость).
+* Доложили папку → рестарт контейнера → граф поднялся (`/graphs` покажет).
+
+Метро-артефакт опционален: без него `/route3` работает, `/metro3` отвечает
+ошибкой `METRO_NOT_CONFIGURED`, композиты с метро не строятся.
+
+### Переменные окружения
+
+| Переменная | По умолчанию | Смысл |
+|---|---|---|
+| `ENGINE3_PORT` | `8124` | Порт HTTP-сервиса |
+| `ENGINE3_GRAPHS_DIR` | `./graphs` | Папка с графами |
+| `ENGINE3_PAGE_DIR` | — | tmpfs-папка: графы копируются сюда перед запуском (mmap по bind-mount тормозит на Mac Docker) |
+| `ENGINE3_OSRM_BASE_PORT` | `5300` | Стартовый внутренний порт детей osrm-routed |
+| `ENGINE3_OSRM_ROUTED` | `osrm-routed` | Путь до бинаря |
+| `METRO_DATA_PATH` | — | JSON-артефакт метро (schema `MetroNetwork`, см. `data/metro/`) |
+
+`/health` → `{"ready": true}` только когда отвечают все обнаруженные графы.
+
+## 2. Контракты
+
+Все эндпойнты — `GET`, ответы — JSON. Ошибки: `400` (плохие параметры),
+`404` (неизвестный эндпойнт), `502` (OSRM/граф недоступен).
+
+### 2.1 `GET /route3`
+
+Параметры:
+
+| Параметр | Значения | По умолчанию |
+|---|---|---|
+| `a`, `b` | `lat,lon` | обязательны |
+| `profile` | `car` \| `walk` \| `bike` \| `transit` | `car` |
+| `traffic` | `0/1` | `0`; учитывается **только для car** |
+| `metro` | `0/1` | `1` для `walk`/`transit` |
+| `departure` | epoch, секунды | текущее время |
+
+Ответ (фрагмент, `profile=car&traffic=1`):
+
+```json
+{
+  "mode": "road",
+  "profile": "car",
+  "distance_m": 10798.1,
+  "base_duration_s": 967.0,
+  "duration_s": 1863.3,
+  "effective_factor": 1.93,
+  "period": "morning_peak",
+  "traffic_applied": true,
+  "geometry": [[55.75, 37.60], "..."],
+  "graph_id": "car",
+  "map_version": "moscow-mkad"
+}
+```
+
+* `mode`: `road` (по графу), `straight` (вне покрытия графа — хорда
+  с disclosed-скоростью), `metro_composite` (пеший маршрут с метро).
+* Для `walk`/`bike`: `duration_s = distance_m / speeds_kmh[profile]` —
+  **плоская скорость, трафик не применяется никогда**.
+* Для `transit`/`walk` при `metro=1`: если составной маршрут
+  (подход пешком → метро → выход пешком) быстрее прямого пешего,
+  вернётся `mode=metro_composite` c `segments`:
+
+```json
+{
+  "mode": "metro_composite",
+  "duration_s": 2422,
+  "segments": [
+    {"kind": "walk",  "travel_source": "foot_graph", "duration_s": 157, "...": "..."},
+    {"kind": "metro", "travel_source": "metro", "duration_s": 1244,
+     "geometry": [[...]], "stations": ["..."]},
+    {"kind": "walk",  "travel_source": "foot_graph", "duration_s": 1021}
+  ],
+  "metro": {"entered": "m1:...", "exited": "m9:...", "ride_duration_sec": 1044}
+}
+```
+
+Подходы к станциям — честные маршруты по foot-графу (не оценки), перегоны —
+по геометрии линий метро из OSM (когда заполнена в артефакте).
+
+### 2.2 `GET /matrix3`
+
+Параметры: `points` (`lat,lon;...`, минимум 2), `profile`, `traffic` (car),
+`planning=1` (car: добавить прогнозные полосы), `departure`.
+
+Ответ: `matrix[i][j]` — ячейки `{mode, duration_s, distance_m,
+base_duration_s?, forecast_duration_s?}`; `mode`: `self` (i=j), `road`,
+`unreachable`. Для car+`planning=1`: `forecast_band_starts` (полосы от
+полуночи, Europe/Moscow), у ячеек `forecast_duration_s` — длительности по
+полосам (факторы от конечных точек, без попарного refine — для попарной
+точности есть `/route3?traffic=1`).
+
+Одна пачка `/table` на весь набор точек (лимит `max_table_size`, у
+вендоренных графов 4096).
+
+### 2.3 `GET /metro3`
+
+Параметры: `points`, `max_access_m` (по умолчанию из артефакта, 1500),
+`top_k` (ближайших станций на точку, по умолчанию 2).
+
+Ответ: `stations[i]` — ближайшие станции точки с `access_m`/`access_sec`
+(плоская скорость 4.5 км/ч по прямой), `paths` — самые быстрые
+«станция→станция» пути между кандидатами пар точек: Dijkstra по
+ride/transfer-рёбрам со штрафом за transfer, длительности перегонов из
+артефакта, геометрия линий. `composite_duration_sec` = вход + ожидание +
+поездка + выход + подходы.
+
+### 2.4 `GET /graphs`, `GET /model`, `GET /health`
+
+Диагностика: список графов с готовностью, идентификация моделей стоимости,
+агрегированная готовность.
+
+## 3. Как это работает
+
+1. **Супервизор графов** (`graphs.py`): при старте сканирует папку графов,
+   для каждого находит семейство `*.osrm*`, копирует страницы в tmpfs
+   (`ENGINE3_PAGE_DIR`) и запускает `osrm-routed --algorithm mld` на
+   внутреннем порту. Watchdog перезапускает павших детей; готовность —
+   по HTTP-пробе.
+2. **Модель стоимости**:
+   - `car`: длительность OSRM (статические скорости OSM); при `traffic=1`
+     — модель v2 `moscow-radial-v1+demo-magistral-rush-v1` (радиальные
+     полосы + ручные коэффициенты колец в часы пик), попарно по шагам
+     маршрута;
+   - `walk`/`bike`: **плоская скорость × протяжённость** — прогностические
+     движки трафика к ним не применяются ни в каком виде;
+   - `transit`: пеший профиль + метро через `MetroTravel`-подобный композит.
+3. **Метро** (`metro.py`): Dijkstra-деревья с кэшем на станцию-источник,
+   transfer-рёбра с фиксированным штрафом; перегоны рисуются по геометрии
+   линий из артефакта (`data/metro/build_moscow.py` склеивает пути
+   маршрутов OSM по way-id и нарезает между станциями).
+4. **Пешеходный граф**: вырезка из выгрузки ЦФО (Geofabrik) по кольцу
+   МКАД +500 м тем же пайплайном, что и автомобильный
+   (`graph-tools/cut_mkad_foot_graph.py` → `osmium cat` → `osrm-extract`
+   с профилем `graph-tools/profiles/pedestrian.lua`, базированным на
+   `foot.lua`, с допусками велопрофиля). 214 620 путей / 737 428 узлов;
+   сборка — `graph-tools/build_foot_graph.sh`.
+
+## 4. Интеграция с Router Core (LCT Smart Router)
+
+* `core/route3.py` — адаптеры: `PreparedRoute3Matrix` (мультипрофильная
+  матрица из `/matrix3` с диск-кэшем), `Route3Client` (с защитой от SSRF:
+  публичные хосты требуют `ROUTE3_ALLOW_PUBLIC=1`),
+  `verify_plan_with_route3` (верификация выбранных рёбер плана).
+* `core/hybrid.py` — гибридный режим (`ROUTER_HYBRID=1`): быстрый солв на
+  гаверсинусах (калибровка 1.35 для walk/bike/transit) + метро →
+  верификация выбранных рёбер по `/route3` (машина — с трафиком, пешие —
+  foot-граф и метро) → при пробитии окна один повторный солв с
+  исправленной матрицей; отчёт — в `RouterResult.verification`.
+* Env роутера: `ROUTE3_URL`, `ROUTE3_OFFLINE`, `ROUTE3_CACHE`,
+  `ROUTER_HYBRID`. Обычный Compose оставляет гибрид выключенным до явного
+  `ROUTER_HYBRID=true`; лаунчер включает его вместе с выбранным Route Engine 3.
+
+Локальный замер 28.09.2026 (`PYTHONPATH=. core/.venv/bin/python -m lab.bench_v3`,
+запущенный контейнер Route Engine 3 с обоими графами; результаты в
+[`lab/bench-v3-results.json`](../lab/bench-v3-results.json)) сравнивает одинаковые
+снимки данных, но разные маршруты и потому не является сравнением одного и того
+же найденного плана. Для Востока 14 заявок прямой расчёт занял 0,262 с,
+гибридный — 0,334 с; для 35 заявок — 1,342 с и 1,611 с. Покрытие сохранилось
+14/14 и 35/35. Для Юго-Востока 75 заявок — 2,880 с и 5,996 с, зато гибрид
+назначил 56 вместо 43 заявок после одной корректировки окна. Это единичный
+локальный прогон, а не гарантированная задержка стенда.
+
+## 5. Ограничения
+
+* Графы покрыты МКАД +500 м: точки снаружи дают `straight`-хорду
+  (route3) или `unreachable` (matrix3).
+* OSRM не знает пробок: трафик — это модель, факторы публикует `/model`
+  (`effective_factor` в каждом ответе).
+* Одна `/matrix3` ограничена `max_table_size` (4096 точек); больше —
+  режьте на блоки (как делает `prepare_osrm` в ядре).
+* Метро-артефакт — Москва; вне кольца композиты не строятся.

@@ -21,6 +21,8 @@ import { SysError } from './sys.error';
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  constructor(private readonly reportError: (error: unknown) => void = () => {}) {}
+
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -28,6 +30,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const { status, body } = this.translate(exception);
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
+      this.reportError(exception);
       const stack = exception instanceof Error ? exception.stack : undefined;
       this.logger.error(
         `Unhandled failure: ${exception instanceof Error ? exception.message : String(exception)}`,

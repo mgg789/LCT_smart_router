@@ -121,6 +121,7 @@ tasks:
           - corepack enable
           - corepack prepare pnpm@10.28.2 --activate
           - pnpm install --frozen-lockfile
+          - pnpm --filter api exec prisma generate
           - pnpm lint
       - name: ruff
         image: docker.io/library/python:3.14-slim-bookworm
@@ -144,7 +145,7 @@ tasks:
         script:
           - pip install --disable-pip-version-check -r core/requirements-dev.txt
           - python -m pyright
-          - python -m pytest core/tests -q
+          - python -m pytest core/tests -q --cov=core --cov-config=core/.coveragerc --cov-report=term:skip-covered --cov-fail-under=80
           - python scripts/ci/evaluate_health_services.py --self-test
   - name: secrets
     cubes:

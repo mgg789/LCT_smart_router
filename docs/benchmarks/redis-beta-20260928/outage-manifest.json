@@ -1,0 +1,39 @@
+{
+  "outage_requested": true,
+  "trials": [
+    {
+      "redis_after": {
+        "used_memory_bytes": 6352048,
+        "used_cpu_sec": 1.922013,
+        "keyspace": "keys=6,expires=6,avg_ttl=315940,subexpiry=0",
+        "used_memory_rss_bytes": 22876160
+      },
+      "redis_before": {
+        "used_memory_bytes": 6352048,
+        "used_cpu_sec": 1.920231,
+        "keyspace": "keys=6,expires=6,avg_ttl=317391,subexpiry=0",
+        "used_memory_rss_bytes": 22605824
+      },
+      "redis_cpu_sec": 0.0017819999999999503,
+      "expected_cache": "outage",
+      "label": "1-outage",
+      "cache": {
+        "enabled": true,
+        "hits": 0,
+        "misses": 1,
+        "errors": 2,
+        "invalid": 0,
+        "writes": 0,
+        "oversized": 0
+      }
+    }
+  ],
+  "methodology": "Fresh Linux container per trial; HTTP loopback, official east data. Off and miss alternate order. Hit follows miss in the same unique namespace. Warm means five further requests in the same process. Redis stats include idle resident overhead. Host load is uncontrolled.",
+  "created_at_utc": "2026-09-28T14:29:54.0694564Z",
+  "image": "navix-launch-router:f7262319ae71",
+  "cpu_limit": 2,
+  "docker": "29.7.2",
+  "repeats": 1,
+  "budget_ms": 1000,
+  "memory_limit": "1536m"
+}

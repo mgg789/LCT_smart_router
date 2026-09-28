@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
@@ -47,7 +48,12 @@ def snapshot_points(snapshot: RouterTaskSnapshot) -> list[GeoPoint]:
 
 
 def _cost(value: object) -> float:
-    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+    ):
         raise ValueError("invalid matrix cost")
     return float(value)
 
@@ -301,6 +307,31 @@ def prepare_osrm(provider: OSRMTravel, points: list[GeoPoint], offline: bool) ->
     return PreparedOSRMMatrix(provider.version, cells)
 
 
+_PREPARED_CACHE: dict[str, object] = {}
+_PREPARED_CACHE_LOCK = threading.Lock()
+_PREPARED_CACHE_LIMIT = 16
+
+
+def _cached_prepared(key: str, build):
+    """Process-level memo for immutable prepared providers across replans.
+
+    Replans rebuild the same matrix objects from the same durable disk cache;
+    the parse+validate work is pure and the products are immutable, so the
+    cache trades a bounded amount of memory for that rebuild. Workers and the
+    parent each hold their own dict.
+    """
+    with _PREPARED_CACHE_LOCK:
+        hit = _PREPARED_CACHE.get(key)
+        if hit is not None:
+            return hit
+    value = build()
+    with _PREPARED_CACHE_LOCK:
+        if len(_PREPARED_CACHE) >= _PREPARED_CACHE_LIMIT:
+            _PREPARED_CACHE.pop(next(iter(_PREPARED_CACHE)))
+        _PREPARED_CACHE[key] = value
+    return value
+
+
 def _prepared_travel(
     graph: RoadGraph | TravelSource,
     settings: SearchSettings,
@@ -310,7 +341,15 @@ def _prepared_travel(
     from core.roadimport import ImportedRoadOverlay
 
     points = snapshot_points(snapshot)
-    base = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    base = None
+    if isinstance(graph, RoadGraph):
+        # The graph resource is immutable once validated; reusing one GraphTravel
+        # copy per graph version skips the deep copy and Dijkstra-tree warmup
+        # on every replan.
+        key = f"graphtravel:{graph.version}:{len(graph.nodes)}:{len(graph.edges)}"
+        base = _cached_prepared(key, lambda: GraphTravel(graph))
+    else:
+        base = graph
     # Imported edges remain authoritative; prepare only the provider underneath them.
     if isinstance(base, ImportedRoadOverlay):
         prepared = _prepared_travel(base.base, settings, snapshot, offline)
@@ -321,13 +360,21 @@ def _prepared_travel(
         # Inventing a straight-line base here would hide a missing required source.
         if osrm is None:
             raise TravelUnavailable("PLANNING_OSRM_UNAVAILABLE")
-        base = prepare_osrm(osrm, points, offline)
+        base = _cached_prepared(
+            f"osrm:{osrm.version}:{offline}:{points}", lambda: prepare_osrm(osrm, points, offline)
+        )
     elif osrm is not None:
-        base = MixedTravel(base, prepare_osrm(osrm, points, offline))
+        overlay = _cached_prepared(
+            f"osrm:{osrm.version}:{offline}:{points}", lambda: prepare_osrm(osrm, points, offline)
+        )
+        base = MixedTravel(base, overlay)
     if not offline:
         cache_only = os.environ.get("ROUTER_ROAD_API_OFFLINE", "").lower() in {"1", "true", "yes"}
-        road = prepare_road_api(
-            points, snapshot.planning_as_of, settings.traffic_enabled, cache_only
+        road = _cached_prepared(
+            f"road:{points}:{snapshot.planning_as_of}:{settings.traffic_enabled}:{cache_only}",
+            lambda: prepare_road_api(
+                points, snapshot.planning_as_of, settings.traffic_enabled, cache_only
+            ),
         )
         if road is not None:
             base = MixedTravel(base, road)
@@ -353,6 +400,8 @@ def planning_travel(
     from core.weather import LearnedWeatherTravel
 
     region = next(iter(regions))
+    if region is None:
+        return configured
     return TechnicalTravel(
         LearnedWeatherTravel(configured.travel, region, tuple(learned_weather)),
         configured.settings,
@@ -371,5 +420,8 @@ def planning_configuration() -> dict:
         "ROUTER_OSRM_BIKE_URL",
         "ROUTER_OSRM_MAP_VERSION",
         "ROUTER_OSRM_OFFLINE",
+        "ROUTE3_URL",
+        "ROUTE3_OFFLINE",
+        "ROUTER_HYBRID",
     )
     return {"version": PLANNING_TRAVEL_VERSION, **{key: os.environ.get(key, "") for key in names}}

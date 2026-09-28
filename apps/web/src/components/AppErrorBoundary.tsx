@@ -1,5 +1,6 @@
 import { Component, Fragment, type ReactNode } from 'react';
 import { t } from '../i18n';
+import { reportFrontendError } from '../observability/sentry';
 
 interface AppErrorBoundaryProps {
   readonly children: ReactNode;
@@ -20,9 +21,10 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     return { failed: true };
   }
 
-  override componentDidCatch(): void {
+  override componentDidCatch(error: Error): void {
     // Do not report exception messages, component stacks, URLs or user data.
     console.error('UI_RENDER_FAILURE');
+    reportFrontendError('UI_RENDER_FAILURE', error);
   }
 
   private retry = (): void => {

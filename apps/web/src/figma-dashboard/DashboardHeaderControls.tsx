@@ -1,18 +1,15 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { PolicyId } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
-import {
-  formatNotificationCount,
-  NAV_ITEMS,
-  type NavItemId,
-  type NotificationTone,
-} from './fixtures';
+import { formatNotificationCount, type NotificationTone } from './fixtures';
 import { policyLabel } from './fromSnapshot';
 import { openManualPlanning } from './ManualPlanning';
+import { NAV_ITEMS, type NavItemId } from './navigation';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 
@@ -30,13 +27,13 @@ const NAV_ICONS = {
  * wide window is further right than the drawing put it.
  */
 const NOTIF_PANEL_LEFT = 1407,
-  NOTIF_PANEL_TOP = 10,
+  NOTIF_PANEL_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))',
   HEADER_AVATAR_LEFT = 1800,
-  HEADER_AVATAR_TOP = 12;
+  HEADER_AVATAR_TOP = 'calc(12px + 4px / var(--dashboard-scale, 1))';
 const METRICS_BUTTON_WIDTH = 232,
   METRICS_BUTTON_LEFT = 1081,
   ADD_BUTTON_LEFT = 1014,
-  ADD_BUTTON_TOP = 10,
+  ADD_BUTTON_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))',
   ADD_BUTTON_SIZE = 51;
 
 const NAV_ICON_BOX: Record<NavItemId, { width: number; height: number; className: string }> = {
@@ -51,7 +48,7 @@ const NAV_ICON_BOX: Record<NavItemId, { width: number; height: number; className
 const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
 const POLICY_LEFT = 1329;
-const POLICY_TOP = 10;
+const POLICY_TOP = 'calc(10px + 4px / var(--dashboard-scale, 1))';
 const POLICY_OPEN_HEIGHT = 695;
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 /** Navigates dashboard sections while retaining the existing disabled-section policy. */
@@ -85,7 +82,7 @@ export function SidebarNav({
   return (
     <aside
       ref={railRef}
-      className="absolute inset-y-0 left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
+      className="absolute inset-y-[calc(8px/var(--dashboard-scale,1))] left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
     >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon
@@ -105,7 +102,7 @@ export function SidebarNav({
         />
         {NAV_ITEMS.map((item) => {
           const active = item.id === activeNav;
-          const locked = isNavLocked(item.id);
+          const locked = isNavLocked(item.id) || (isNavixOffline() && item.id === 'ai');
           const icon = NAV_ICON_BOX[item.id];
           return (
             <button
@@ -114,7 +111,13 @@ export function SidebarNav({
               disabled={locked}
               aria-label={item.label}
               aria-disabled={locked}
-              title={locked ? t('figma-dashboard.DashboardHeaderControls.72c299e0d6') : undefined}
+              title={
+                locked
+                  ? isNavixOffline() && item.id === 'ai'
+                    ? t('common.offlineContour')
+                    : t('figma-dashboard.DashboardHeaderControls.72c299e0d6')
+                  : undefined
+              }
               onClick={() => onSelect(item.id)}
               className={`relative flex h-[74px] w-full items-end justify-center pb-[12px] transition-transform duration-200 ease-out ${
                 locked ? 'cursor-not-allowed opacity-35' : 'hover:scale-[1.02]'
@@ -215,6 +218,7 @@ export function UserMenu({
   onToggle,
   onSettings,
   onOpenPreviousPlan,
+  onDownloadPlan,
   onEndDay,
   onRestartDay,
   onReset,
@@ -229,6 +233,7 @@ export function UserMenu({
   onToggle: () => void;
   onSettings: () => void;
   onOpenPreviousPlan: () => void;
+  onDownloadPlan: () => void;
   onEndDay: () => void;
   onRestartDay: () => void;
   onReset: () => void;
@@ -296,6 +301,9 @@ export function UserMenu({
                   {t('figma-dashboard.DashboardHeaderControls.fbde84ea39')}
                 </MenuAction>
               ) : null}
+              <MenuAction motionOn={motionOn} tone="bee" onClick={onDownloadPlan}>
+                {t('figma-dashboard.DashboardHeaderControls.downloadPlan')}
+              </MenuAction>
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
@@ -454,6 +462,7 @@ export function PolicyControl({
   personalConfigured = false,
   personalTitle,
   onEditPersonal,
+  offline = false,
 }: {
   open: boolean;
   policyLabel: string;
@@ -480,6 +489,7 @@ export function PolicyControl({
   personalConfigured?: boolean;
   personalTitle?: string;
   onEditPersonal?: () => void;
+  offline?: boolean;
 }) {
   const baseOptions =
     policies.length > 0
@@ -570,8 +580,14 @@ export function PolicyControl({
           <motion.button
             key={option.id}
             type="button"
+            disabled={offline && option.id === 'personal' && !personalConfigured}
+            title={
+              offline && option.id === 'personal' && !personalConfigured
+                ? t('common.offlineContour')
+                : undefined
+            }
             onClick={() => onSelect(option.id)}
-            className={`absolute left-0 h-[32px] ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
+            className={`absolute left-0 h-[32px] disabled:cursor-not-allowed disabled:opacity-40 ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
             style={{ top: 14 + index * 44 }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
@@ -593,9 +609,11 @@ export function PolicyControl({
         {personalConfigured && onEditPersonal ? (
           <button
             type="button"
+            disabled={offline}
+            title={offline ? t('common.offlineContour') : undefined}
             onClick={onEditPersonal}
             aria-label={t('figma-dashboard.DashboardHeaderControls.5cb8591e49')}
-            className="absolute right-[18px] flex size-[32px] items-center justify-center"
+            className="absolute right-[18px] flex size-[32px] items-center justify-center disabled:cursor-not-allowed disabled:opacity-40"
             style={{ top: 12 + personalIndex * 44 }}
           >
             <span

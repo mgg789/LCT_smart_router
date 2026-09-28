@@ -42,6 +42,9 @@ class RunJsTestsTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             script = captured.read_text(encoding="utf-8")
+            helper_source = helper.read_text(encoding="utf-8")
+            self.assertIn("-v /app/node_modules", helper_source)
+            self.assertIn("-e CI=true", helper_source)
             for command in (
                 "pnpm --filter web test",
                 "pnpm --filter web typecheck",

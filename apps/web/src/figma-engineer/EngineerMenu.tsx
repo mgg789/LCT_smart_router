@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRef } from 'react';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { useModalFocus } from '../components/useModalFocus';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { t } from '../i18n';
 import { ENGINEER_ASSETS } from './assets';
@@ -102,6 +103,7 @@ export function EngineerMenu({
               iconHeight={33}
               active={active === 'assistant'}
               onClick={() => onNavigate('assistant')}
+              disabled={isNavixOffline()}
             />
             <MenuItem
               label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
@@ -413,6 +415,7 @@ function MenuItem({
   iconHeight,
   active,
   onClick,
+  disabled = false,
 }: {
   label: string;
   icon: string;
@@ -420,13 +423,16 @@ function MenuItem({
   iconHeight: number;
   active: boolean;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       aria-current={active ? 'page' : undefined}
+      disabled={disabled}
+      title={disabled ? t('common.offlineContour') : undefined}
       onClick={onClick}
-      className={`flex w-full items-center ${active ? 'bg-figma-track' : ''}`}
+      className={`flex w-full items-center disabled:cursor-not-allowed disabled:opacity-40 ${active ? 'bg-figma-track' : ''}`}
       style={{
         gap: eu(20),
         borderRadius: eu(14),

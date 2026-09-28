@@ -64,6 +64,8 @@ def _first_gap(snapshot, travel, engineer, stops, target, deadline, before_reque
     """Find one five-minute detour that leaves every supplied job interval unchanged."""
     clock = max(snapshot.planning_as_of, snapshot.horizon_start_at, engineer.shift_start_at, release_at(snapshot, engineer) or 0)
     location = engineer.start_location
+    if not isinstance(location, GeoPoint):
+        raise ValueError("INVALID_ENGINEER_LOCATION")
     # Every published non-travel interval occupies time: lunches and legacy handoffs
     # are just as immovable as jobs.  Past stops establish the present anchor only.
     occupied = sorted((stop for stop in stops if stop.get("kind") not in ("wait", "start") and "start_at" in stop and "end_at" in stop), key=lambda item: int(item["start_at"]))
@@ -95,5 +97,7 @@ def _first_gap(snapshot, travel, engineer, stops, target, deadline, before_reque
             # A pickup after the target cannot supply that target's equipment.
             return None
         if next_stop:
+            if next_location is None:
+                return None
             location, clock = next_location, max(clock, int(next_stop["end_at"]))
     return None

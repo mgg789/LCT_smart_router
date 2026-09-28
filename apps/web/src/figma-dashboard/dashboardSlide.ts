@@ -1,4 +1,5 @@
-import type { NavItemId } from './fixtures';
+import { isNavixOffline } from '../domain/mapAvailability';
+import type { NavItemId } from './navigation';
 
 /**
  * Vertical stack of MAIN sidebar tabs, in sidebar order.
@@ -18,14 +19,21 @@ export type StackNavId = (typeof STACK_NAV)[number];
 
 export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy' | 'chats' | 'ai';
 
-/** Sidebar tabs excluded from keyboard and wheel navigation. */
-export const LOCKED_NAV = new Set<NavItemId>(['chats']);
+/**
+ * Sidebar tabs excluded from keyboard and wheel navigation.
+ *
+ * Empty, and kept rather than deleted: it is the one place a tab is withheld, so a tab
+ * that is not ready goes here instead of being commented out of `NAV_ITEMS` and losing
+ * its slot. «Чаты» sat here while the counterpart had nowhere to write from; both phone
+ * apps have that screen now.
+ */
+export const LOCKED_NAV = new Set<NavItemId>();
 
 /**
  * True for a sidebar tab the wheel and the click both skip.
  */
 export function isNavLocked(id: NavItemId): boolean {
-  return LOCKED_NAV.has(id);
+  return LOCKED_NAV.has(id) || (id === 'ai' && isNavixOffline());
 }
 
 /**
@@ -33,7 +41,7 @@ export function isNavLocked(id: NavItemId): boolean {
  */
 export function sidebarWheelNav(current: NavItemId, deltaY: number): NavItemId | null {
   if (deltaY === 0) return null;
-  const unlocked = STACK_NAV.filter((id) => !LOCKED_NAV.has(id));
+  const unlocked = STACK_NAV.filter((id) => !isNavLocked(id));
   if (unlocked.length === 0) return null;
   const step = deltaY > 0 ? 1 : -1;
   const from = unlocked.indexOf(current as StackNavId);

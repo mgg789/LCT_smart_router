@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { observabilityEnv } from '../observability/observability';
 
 /**
  * Environment contract of the System Layer.
@@ -9,6 +10,7 @@ import { z } from 'zod';
  * always describes exactly what the current code needs.
  */
 export const envSchema = z.object({
+  ...observabilityEnv,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   /** TCP port of the HTTP server. */
@@ -48,6 +50,12 @@ export const envSchema = z.object({
 
   /** Road geometry endpoint for the API; takes precedence over the legacy Router key. */
   API_ROAD_API_URL: z.url().optional(),
+
+  /** Render non-metro route geometry as direct endpoint lines (offline contour). */
+  NAVIX_STRAIGHT_ROUTES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 
   /**
    * Optional duration of an entire logical workday in wall-clock seconds. Empty means

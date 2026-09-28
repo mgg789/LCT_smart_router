@@ -5,6 +5,9 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { WindowConfirmationDialog } from './components/WindowConfirmationDialog';
 import { t } from './i18n';
 import './index.css';
+import { startFrontendObservability } from './observability/sentry';
+
+void startFrontendObservability();
 
 const root = document.getElementById('root');
 if (!root) {

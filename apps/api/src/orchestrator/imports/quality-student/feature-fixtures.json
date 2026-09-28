@@ -26,7 +26,7 @@
       "family": "a7d241b0d6e53ec121336d672bdbfc0192f0c1bf1c688409b250bf0461475328",
       "split": "test",
       "variant": "garbage",
-      "address": "@@@ ??? � 999",
+      "address": "@@@ ??? \uFFFD 999",
       "windowMinutes": 0,
       "hasCoordinates": false
     },
@@ -83,7 +83,7 @@
       "family": "88a42300548d4dd6b449b301c697ad498a8b5eb2ae5192b27031635f649a56dc",
       "split": "train",
       "variant": "garbage",
-      "address": "@@@ ??? � 999",
+      "address": "@@@ ??? \uFFFD 999",
       "windowMinutes": 0,
       "hasCoordinates": false
     },

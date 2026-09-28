@@ -1,8 +1,11 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
+import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { clearAssistantSessions } from '../hooks/useAssistantChat';
 import { useDashboard } from '../hooks/useDashboard';
@@ -35,11 +38,12 @@ import {
 } from './dashboardSlide';
 import { EngineerColumn } from './EngineerColumn';
 import { EngineersView } from './EngineersView';
-import { FIGMA_ARTBOARD, type NavItemId, type NotificationTone } from './fixtures';
+import { FIGMA_ARTBOARD, type NotificationTone } from './fixtures';
 import { nextRouterSettings, policyLabel } from './fromSnapshot';
 import { ManualPlanningProvider, openManualPlanning } from './ManualPlanning';
 import { MapCard, RouteCard } from './MapRoute';
 import { McpAgentIndicator } from './McpAgentIndicator';
+import type { NavItemId } from './navigation';
 import { PersonalPolicyDialog } from './PersonalPolicyDialog';
 import {
   type PlanHistoryAnchor,
@@ -148,6 +152,7 @@ export function MainDashboardPage() {
   }, [dash.token, policyOpen]);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
+  const [focusedChatId, setFocusedChatId] = useState<string | null>(null);
   const [settledPane, setSettledPane] = useState('main');
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -383,7 +388,7 @@ export function MainDashboardPage() {
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const metroOn = dash.snapshot?.routerSettings?.metroEnabled ?? false;
   const equipmentTransfersOn = dash.snapshot?.routerSettings?.equipmentTransfersEnabled ?? false;
-  const strictTimeWindowsOn = dash.snapshot?.routerSettings?.strictTimeWindows ?? false;
+  const strictTimeWindowsOn = dash.snapshot?.routerSettings?.strictTimeWindows ?? true;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
   const planLabel = view?.planLabel ?? t('figma-dashboard.MainDashboardPage.4ef18de84c');
@@ -449,7 +454,7 @@ export function MainDashboardPage() {
     dash.applyRoutingSettings(
       dash.snapshot.policyId,
       nextRouterSettings(dash.snapshot, {
-        strictTimeWindows: !(dash.snapshot.routerSettings?.strictTimeWindows ?? false),
+        strictTimeWindows: !(dash.snapshot.routerSettings?.strictTimeWindows ?? true),
       }),
     );
   };
@@ -457,6 +462,9 @@ export function MainDashboardPage() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      // Native import review dialogs own Escape. Closing the parent here would
+      // discard the uploaded file while the review itself stays visible.
+      if (document.querySelector('dialog:modal')) return;
       if (dangerAction) {
         setDangerAction(null);
         return;
@@ -613,6 +621,7 @@ export function MainDashboardPage() {
           width: canvas.width,
           height: canvas.height,
           zoom: canvas.scale,
+          ...{ '--dashboard-scale': canvas.scale },
         }}
         onMouseDown={(event) => {
           const target = event.target as HTMLElement;
@@ -635,7 +644,7 @@ export function MainDashboardPage() {
               activeNav={activeNav}
               motionOn={motionOn}
               onSelect={(id) => {
-                if (isNavLocked(id)) return;
+                if (isNavLocked(id) || (isNavixOffline() && id === 'ai')) return;
                 if (id === 'requests' && activeNav === 'requests') {
                   setOpenedRequestId(null);
                 }
@@ -730,13 +739,15 @@ export function MainDashboardPage() {
                 setPolicyOpen((value) => !value);
               }}
               personalConfigured={personalPolicy !== null}
+              offline={isNavixOffline()}
               personalTitle={personalPolicy?.title}
               onEditPersonal={() => {
                 setPolicyOpen(false);
-                setPersonalPolicyOpen(true);
+                if (!isNavixOffline()) setPersonalPolicyOpen(true);
               }}
               onSelect={(id) => {
                 if (id === 'personal' && !personalPolicy) {
+                  if (isNavixOffline()) return;
                   setPolicyOpen(false);
                   setPersonalPolicyOpen(true);
                 } else applyPolicy(id);
@@ -757,6 +768,7 @@ export function MainDashboardPage() {
               open={personalPolicyOpen}
               motionOn={motionOn}
               onClose={() => setPersonalPolicyOpen(false)}
+              disabled={isNavixOffline()}
               onContinue={() => {
                 setPersonalPolicyOpen(false);
                 setStackDir(stackSlideDir(stackNav, 'ai'));
@@ -858,6 +870,27 @@ export function MainDashboardPage() {
                 setHistorySelection('current');
                 setHistoryError(null);
                 setHistoryOpen(true);
+              }}
+              onDownloadPlan={() => {
+                setUserMenuOpen(false);
+                if (!dash.token || !dash.snapshot?.plan.plan) {
+                  pushToast({
+                    id: 'plan-export',
+                    kind: 'error',
+                    title: t('figma-dashboard.DashboardHeaderControls.downloadPlan'),
+                    body: t('figma-dashboard.MainDashboardPage.exportUnavailable'),
+                  });
+                  return;
+                }
+                dismissToast('plan-export');
+                void downloadCurrentPlan(dash.token).catch(() =>
+                  pushToast({
+                    id: 'plan-export',
+                    kind: 'error',
+                    title: t('figma-dashboard.DashboardHeaderControls.downloadPlan'),
+                    body: t('figma-dashboard.MainDashboardPage.exportFailed'),
+                  }),
+                );
               }}
               onEndDay={() => {
                 setUserMenuOpen(false);
@@ -1022,7 +1055,12 @@ export function MainDashboardPage() {
                 void dash.signOut();
               }}
             />
-            {activeNav === 'requests' && openedRequestId ? null : (
+            {/*
+             * «Чаты» draws its own heading in this slot (Figma CHATS 95:991), the same
+             * way an opened request takes the whole strip over.
+             */}
+            {(activeNav === 'requests' && openedRequestId) ||
+            stackViewKey(stackNav) === 'chats' ? null : (
               <div
                 className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
                 style={{ top: DATE_TOP }}
@@ -1061,7 +1099,22 @@ export function MainDashboardPage() {
                   onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
                 >
                   {stackViewKey(stackNav) === 'chats' ? (
-                    <DashboardChats token={dash.token} />
+                    <DashboardChats
+                      token={dash.token}
+                      focusChatId={focusedChatId}
+                      snapshot={visibleSnapshot}
+                      onOpenEngineer={async (engineerId) => {
+                        if (!dash.token) {
+                          throw new Error(t('figma-dashboard.DashboardAssist.df8d670234'));
+                        }
+                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
+                          kind: 'engineer',
+                          engineerId,
+                        });
+                        setFocusedChatId(chat.handoff.id);
+                        return chat;
+                      }}
+                    />
                   ) : null}
                   {stackViewKey(stackNav) === 'ai' ? (
                     <DashboardAi
@@ -1154,6 +1207,17 @@ export function MainDashboardPage() {
                       onDeleteEngineer={dash.deleteEngineer}
                       onSetAvailability={(engineerId, availability) => {
                         void dash.updateEngineerAvailability(engineerId, availability);
+                      }}
+                      onOpenChat={async (engineerId) => {
+                        if (!dash.token) return;
+                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
+                          kind: 'engineer',
+                          engineerId,
+                        });
+                        setFocusedChatId(chat.handoff.id);
+                        setStackDir(stackSlideDir(stackNav, 'chats'));
+                        setStackNav('chats');
+                        setActiveNav('chats');
                       }}
                     />
                   ) : null}

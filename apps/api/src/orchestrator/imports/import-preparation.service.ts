@@ -11,16 +11,22 @@ import type { OperationContext } from '../../operations';
 import { lockWorkingSetGeneration } from '../../persistence';
 import { readEquipmentSettings } from '../equipment/equipment-policy';
 import { normalizeAddress } from './dataset.parser';
-import { DatasetImportService, type DatasetRegion } from './dataset-import.service';
+import {
+  DatasetImportService,
+  type DatasetRegion,
+  type ImportBatchSummary,
+} from './dataset-import.service';
 import { analyzeImportQuality, type ImportQualityRequest } from './import-quality';
 import { importStudentVersion, screenImportStudent } from './quality-student/student';
 import {
   normalizeUploadPackage,
   type UploadDataPackageInput,
+  type UploadDataPackageSummary,
   UploadImportService,
 } from './upload-import.service';
 
 const PREPARATION_TTL_SEC = 24 * 60 * 60;
+type ImportConfirmationResult = UploadDataPackageSummary | ImportBatchSummary;
 const QUALITY_VERSIONS = {
   rules: 'rules-v1',
   statistics: 'mad-log-v1',
@@ -234,7 +240,11 @@ export class ImportPreparationService {
   }
 
   /** Atomically confirms a stored batch and returns its original result on retries. */
-  async confirm(context: OperationContext, actor: Actor, prepareId: string): Promise<unknown> {
+  async confirm(
+    context: OperationContext,
+    actor: Actor,
+    prepareId: string,
+  ): Promise<ImportConfirmationResult> {
     await lockWorkingSetGeneration(context.tx);
     const row = await this.findOwned(context, actor, prepareId);
     if (row.status === 'confirmed') return parseStoredResponse(row.response);
@@ -386,11 +396,12 @@ function parsePayload(payload: string): z.infer<typeof storedPayloadSchema> {
   return parsed.data;
 }
 
-function parseStoredResponse(response: string | null): unknown {
+function parseStoredResponse(response: string | null): ImportConfirmationResult {
   if (response === null)
     throw new SysError('INTERNAL_ERROR', 'Confirmed import has no stored result');
   try {
-    return JSON.parse(response) as unknown;
+    // Only confirm() writes this result, using the same two import service contracts.
+    return JSON.parse(response) as ImportConfirmationResult;
   } catch {
     throw new SysError('INTERNAL_ERROR', 'Stored import result is unreadable');
   }

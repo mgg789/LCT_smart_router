@@ -902,7 +902,9 @@ export function useDashboard() {
       if (generation !== readGeneration.current || requestId !== comparisonRequestId.current) {
         return;
       }
-      reportFailure(cause);
+      // Comparison conflicts (including MANUAL mode and a stale plan version)
+      // are domain responses, not a lost connection to the live dashboard.
+      if (!(cause instanceof DashboardApiError && cause.status === 409)) reportFailure(cause);
       if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
         handleSessionFailure(t('hooks.useDashboard.6404743fab'));
         return;
@@ -1507,7 +1509,7 @@ function sameRouterSettings(
     left.lunchesEnabled === right.lunchesEnabled &&
     left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
-    (left.strictTimeWindows ?? false) === (right.strictTimeWindows ?? false) &&
+    (left.strictTimeWindows ?? true) === (right.strictTimeWindows ?? true) &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&

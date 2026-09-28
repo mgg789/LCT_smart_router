@@ -90,7 +90,7 @@ export type ConfirmAiOperationDto = z.infer<typeof confirmAiOperationSchema>;
  */
 export const explainRequestSchema = z
   .object({
-    scope: z.enum(['request', 'engineer', 'route', 'alert', 'policy', 'degraded']),
+    scope: z.enum(['request', 'engineer', 'route', 'alert', 'policy', 'plan', 'degraded']),
     requestId: z.string().min(1).optional(),
     engineerId: z.string().min(1).optional(),
     alertId: z.string().min(1).optional(),

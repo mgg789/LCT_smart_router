@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
@@ -27,6 +27,11 @@ export class DispatchAlertsController {
   ) {}
 
   @Get('request-priority')
+  @ApiQuery({
+    name: 'workDate',
+    required: true,
+    schema: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+  })
   @ApiOperation({ summary: 'Current workday request priority and replacement revision' })
   async requestPriority(@Query('workDate') workDate: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate ?? ''))
@@ -99,6 +104,11 @@ export class DispatchAlertsController {
   }
 
   @Get('shift')
+  @ApiQuery({
+    name: 'workDate',
+    required: true,
+    schema: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+  })
   @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
   async shift(@Query('workDate') workDate?: string) {
     if (!workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {

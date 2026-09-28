@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { LOCAL_MAP_BOUNDS, localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { CLIENT_MAP_CENTER, type ClientMapPoint } from './clientPreview';
 
@@ -27,7 +27,7 @@ export function ClientPickMap({
     if (!container.current) return;
     let map: maplibregl.Map | undefined;
     let stopWatching: (() => void) | undefined;
-    let local = !navigator.onLine;
+    let local = !browserMapOnline();
     const fallback = () => {
       if (local || !map) return;
       local = true;
@@ -36,6 +36,12 @@ export function ClientPickMap({
     };
     const online = () => {
       if (!map) return;
+      if (!browserMapOnline()) {
+        local = true;
+        setUnavailable(true);
+        map.setStyle(localMapStyle());
+        return;
+      }
       local = false;
       setUnavailable(false);
       map.setStyle(ONLINE_MAP_STYLE);
@@ -90,7 +96,7 @@ export function ClientPickMap({
       point.lon > LOCAL_MAP_BOUNDS[2] ||
       point.lat < LOCAL_MAP_BOUNDS[1] ||
       point.lat > LOCAL_MAP_BOUNDS[3];
-    if (outside && !navigator.onLine) setUnavailable(true);
+    if (outside && !browserMapOnline()) setUnavailable(true);
     if (markerRef.current) {
       markerRef.current.setLngLat([point.lon, point.lat]);
     } else {

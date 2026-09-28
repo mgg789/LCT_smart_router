@@ -20,6 +20,7 @@ const actor: Actor = {
  * plan acceptance is already holding.
  */
 interface FakeTx {
+  controlState: { findUnique: () => Promise<null> };
   operation: { create: () => Promise<unknown> };
   auditLog: { create: () => Promise<unknown> };
 }
@@ -27,6 +28,11 @@ interface FakeTx {
 function harness() {
   const boundaries: string[] = [];
   const tx: FakeTx = {
+    // Dispatcher operations pass through the manual-conflict guard before the
+    // handler.  A missing singleton means automatic mode in this fixture.
+    controlState: {
+      findUnique: async () => null,
+    },
     operation: {
       create: async () => ({}),
     },

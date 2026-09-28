@@ -80,6 +80,15 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
   const bestCount = policies.length
     ? Math.max(...policies.map((row) => row.metrics.assignedCount))
     : null;
+  const higherCoverageWithMoreKm =
+    fifo && bestCount !== null
+      ? policies.find(
+          (row) =>
+            row.metrics.assignedCount === bestCount &&
+            row.metrics.assignedCount > fifo.metrics.assignedCount &&
+            row.metrics.distanceKm > fifo.metrics.distanceKm,
+        )
+      : null;
   const bestOnTime = policies.length
     ? Math.max(...policies.map((row) => comparisonValue(row, 'onTime') ?? 0))
     : null;
@@ -141,6 +150,14 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
           ? t('figma-dashboard.PolicyComparisonOverview.42a0a48819')
           : ''}
       </p>
+      {higherCoverageWithMoreKm && fifo ? (
+        <p className="text-[15px] leading-[22px] text-figma-muted">
+          {t('figma-dashboard.PolicyComparisonOverview.coverageDistanceNote', {
+            value0: higherCoverageWithMoreKm.metrics.assignedCount,
+            value1: fifo.metrics.assignedCount,
+          })}
+        </p>
+      ) : null}
       <div className="grid grid-cols-1 gap-[20px] lg:grid-cols-2">
         <ComparisonBars
           rows={visible}

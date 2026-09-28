@@ -18,7 +18,11 @@ test('student features match Python training fixtures without including row iden
 
 test('rejected teacher labels and pending human audit cannot enable student warnings', () => {
   assert.equal(
-    screenImportStudent({ address: '@@@ ??? � 999', windowMinutes: 60, hasCoordinates: false }),
+    screenImportStudent({
+      address: '@@@ ??? \uFFFD 999',
+      windowMinutes: 60,
+      hasCoordinates: false,
+    }),
     null,
   );
 });

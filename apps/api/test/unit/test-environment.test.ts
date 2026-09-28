@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -31,4 +31,14 @@ test('explicit test database prevents loading developer service settings', () =>
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('integration tests fail before boot without an isolated test database', () => {
+  const helper = resolve(__dirname, '../support/env.js');
+  const result = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(helper)})`], {
+    encoding: 'utf8',
+    env: { DATABASE_URL: 'postgresql://unused/developer' },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TEST_DATABASE_URL is required/);
 });

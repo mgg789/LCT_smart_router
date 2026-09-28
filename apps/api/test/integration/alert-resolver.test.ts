@@ -2,12 +2,13 @@ import '../support/env';
 
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { RoleProfileService } from '../../src/ai';
 import { AlertResolverService } from '../../src/ai/alerts';
 import { AiOperationService } from '../../src/ai/operations';
+import { ActionGuardService } from '../../src/ai/operations/action-guard';
 import { ReplayProvider } from '../../src/ai/provider';
 import { BudgetService, ConversationService } from '../../src/ai/runtime';
 import { AppModule } from '../../src/app.module';
@@ -44,6 +45,8 @@ describe('alert resolver: suggest -> prepared operation', () => {
     prisma = createTestClient();
     await prisma.$connect();
     context = await NestFactory.createApplicationContext(AppModule, { logger: false });
+    // Keep this prepare-card test independent of an operator's configured live guard.
+    mock.method(context.get(ActionGuardService), 'allows', async () => false);
     roleProfiles = context.get(RoleProfileService);
     const replay = new ReplayProvider(
       resolve(process.cwd(), 'test/fixtures/ai'),

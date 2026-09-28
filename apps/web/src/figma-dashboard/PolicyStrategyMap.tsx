@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SimulationResponse } from '../api/client';
 import type { StrategyId } from '../api/types';
 import { localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { t } from '../i18n';
 import { strategyLabel } from '../lib/policyComparison';
@@ -88,7 +88,7 @@ export function PolicyStrategyMap({
     if (!node) return;
     const map = new maplibregl.Map({
       container: node,
-      style: ONLINE_MAP_STYLE,
+      style: browserMapOnline() ? ONLINE_MAP_STYLE : localMapStyle(),
       center: [37.62, 55.75],
       zoom: 10,
       attributionControl: false,

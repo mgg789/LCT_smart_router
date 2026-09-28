@@ -7,14 +7,26 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
-import { ChatsPage } from '../components/ChatsPage';
+import type { DashboardSnapshot } from '../api/types';
 import { t } from '../i18n';
+import { ChatsView } from './ChatsView';
 import { DashboardAi } from './DispatcherAiPane';
+import { engineerProfilesFromSnapshot } from './engineerRoster';
 
 export { DashboardAi };
 
 /** Dispatcher chat list for the sidebar tab. Reads the handover contour and writes replies. */
-export function DashboardChats({ token }: { token: string | null }) {
+export function DashboardChats({
+  token,
+  focusChatId,
+  snapshot,
+  onOpenEngineer,
+}: {
+  token: string | null;
+  focusChatId?: string | null;
+  snapshot: DashboardSnapshot | null;
+  onOpenEngineer: (engineerId: string) => Promise<DispatchChatView>;
+}) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,14 +63,14 @@ export function DashboardChats({ token }: { token: string | null }) {
   }, [refresh]);
 
   return (
-    <div className="absolute inset-0 overflow-auto bg-figma-canvas p-[32px]">
-      <ChatsPage
+    <div className="absolute inset-0 overflow-hidden bg-figma-canvas">
+      <ChatsView
         token={token}
+        focusChatId={focusChatId}
         chats={chats}
         loading={loading}
         error={error}
         writesDisabled={!token}
-        onRefresh={refresh}
         onSendMessage={async (conversationId, text) => {
           if (!token) return;
           await sendDispatchChatMessage(token, conversationId, crypto.randomUUID(), text);
@@ -72,6 +84,21 @@ export function DashboardChats({ token }: { token: string | null }) {
         onMarkRead={(conversationId, seq) => {
           if (!token) return;
           void readDispatchChat(token, conversationId, crypto.randomUUID(), seq);
+        }}
+        engineers={engineerProfilesFromSnapshot(snapshot).map(
+          ({ id, displayName, hasAccount }) => ({
+            id,
+            displayName,
+            canChat: hasAccount,
+          }),
+        )}
+        onOpenEngineer={async (engineerId) => {
+          const chat = await onOpenEngineer(engineerId);
+          setChats((current) => [
+            chat,
+            ...(current ?? []).filter((item) => item.handoff.id !== chat.handoff.id),
+          ]);
+          return chat;
         }}
       />
     </div>

@@ -1,0 +1,39 @@
+{
+  "date": "2026-09-28",
+  "source_base_commit": "2d76472",
+  "working_tree": true,
+  "environment": {
+    "host": "Windows",
+    "cli_python": "3.13.3",
+    "driver_python": "3.12.10",
+    "docker_engine": "29.7.2",
+    "docker_compose": "5.5.0"
+  },
+  "runtime_checks": {
+    "clean_windows_cli_full_online": true,
+    "full_online_osrm_and_browser": true,
+    "headless_offline_with_new_api_port": true,
+    "full_offline_with_prepared_images": true,
+    "legacy_identity_preserved": true,
+    "remove_then_reinstall_preserved_database_marker": true,
+    "explicit_purge_removed_own_volumes_only": true,
+    "separate_navix_database_marker_preserved": true,
+    "unrelated_containers_preserved": true,
+    "failed_port_change_recovered": true,
+    "smoke_passed": 21,
+    "smoke_total": 21
+  },
+  "observed_seconds": {
+    "initial_image_build": 449.24,
+    "legacy_upgrade_including_cached_build": 125.92,
+    "online_full_to_offline_headless": 62.88,
+    "remove_keep_data_then_reinstall": 67.09
+  },
+  "timing_note": "Different cache states and implementation checkpoints; not a paired performance benchmark.",
+  "not_verified": [
+    "Complete interactive GUI-to-Docker run on Windows",
+    "Full installation on a separate Linux desktop",
+    "Native macOS execution",
+    "Public distribution deployment and HTTPS version response"
+  ]
+}

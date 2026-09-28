@@ -191,7 +191,7 @@ class RouterTechnicalSettings(Record):
     equipment_enabled: bool = True
     equipment_transfers_enabled: bool = False
     metro_enabled: bool = False
-    strict_time_windows: bool = False
+    strict_time_windows: bool = True
     window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
@@ -641,6 +641,9 @@ class RouterResult(Record):
     main_evidence: PlanEvidence | None = None
     baseline_evidence: PlanEvidence | None = None
     regional_progress: list["RegionalProgress"] = Field(default_factory=list)
+    # Hybrid mode report (docs/route3.md): /route3 verification drift per route
+    # and the corrected quotes used when a window breach forced a re-solve.
+    verification: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     errors: list[Diagnostic] = Field(default_factory=list)
 
     @model_validator(mode="after")

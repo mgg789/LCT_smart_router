@@ -36,4 +36,6 @@ it('shows the calculated plan delta and rollback action', () => {
   expect(html).toContain('Ирина Соколова');
   expect(html).toContain('Обед сдвинут');
   expect(html).toContain('Вернуть прежний план');
+  expect(html).toContain('За отведённое время');
+  expect(html).toContain('глобальная или локальная оптимальность');
 });

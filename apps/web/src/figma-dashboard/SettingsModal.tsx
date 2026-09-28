@@ -22,8 +22,10 @@ import type {
   McpSettingsView,
   RouterTechnicalSettings,
 } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { formatMoscowDate, moscowAt } from '../lib/time';
+import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
 import { downloadMcpSetupMd, generateMcpPin } from './mcpSetup';
@@ -31,7 +33,6 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
-const CAPSULE_SPRING = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.72 };
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
@@ -110,6 +111,7 @@ export function SettingsModal({
     router: RouterTechnicalSettings;
   }) => Promise<void>;
 }) {
+  const offline = isNavixOffline();
   const [tab, setTab] = useState<SettingsTab>('general');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -131,14 +133,14 @@ export function SettingsModal({
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
-    setTab(initialTab);
+    setTab(offline && (initialTab === 'ai' || initialTab === 'maps') ? 'general' : initialTab);
     setError(null);
     setTwogisKey('');
     setYandexKey('');
     setClearTwogis(false);
     setClearYandex(false);
     setDraft(generalFrom(undefined, routerRef.current));
-  }, [open, initialTab]);
+  }, [open, initialTab, offline]);
 
   useEffect(() => {
     if (!open) return;
@@ -148,7 +150,10 @@ export function SettingsModal({
     }
     let cancelled = false;
     setLoading(true);
-    void Promise.all([getDispatcherSettings(token), getMapProvidersStatus(token).catch(() => null)])
+    void Promise.all([
+      getDispatcherSettings(token),
+      offline ? Promise.resolve(null) : getMapProvidersStatus(token).catch(() => null),
+    ])
       .then(([settings, status]) => {
         if (cancelled) return;
         setServer(settings);
@@ -167,7 +172,7 @@ export function SettingsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, token]);
+  }, [open, token, offline]);
 
   const setField = <K extends keyof GeneralDraft>(key: K, value: GeneralDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -210,7 +215,7 @@ export function SettingsModal({
           </button>
         </div>
 
-        <TabSwitch tab={tab} motionOn={motionOn} onChange={setTab} />
+        <TabSwitch tab={tab} motionOn={motionOn} onChange={setTab} offline={offline} />
 
         <div
           className={`mt-[16px] min-h-0 flex-1 ${tab === 'ai' ? 'overflow-hidden' : 'overflow-y-auto [scrollbar-width:thin]'}`}
@@ -222,20 +227,40 @@ export function SettingsModal({
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
-          {tab === 'ai' ? <AiForm token={token} /> : null}
+          {tab === 'ai' ? (
+            offline ? (
+              <p
+                role="status"
+                className="rounded-[16px] bg-figma-soft p-[16px] text-[16px] text-figma-muted"
+              >
+                {t('common.offlineContour')}
+              </p>
+            ) : (
+              <AiForm token={token} />
+            )
+          ) : null}
           {tab === 'maps' ? (
-            <MapsForm
-              server={server}
-              twogisKey={twogisKey}
-              yandexKey={yandexKey}
-              clearTwogis={clearTwogis}
-              clearYandex={clearYandex}
-              status={mapStatus}
-              onTwogisKey={setTwogisKey}
-              onYandexKey={setYandexKey}
-              onClearTwogis={setClearTwogis}
-              onClearYandex={setClearYandex}
-            />
+            offline ? (
+              <p
+                role="status"
+                className="rounded-[16px] bg-figma-soft p-[16px] text-[16px] text-figma-muted"
+              >
+                {t('common.offlineContour')}
+              </p>
+            ) : (
+              <MapsForm
+                server={server}
+                twogisKey={twogisKey}
+                yandexKey={yandexKey}
+                clearTwogis={clearTwogis}
+                clearYandex={clearYandex}
+                status={mapStatus}
+                onTwogisKey={setTwogisKey}
+                onYandexKey={setYandexKey}
+                onClearTwogis={setClearTwogis}
+                onClearYandex={setClearYandex}
+              />
+            )
           ) : null}
         </div>
 
@@ -346,43 +371,30 @@ function TabSwitch({
   tab,
   motionOn,
   onChange,
+  offline,
 }: {
   tab: SettingsTab;
   motionOn: boolean;
   onChange: (tab: SettingsTab) => void;
+  offline: boolean;
 }) {
-  const index = TABS.findIndex((item) => item.id === tab);
   return (
-    <div className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
-      <div className="relative grid h-full grid-cols-4">
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/4 rounded-full bg-figma-ink"
-          initial={false}
-          animate={{ x: `${index * 100}%` }}
-          transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
-        />
-        {TABS.map((item) => {
-          const active = item.id === tab;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onChange(item.id)}
-              className="relative z-10 flex h-full items-center justify-center rounded-full"
-            >
-              <span
-                className={`font-semibold text-[16px] tracking-[-0.3px] ${
-                  active ? 'text-white' : 'text-figma-ink'
-                }`}
-              >
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
+    <AnimatedCapsuleTabs
+      items={TABS.map((item) => ({
+        ...item,
+        disabled: offline && (item.id === 'ai' || item.id === 'maps'),
+        title:
+          offline && (item.id === 'ai' || item.id === 'maps')
+            ? t('common.offlineContour')
+            : undefined,
+      }))}
+      value={tab}
+      onChange={onChange}
+      motionOn={motionOn}
+      label={t('figma-dashboard.SettingsModal.985b5e0f2c')}
+      className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]"
+      textClassName="font-semibold text-[16px] tracking-[-0.3px]"
+    />
   );
 }
 

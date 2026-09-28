@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { optimizePlanWithAi, predictSituation, type SituationPredictionView } from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
+import { isNavixOffline } from '../domain/mapAvailability';
 import {
   type AdviceLine,
   type PlanQualityAdvice,
@@ -59,7 +60,7 @@ export function PlanMetricsModal({
   // snapshot/identity/plan are read through the closure on purpose.
   // biome-ignore lint/correctness/useExhaustiveDependencies: identity-driven refresh
   useEffect(() => {
-    if (!open || !snapshot || !token || !identity || !plan) {
+    if (isNavixOffline() || !open || !snapshot || !token || !identity || !plan) {
       setPrediction(null);
       setPending(false);
       setFailed(false);
@@ -163,24 +164,7 @@ export function PlanMetricsModal({
           pending={pending}
           failed={failed}
           hasPlan={plan !== null}
-          token={token}
-          context={{
-            advice,
-            metrics,
-            prediction,
-            policyId: snapshot?.policyId ?? null,
-            engineers: (snapshot?.engineers ?? []).slice(0, 8).map((engineer) => ({
-              name: engineer.displayName,
-              availability: engineer.day?.availability ?? null,
-              transport: engineer.transportType,
-              skills: engineer.skills,
-            })),
-            routes: (plan?.routes ?? []).map((route) => ({
-              assigned: route.assignedCount,
-              distanceKm: route.distanceKm,
-              travelMin: Math.round(route.travelTimeSec / 60),
-            })),
-          }}
+          token={isNavixOffline() ? null : token}
           onOpenRequest={onOpenRequest}
         />
         {metrics ? (
@@ -210,7 +194,7 @@ export function PlanMetricsModal({
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
             <OptimizeButton
-              token={token}
+              token={isNavixOffline() ? null : token}
               summary={JSON.stringify({ advice, metrics, prediction })}
             />
           </dl>
@@ -230,7 +214,6 @@ function QualityCard({
   failed,
   hasPlan,
   token,
-  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice | null;
@@ -238,7 +221,6 @@ function QualityCard({
   failed: boolean;
   hasPlan: boolean;
   token: string | null;
-  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   if (!hasPlan) return null;
@@ -256,30 +238,26 @@ function QualityCard({
       </div>
     );
   }
-  return (
-    <QualityBody advice={advice} token={token} context={context} onOpenRequest={onOpenRequest} />
-  );
+  return <QualityBody advice={advice} token={token} onOpenRequest={onOpenRequest} />;
 }
 
 function QualityBody({
   advice,
   token,
-  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice;
   token: string | null;
-  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   const reduce = useReducedMotion();
   const explainable = advice.band === 'yellow' || advice.band === 'red';
+  const offline = isNavixOffline();
   const [aiOn, setAiOn] = useState(false);
   const { text: aiText, ready: aiReady } = useAiExplanation({
     enabled: aiOn,
     token,
-    kind: 'plan',
-    context,
+    target: { scope: 'plan' },
   });
   return (
     <section
@@ -288,6 +266,7 @@ function QualityBody({
       {explainable ? (
         <button
           type="button"
+          disabled={offline}
           aria-label={
             aiOn
               ? t('figma-dashboard.PlanMetricsModal.83290b9944')
@@ -299,7 +278,7 @@ function QualityBody({
               : t('figma-dashboard.PlanMetricsModal.f50242f50b')
           }
           onClick={() => setAiOn((value) => !value)}
-          className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10"
+          className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {aiOn ? (
             <TintIcon src="/figma/explain-default.svg" color="currentColor" size={18} />
@@ -399,13 +378,18 @@ function AdviceSentence({
 
 /** Reserved AI action. It does not change the plan until a model is connected. */
 function OptimizeButton({ token, summary }: { token: string | null; summary: string }) {
+  const offline = isNavixOffline();
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   return (
     <button
       type="button"
-      disabled={!token || pending}
-      title={note ?? t('figma-dashboard.PlanMetricsModal.202a8a5212')}
+      disabled={offline || !token || pending}
+      title={
+        offline
+          ? t('common.offlineContour')
+          : (note ?? t('figma-dashboard.PlanMetricsModal.202a8a5212'))
+      }
       onClick={() => {
         if (!token || pending) return;
         setPending(true);

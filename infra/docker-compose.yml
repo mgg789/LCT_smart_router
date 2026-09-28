@@ -87,6 +87,23 @@ services:
       ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_ROAD_API_CACHE: /app/state/road-api-cache
       ROUTER_ROAD_API_MAP_VERSION: moscow-mkad
+      # Universal route engine v3 (/route3, /matrix3, /metro3): car matrix with
+      # traffic, pedestrian/cyclist graph and metro paths as pluggable graphs.
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
+      ROUTER_HYBRID: ${ROUTER_HYBRID:-false}
+      ROUTER_METRICS_ENABLED: ${ROUTER_METRICS_ENABLED:-false}
+      ROUTER_OTEL_ENABLED: ${ROUTER_OTEL_ENABLED:-false}
+      ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
+      ROUTER_OTEL_TRACE_SAMPLE_RATIO: ${ROUTER_OTEL_TRACE_SAMPLE_RATIO:-0.1}
+      ROUTER_SENTRY_ENABLED: ${ROUTER_SENTRY_ENABLED:-false}
+      ROUTER_SENTRY_DSN: ${ROUTER_SENTRY_DSN:-}
+      ROUTER_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+      ROUTER_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # Optional read-only catalog cache. No dependency: Router keeps working if Redis is down.
+      ROUTER_REDIS_BETA: ${ROUTER_REDIS_BETA:-false}
+      ROUTER_REDIS_URL: ${ROUTER_REDIS_URL:-}
+      ROUTER_REDIS_NAMESPACE: ${ROUTER_REDIS_NAMESPACE:-lct-smart-router}
+      ROUTER_REDIS_TTL_SEC: ${ROUTER_REDIS_TTL_SEC:-600}
     command:
       - serve
       - --official-regions
@@ -111,6 +128,32 @@ services:
         condition: service_completed_successfully
     ports:
       - '127.0.0.1:${ROUTER_PORT:-8100}:8100'
+
+  redis:
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
+    profiles: [redis-beta]
+    restart: unless-stopped
+    user: redis
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    pids_limit: 64
+    tmpfs: ['/data:mode=1777,size=16m']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        test -n "$${REDIS_PASSWORD}" || { echo 'Redis beta password is required' >&2; exit 1; };
+        exec redis-server --requirepass "$${REDIS_PASSWORD}" --save '' --appendonly no
+        --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 2s
+      retries: 3
 
   api:
     build:
@@ -144,6 +187,7 @@ services:
       # The API borrows selected-leg polylines. Router prepares costs separately
       # from the same road service before searching; it never queries each move.
       API_ROAD_API_URL: ${API_ROAD_API_URL:-http://road-api:8123}
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:
@@ -181,7 +225,8 @@ services:
       timeout: 5s
       retries: 3
 
-  # MKAD road graph (OSRM MLD, vendored under services/road-api/osrm). Serves road
+  # MKAD road graph (OSRM MLD, vendored under services/route-engine3/graphs/car —
+  # one vendored copy shared by road-api and route-engine3). Serves road
   # geometry and travel times to the road-api below; graph pages are copied into a
   # tmpfs so cold queries stay in milliseconds (services/road-api/README.md).
   osrm:
@@ -193,7 +238,7 @@ services:
       sh -c 'cp /src/moscow-mkad.osrm* /graph/ &&
       osrm-routed --algorithm mld --max-table-size 4096 /graph/moscow-mkad.osrm'
     volumes:
-      - ../services/road-api/osrm:/src:ro
+      - ../services/route-engine3/graphs/car:/src:ro
     tmpfs:
       - /graph:size=768m
 
@@ -218,10 +263,40 @@ services:
       retries: 10
       start_period: 60s
 
+  # Universal route engine v3 (docs/route3.md): a self-contained unit that
+  # supervises one osrm-routed per graph folder (graphs/car, graphs/foot — drop
+  # a folder to add a graph) and serves /route3, /matrix3, /metro3. Walk/bike
+  # costs are flat average speeds; traffic forecasting applies to car only.
+  route-engine3:
+    build:
+      context: ../services/route-engine3
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      METRO_DATA_PATH: /srv/metro/moscow.json
+    volumes:
+      - ../services/route-engine3/graphs:/srv/graphs:ro
+      - ../core/resources/metro:/srv/metro:ro
+    tmpfs:
+      # Both vendored graphs are copied here before osrm-routed starts so that
+      # every query stays in memory rather than faulting over the bind mount.
+      - /graph-pages:size=1024m
+    healthcheck:
+      test: ['CMD-SHELL', 'python3 -c "import json,urllib.request; assert json.load(urllib.request.urlopen(\"http://127.0.0.1:8124/health\", timeout=25))[\"ready\"]"']
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 90s
+
   web:
     build:
       context: ..
       dockerfile: apps/web/Dockerfile
+      args:
+        VITE_SENTRY_ENABLED: ${VITE_SENTRY_ENABLED:-false}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
+        VITE_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     restart: unless-stopped
     depends_on:
       api:
@@ -229,7 +304,28 @@ services:
     ports:
       - '127.0.0.1:${WEB_PORT:-5173}:80'
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=7d', '--storage.tsdb.retention.size=1GB']
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - '127.0.0.1:${PROMETHEUS_PORT:-9090}:9090'
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.133.0
+    profiles: [observability]
+    restart: unless-stopped
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes:
+      - ./observability/otel-collector.yml:/etc/otelcol/config.yaml:ro
+    # OTLP is internal to the compose network; no public ingestion port.
+
 volumes:
+  prometheus-data:
   # Named volume, not a bind mount: an ordinary restart must keep the working plan, the
   # control mode and lunch facts (context/43 section 11.3). Removing this volume is not
   # a substitute for the application's own "full reset" action.

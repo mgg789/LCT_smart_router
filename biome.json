@@ -12,6 +12,7 @@
       "!**/dist",
       "!**/dist-test",
       "!**/generated",
+      "!apps/api/src/openapi/openapi.json",
       "!**/artifacts",
       "!**/.mimosa"
     ]

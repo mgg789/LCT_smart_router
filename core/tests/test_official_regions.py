@@ -101,7 +101,7 @@ def test_official_import_emits_regions_and_optional_lunch_window():
 def test_south_central_official_golden():
     """Run the second official region through the same strict importer and Engine."""
     scenario = load_official_region(DATASET, "south_central")
-    settings = SearchSettings(**GOLDEN["settings"])
+    settings = SearchSettings(**GOLDEN["settings"], strict_time_windows=False)
     travel = configure_travel(
         GraphTravel(scenario.graph), settings.technical(), scenario.snapshot.planning_as_of
     )

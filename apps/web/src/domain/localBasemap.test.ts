@@ -128,4 +128,66 @@ describe('real local demo basemap', () => {
       }
     }
   });
+
+  it('has nearby road geometry across the full interior of MKAD', () => {
+    const map = collection.parse(
+      JSON.parse(
+        readFileSync(
+          new URL('../../public/maps/official-regions.geojson', import.meta.url),
+          'utf8',
+        ),
+      ),
+    );
+    const mkad = z
+      .object({
+        features: z.array(
+          z.object({
+            geometry: z.object({ coordinates: z.array(z.array(point)) }),
+          }),
+        ),
+      })
+      .parse(
+        JSON.parse(
+          readFileSync(
+            new URL('../../../../services/road-api/data/mkad-exact.geojson', import.meta.url),
+            'utf8',
+          ),
+        ),
+      ).features[0]?.geometry.coordinates[0];
+    expect(mkad).toBeDefined();
+    if (!mkad) return;
+    const cells = new Set<string>();
+    for (const feature of map.features) {
+      if (feature.properties.kind !== 'road' || feature.geometry.type !== 'LineString') continue;
+      for (const [lon, lat] of feature.geometry.coordinates) {
+        cells.add(`${Math.floor(lon * 100)},${Math.floor(lat * 100)}`);
+      }
+    }
+    const insideMkad = (lon: number, lat: number): boolean => {
+      let inside = false;
+      for (let i = 0, j = mkad.length - 1; i < mkad.length; j = i++) {
+        const [xi, yi] = mkad[i] ?? [0, 0];
+        const [xj, yj] = mkad[j] ?? [0, 0];
+        if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi)
+          inside = !inside;
+      }
+      return inside;
+    };
+    let checked = 0;
+    for (let lon = 37.38; lon < 37.84; lon += 0.03) {
+      for (let lat = 55.58; lat < 55.91; lat += 0.03) {
+        if (!insideMkad(lon, lat)) continue;
+        checked++;
+        const x = Math.floor(lon * 100);
+        const y = Math.floor(lat * 100);
+        expect(
+          [-2, -1, 0, 1, 2].some((dx) =>
+            [-2, -1, 0, 1, 2].some((dy) => cells.has(`${x + dx},${y + dy}`)),
+          ),
+          `MKAD interior road coverage at ${lat},${lon}`,
+        ).toBe(true);
+      }
+    }
+    expect(checked).toBeGreaterThan(75);
+  });
 });

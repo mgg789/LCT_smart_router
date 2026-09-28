@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { LOCAL_MAP_BOUNDS, localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { t } from '../i18n';
 
 /** Real request coordinates on the shared offline-capable street map. */
@@ -12,7 +12,7 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
     if (!container.current) return;
     let map: maplibregl.Map | undefined;
     let stopWatching: (() => void) | undefined;
-    let local = !navigator.onLine;
+    let local = !browserMapOnline();
     const outsideCoverage =
       lon < LOCAL_MAP_BOUNDS[0] ||
       lon > LOCAL_MAP_BOUNDS[2] ||
@@ -26,6 +26,12 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
     };
     const online = () => {
       if (!map) return;
+      if (!browserMapOnline()) {
+        local = true;
+        setUnavailable(outsideCoverage);
+        map.setStyle(localMapStyle());
+        return;
+      }
       local = false;
       setUnavailable(false);
       map.setStyle(ONLINE_MAP_STYLE);

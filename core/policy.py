@@ -144,8 +144,11 @@ def compile_policy(policy: Policy) -> PolicySpec:
     if policy.policy_id == "personal":
         # Contract validation guarantees a permutation of supported safe objectives.
         order = cast(str, policy.parameters["objective_order"])
-        criteria = tuple(cast(Criterion, item) for item in order.split(","))
-        stages = ("coverage", *(cast(SearchStage, item) for item in order.split(",")))
+        criteria: tuple[Criterion, ...] = tuple(cast(Criterion, item) for item in order.split(","))
+        stages: tuple[SearchStage, ...] = (
+            "coverage",
+            *(cast(SearchStage, item) for item in order.split(",")),
+        )
         return PolicySpec("personal", "personal-1-" + sha256(order.encode()).hexdigest()[:16], _COVERAGE + criteria, stages)
     try:
         return _CATALOG[policy.policy_id]
@@ -187,10 +190,10 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         "emergency_unassigned": sum(requests[a.request_id].category == "emergency" for a in plan.assignments if a.status == "unassigned"),
         "dispatcher_unassigned": sum(requests[a.request_id].dispatcher_priority for a in plan.assignments if a.status == "unassigned"),
         "dispatcher_response_delay": sum(max(0, stop.start_at - max(snapshot.horizon_start_at, requests[stop.request_id].ready_at))
-            for stop in job_stops if requests[stop.request_id].dispatcher_priority),
+            for stop in job_stops if stop.request_id is not None and requests[stop.request_id].dispatcher_priority),
         "connection_unassigned": sum(requests[a.request_id].category == "connection" for a in plan.assignments if a.status == "unassigned"),
         "emergency_response_delay": sum(max(0, stop.start_at - max(snapshot.horizon_start_at, requests[stop.request_id].ready_at))
-            for stop in job_stops if requests[stop.request_id].category == "emergency"),
+            for stop in job_stops if stop.request_id is not None and requests[stop.request_id].category == "emergency"),
         "total_lateness": summary.total_lateness_sec,
         "window_end_risk": -(summary.min_window_slack_sec or 0),
         "max_workload_ratio": max(workloads, default=0),

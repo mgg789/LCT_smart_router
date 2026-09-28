@@ -31,6 +31,16 @@ describe('buildClientSystemPrompt', () => {
     assert.ok(!prompt.includes('call_dispatch_helper'), 'a tool not offered must not be named');
   });
 
+  it('explains human handoff when the dispatcher tool is available', () => {
+    const prompt = buildClientSystemPrompt({
+      now: NOW,
+      timeZone: TIME_ZONE,
+      toolNames: ['call_dispatch_helper'],
+    });
+    assert.match(prompt, /call_dispatch_helper/);
+    assert.match(prompt, /same turn/);
+  });
+
   it('lists all 16 work-type codes from the real catalogue', () => {
     const prompt = buildClientSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
     assert.equal(WORK_TYPE_CODES.length, 16);

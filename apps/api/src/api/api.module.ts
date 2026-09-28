@@ -22,6 +22,7 @@ import { DispatchAlertsController } from './dispatch-alerts.controller';
 import { DispatchChatsController } from './dispatch-chats.controller';
 import { DispatchDataController } from './dispatch-data.controller';
 import { DispatchEngineersController } from './dispatch-engineers.controller';
+import { DispatchExportsController } from './dispatch-exports.controller';
 import { DispatchLiveController } from './dispatch-live.controller';
 import { DispatchPlanHistoryController } from './dispatch-plan-history.controller';
 import { DispatchRequestsController } from './dispatch-requests.controller';
@@ -69,6 +70,7 @@ import { RewardsController } from './rewards.controller';
     DispatchAlertsController,
     DispatchDataController,
     DispatchEngineersController,
+    DispatchExportsController,
     DispatchLiveController,
     DispatchPlanHistoryController,
     DispatchRequestsController,

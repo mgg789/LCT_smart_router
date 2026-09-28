@@ -183,3 +183,23 @@ def test_imported_roads_apply_timing_once(snapshot, graph):
     )
     travel = planning_travel(overlay, settings, snapshot, offline=True)
     assert travel.quote(graph.nodes[0].location, graph.nodes[1].location, "car").duration_sec == 160
+
+
+def test_planning_travel_reuses_prepared_providers_across_replans(
+    snapshot, graph, monkeypatch, tmp_path
+):
+    """The process cache returns the same immutable providers on a replan."""
+    monkeypatch.setenv("ROUTER_ROAD_API_URL", "http://roads.test")
+    monkeypatch.setenv("ROUTER_ROAD_API_CACHE", str(tmp_path))
+    from core import planning_travel as module
+
+    monkeypatch.setattr(module, "_PREPARED_CACHE", {})
+    settings = SearchSettings(traffic_enabled=False, access_buffer_sec=0, metro_enabled=False)
+    first = module._prepared_travel(graph, settings, snapshot, offline=True)
+    second = module._prepared_travel(graph, settings, snapshot, offline=True)
+    assert first is second  # one GraphTravel per graph version per process
+    # A different graph version builds a different provider.
+    rebuilt_graph = graph.model_copy(update={"version": "graph-v2"})
+    third = module._prepared_travel(rebuilt_graph, settings, snapshot, offline=True)
+    assert third is not first
+    module._PREPARED_CACHE.clear()

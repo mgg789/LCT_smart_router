@@ -10,7 +10,7 @@ import {
   withoutMapLunch,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
-import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { browserMapOnline, ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import {
   MAP_CANVAS,
   MAP_EMERGENCY,
@@ -341,10 +341,10 @@ export function DayMap({
   handoffs = [],
   onSelectRequest,
 }: DayMapProps) {
-  const [forceLocal, setForceLocal] = useState(!navigator.onLine);
+  const [forceLocal, setForceLocal] = useState(!browserMapOnline());
   const [retry, setRetry] = useState(0);
   useEffect(() => {
-    const update = () => setForceLocal(!navigator.onLine);
+    const update = () => setForceLocal(!browserMapOnline());
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
     return () => {
@@ -390,6 +390,7 @@ export function DayMap({
     }
     let fallback = forceLocal;
     const markReady = () => setMapReady(true);
+    map.on('load', markReady);
     map.on('idle', markReady);
     const activateLocalMap = () => {
       if (fallback) return;
@@ -417,6 +418,7 @@ export function DayMap({
     return () => {
       observer.disconnect();
       stopWatching();
+      map.off('load', markReady);
       map.off('idle', markReady);
       map.remove();
       mapRef.current = null;

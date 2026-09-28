@@ -1,6 +1,6 @@
-"""Convert one cached Overpass `out geom` response into the attributed offline official-region map.
+"""Merge cached Overpass `out geom` responses into the attributed offline city map.
 
-Usage: python apps/web/scripts/prepare-basemap.py INPUT_JSON
+Usage: python apps/web/scripts/prepare-basemap.py BASE_JSON WEST_JSON NORTH_JSON
 The output is ODbL map data, not a route or a routing matrix. No network calls are made.
 """
 
@@ -9,8 +9,31 @@ import hashlib
 import json
 from pathlib import Path
 
-BOUNDS = [37.50, 54.80, 38.20, 55.81]
-QUERY = '[out:json][timeout:50][maxsize:134217728];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](54.80,37.50,55.81,38.20);way["waterway"~"^(river|canal)$"](54.80,37.50,55.81,38.20);way["natural"="water"](54.80,37.50,55.81,38.20);way["leisure"="park"](54.80,37.50,55.81,38.20););out geom;'
+BOUNDS = [37.35, 54.80, 38.20, 55.93]
+SOURCE_AREAS = [
+    ("official-regions", [37.50, 54.80, 38.20, 55.81], "https://maps.mail.ru/osm/tools/overpass/api/interpreter", 50, 134217728),
+    ("mkad-west", [37.35, 55.55, 37.50, 55.93], "https://overpass.kumi.systems/api/interpreter", 180, 134217728),
+    ("mkad-north", [37.50, 55.81, 37.86, 55.93], "https://overpass.kumi.systems/api/interpreter", 180, 134217728),
+]
+
+
+def query(bounds: list[float], timeout: int, maxsize: int) -> str:
+    """Describe the exact selected OSM classes and bounding rectangle."""
+    west, south, east, north = bounds
+    bbox = f"({south:.2f},{west:.2f},{north:.2f},{east:.2f})"
+    return (
+        f"[out:json][timeout:{timeout}][maxsize:{maxsize}];("
+        + "".join(
+            f'way[{tag}]{bbox};'
+            for tag in (
+                '"highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"',
+                '"waterway"~"^(river|canal)$"',
+                '"natural"="water"',
+                '"leisure"="park"',
+            )
+        )
+        + ");out geom;"
+    )
 
 
 def simplify(points: list[list[float]], epsilon: float = 0.00004) -> list[list[float]]:
@@ -85,11 +108,29 @@ def convert(source: dict) -> dict:
 def main() -> None:
     """Write the map and provenance manifest to the public, offline-cached asset directory."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path)
+    parser.add_argument("inputs", type=Path, nargs=3)
     args = parser.parse_args()
-    raw = args.input.read_bytes()
-    source = json.loads(raw)
-    data = convert(source)
+    sources = []
+    ways = {}
+    for path, (name, bounds, endpoint, timeout, maxsize) in zip(args.inputs, SOURCE_AREAS, strict=True):
+        raw = path.read_bytes()
+        source = json.loads(raw)
+        if source.get("remark") or not source.get("elements"):
+            raise ValueError(f"Incomplete Overpass response: {name}")
+        # The established regional extract is newer than the fallback mirror.
+        # Keep its version for overlapping OSM ids; the strips only fill gaps.
+        for way in source["elements"]:
+            ways.setdefault(way["id"], way)
+        sources.append({
+            "area": name,
+            "endpoint": endpoint,
+            "bounds": bounds,
+            "query": query(bounds, timeout, maxsize),
+            "sourceTimestamp": source["osm3s"]["timestamp_osm_base"],
+            "sourceSha256": hashlib.sha256(raw).hexdigest(),
+            "elementCount": len(source["elements"]),
+        })
+    data = convert({"elements": [ways[id] for id in sorted(ways)]})
     output = Path(__file__).resolve().parents[1] / "public/maps"
     output.mkdir(parents=True, exist_ok=True)
     payload = (
@@ -101,12 +142,9 @@ def main() -> None:
         "license": "ODbL-1.0",
         "licenseUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
         "attributionUrl": "https://www.openstreetmap.org/copyright",
-        "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-        "sourceTimestamp": source["osm3s"]["timestamp_osm_base"],
         "bounds": BOUNDS,
-        "regions": ["east", "south_central", "southeast"],
-        "query": QUERY,
-        "sourceSha256": hashlib.sha256(raw).hexdigest(),
+        "regions": ["inside_mkad", "east", "south_central", "southeast"],
+        "sources": sources,
         "fileSha256": hashlib.sha256(payload).hexdigest(),
         "featureCount": len(data["features"]),
         "transform": "OSM ways only; selected road/water/park tags; coordinates rounded to 6 decimals then simplified at 0.00004 degrees (<=4.5 m latitude). Ways intersect the query bbox; full way geometry may extend outside it. No buildings or address guarantee.",

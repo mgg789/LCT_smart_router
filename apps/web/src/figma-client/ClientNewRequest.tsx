@@ -3,6 +3,7 @@ import { ArrowRight, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useWorkTypes } from '../api/workTypes';
 import { WorkTypePicker } from '../components/WorkTypePicker';
+import { isNavixOffline } from '../domain/mapAvailability';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { locale, t } from '../i18n';
@@ -63,12 +64,12 @@ export function ClientNewRequest({
     draft.workType ?? (draft.problem ? (CLIENT_PROBLEM_WORK[draft.problem]?.workType ?? '') : '');
   const emergency =
     catalogue.rows.find((row) => row.code === selectedCode)?.category === 'emergency';
-  const [mode, setMode] = useState<'story' | 'form'>(initialMode);
+  const [mode, setMode] = useState<'story' | 'form'>(isNavixOffline() ? 'form' : initialMode);
   /**
    * What is on screen, which trails what was asked for: the leaving half keeps
    * the layout it was drawn in until the arriving half is there to take it.
    */
-  const [shown, setShown] = useState<'story' | 'form'>(initialMode);
+  const [shown, setShown] = useState<'story' | 'form'>(isNavixOffline() ? 'form' : initialMode);
   const onModeChangeRef = useRef(onModeChange);
   onModeChangeRef.current = onModeChange;
   useEffect(() => {
@@ -209,6 +210,7 @@ export function ClientNewRequest({
   };
 
   const revealForm = () => {
+    if (isNavixOffline()) return;
     const local = { ...draftRef.current };
     setTracing(false);
     setMode('form');
@@ -685,8 +687,10 @@ function ModeSwitch({
           type="button"
           role="tab"
           aria-selected={mode === id}
+          disabled={id === 'story' && isNavixOffline()}
+          title={id === 'story' && isNavixOffline() ? t('common.offlineContour') : undefined}
           onClick={() => onChange(id)}
-          className="relative z-10 flex-1 font-semibold text-figma-ink"
+          className="relative z-10 flex-1 font-semibold text-figma-ink disabled:opacity-40 disabled:cursor-not-allowed"
           style={{ fontSize: eu(18) }}
         >
           {label}
