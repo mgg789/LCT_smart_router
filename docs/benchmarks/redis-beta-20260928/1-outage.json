@@ -1,0 +1,252 @@
+{
+  "label": "1-outage",
+  "python": "3.14.7",
+  "code_version": "a273a5b5abf8472af1d8",
+  "input_hash": "cefeb7b62c15ee16992ef5cc42d82063b609d0a11c972a0e4d3b02d30bec94cc",
+  "graph_hash": "1aef933bfbcfc4aaf88008f200c081ec668fe1daf98e0f0c618ef98f00cfdcfd",
+  "settings": {
+    "time_limit_ms": 1000,
+    "solution_limit": 10000,
+    "lunches_enabled": false,
+    "traffic_enabled": true,
+    "equipment_enabled": true,
+    "equipment_transfers_enabled": false,
+    "metro_enabled": false,
+    "strict_time_windows": true,
+    "window_lateness_tolerance_sec": 600,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600,
+    "tolerance_sec": null
+  },
+  "requests": 66,
+  "ready_ms": 5317.582,
+  "first_catalog_ms": 12316.367,
+  "warm_catalog_ms": [
+    434.486,
+    418.331,
+    432.695,
+    304.253,
+    402.59
+  ],
+  "status_ms": [
+    2.847,
+    0.657,
+    0.67,
+    0.993,
+    0.911,
+    0.692,
+    0.735,
+    0.901,
+    1.008,
+    0.66,
+    0.623,
+    0.614,
+    0.632,
+    0.593,
+    0.594,
+    0.595,
+    0.638,
+    0.702,
+    0.713,
+    0.641
+  ],
+  "result_ms": [
+    29.555,
+    31.909,
+    30.607,
+    154.566,
+    29.539,
+    29.512,
+    30.339,
+    29.977,
+    29.909,
+    30.442
+  ],
+  "active_plan_digest": "c4a332ed60a9c24d3edea207d24df5048094bb887e659c7febd37c68830a7d4b",
+  "comparison_digest": "d9d590e7cfc901a05bb114a0dfac666d51018742a4ca646cb4ae5558ad567678",
+  "catalog_plans_digest": "d7b306c42a26af22948f094e79400df88c511167507f7ce7c3a319ff3e67b3ed",
+  "rows": [
+    {
+      "strategy_id": "fast",
+      "summary": {
+        "distance_km": 217.114,
+        "travel_time_sec": 77042,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 92769,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 75,
+        "workload_spread_sec": 22200,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "compact",
+      "summary": {
+        "distance_km": 201.49,
+        "travel_time_sec": 84915,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105817,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 11029,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "sla",
+      "summary": {
+        "distance_km": 214.239,
+        "travel_time_sec": 77480,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105051,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 407,
+        "workload_spread_sec": 19069,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "balanced",
+      "summary": {
+        "distance_km": 262.059,
+        "travel_time_sec": 85178,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 106875,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 7800,
+        "max_workload_sec": 37200
+      }
+    },
+    {
+      "strategy_id": "eco",
+      "summary": {
+        "distance_km": 201.49,
+        "travel_time_sec": 84915,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105817,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 11029,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "covering",
+      "summary": {
+        "distance_km": 265.16,
+        "travel_time_sec": 102905,
+        "work_time_sec": 238200,
+        "waiting_time_sec": 157442,
+        "lunch_time_sec": 0,
+        "assigned_count": 66,
+        "requests_total": 66,
+        "unassigned_count": 0,
+        "urgent_total": 13,
+        "urgent_assigned_count": 13,
+        "engineers_used": 17,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 11,
+        "workload_spread_sec": 28965,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "baseline",
+      "summary": {
+        "distance_km": 161.816,
+        "travel_time_sec": 62598,
+        "work_time_sec": 92400,
+        "waiting_time_sec": 261989,
+        "lunch_time_sec": 0,
+        "assigned_count": 27,
+        "requests_total": 66,
+        "unassigned_count": 39,
+        "urgent_total": 13,
+        "urgent_assigned_count": 1,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 57,
+        "workload_spread_sec": 10059,
+        "max_workload_sec": 39459
+      }
+    }
+  ],
+  "cache": {
+    "enabled": true,
+    "hits": 0,
+    "misses": 1,
+    "errors": 2,
+    "invalid": 0,
+    "writes": 0,
+    "oversized": 0
+  },
+  "resources_before": {
+    "cpu_usec": 727106,
+    "memory_current_bytes": 50733056,
+    "memory_peak_bytes": 50733056
+  },
+  "resources_ready": {
+    "cpu_usec": 6171433,
+    "memory_current_bytes": 519921664,
+    "memory_peak_bytes": 521502720
+  },
+  "resources_first_catalog": {
+    "cpu_usec": 17933461,
+    "memory_current_bytes": 700076032,
+    "memory_peak_bytes": 754106368
+  },
+  "resources_final": {
+    "cpu_usec": 20493049,
+    "memory_current_bytes": 490377216,
+    "memory_peak_bytes": 754106368
+  },
+  "total_ms": 20394.318
+}

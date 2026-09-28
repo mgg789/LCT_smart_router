@@ -11,3 +11,4 @@ prometheus-client==0.26.0
 opentelemetry-sdk==1.45.0
 opentelemetry-exporter-otlp-proto-http==1.45.0
 sentry-sdk==2.70.0
+redis==8.1.0

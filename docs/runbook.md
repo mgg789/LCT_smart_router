@@ -14,6 +14,11 @@ Windows GUI/консоль и Unix GUI/консоль. Мастер провер
 [distribution.md](distribution.md). Границы фактической проверки платформ:
 [launcher-validation.md](launcher-validation.md).
 
+Экспериментальный кэш каталога включается отдельно через Redis-beta в мастере
+или `python3 -m launch.cli --action start --redis-beta`. По умолчанию он выключен;
+`--no-redis-beta` возвращает обычный режим с сохранением БД. Подготовка образа
+для офлайн-контура, диагностика отказа и парные замеры: [redis-beta.md](redis-beta.md).
+
 ## Подготовка LIVE-проверки
 
 Спецификация и шаги: [live.md](./live.md). Для локального демо в `.env`:

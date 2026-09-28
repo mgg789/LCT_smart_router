@@ -1,0 +1,246 @@
+{
+  "label": "2-off",
+  "python": "3.14.7",
+  "code_version": "a273a5b5abf8472af1d8",
+  "input_hash": "cefeb7b62c15ee16992ef5cc42d82063b609d0a11c972a0e4d3b02d30bec94cc",
+  "graph_hash": "1aef933bfbcfc4aaf88008f200c081ec668fe1daf98e0f0c618ef98f00cfdcfd",
+  "settings": {
+    "time_limit_ms": 1000,
+    "solution_limit": 10000,
+    "lunches_enabled": false,
+    "traffic_enabled": true,
+    "equipment_enabled": true,
+    "equipment_transfers_enabled": false,
+    "metro_enabled": false,
+    "strict_time_windows": true,
+    "window_lateness_tolerance_sec": 600,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600,
+    "tolerance_sec": null
+  },
+  "requests": 66,
+  "ready_ms": 6020.063,
+  "first_catalog_ms": 14724.776,
+  "warm_catalog_ms": [
+    576.803,
+    571.132,
+    335.06,
+    515.06,
+    775.273
+  ],
+  "status_ms": [
+    2.263,
+    1.018,
+    0.885,
+    0.92,
+    0.835,
+    1.129,
+    1.453,
+    1.025,
+    0.93,
+    0.943,
+    0.788,
+    0.999,
+    0.869,
+    0.857,
+    1.002,
+    0.899,
+    0.975,
+    0.864,
+    0.91,
+    0.784
+  ],
+  "result_ms": [
+    38.111,
+    33.858,
+    35.163,
+    40.725,
+    37.512,
+    34.562,
+    39.039,
+    38.679,
+    39.255,
+    37.63
+  ],
+  "active_plan_digest": "c4a332ed60a9c24d3edea207d24df5048094bb887e659c7febd37c68830a7d4b",
+  "comparison_digest": "d9d590e7cfc901a05bb114a0dfac666d51018742a4ca646cb4ae5558ad567678",
+  "catalog_plans_digest": "d7b306c42a26af22948f094e79400df88c511167507f7ce7c3a319ff3e67b3ed",
+  "rows": [
+    {
+      "strategy_id": "fast",
+      "summary": {
+        "distance_km": 217.114,
+        "travel_time_sec": 77042,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 92769,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 75,
+        "workload_spread_sec": 22200,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "compact",
+      "summary": {
+        "distance_km": 201.49,
+        "travel_time_sec": 84915,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105817,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 11029,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "sla",
+      "summary": {
+        "distance_km": 214.239,
+        "travel_time_sec": 77480,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105051,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 407,
+        "workload_spread_sec": 19069,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "balanced",
+      "summary": {
+        "distance_km": 262.059,
+        "travel_time_sec": 85178,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 106875,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 7800,
+        "max_workload_sec": 37200
+      }
+    },
+    {
+      "strategy_id": "eco",
+      "summary": {
+        "distance_km": 201.49,
+        "travel_time_sec": 84915,
+        "work_time_sec": 208200,
+        "waiting_time_sec": 105817,
+        "lunch_time_sec": 0,
+        "assigned_count": 59,
+        "requests_total": 66,
+        "unassigned_count": 7,
+        "urgent_total": 13,
+        "urgent_assigned_count": 9,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 325,
+        "workload_spread_sec": 11029,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "covering",
+      "summary": {
+        "distance_km": 265.16,
+        "travel_time_sec": 102905,
+        "work_time_sec": 238200,
+        "waiting_time_sec": 157442,
+        "lunch_time_sec": 0,
+        "assigned_count": 66,
+        "requests_total": 66,
+        "unassigned_count": 0,
+        "urgent_total": 13,
+        "urgent_assigned_count": 13,
+        "engineers_used": 17,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 11,
+        "workload_spread_sec": 28965,
+        "max_workload_sec": 37800
+      }
+    },
+    {
+      "strategy_id": "baseline",
+      "summary": {
+        "distance_km": 161.816,
+        "travel_time_sec": 62598,
+        "work_time_sec": 92400,
+        "waiting_time_sec": 261989,
+        "lunch_time_sec": 0,
+        "assigned_count": 27,
+        "requests_total": 66,
+        "unassigned_count": 39,
+        "urgent_total": 13,
+        "urgent_assigned_count": 1,
+        "engineers_used": 12,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 57,
+        "workload_spread_sec": 10059,
+        "max_workload_sec": 39459
+      }
+    }
+  ],
+  "cache": {
+    "enabled": false
+  },
+  "resources_before": {
+    "cpu_usec": 835984,
+    "memory_current_bytes": 50761728,
+    "memory_peak_bytes": 50761728
+  },
+  "resources_ready": {
+    "cpu_usec": 7183617,
+    "memory_current_bytes": 508809216,
+    "memory_peak_bytes": 508809216
+  },
+  "resources_first_catalog": {
+    "cpu_usec": 22531355,
+    "memory_current_bytes": 694251520,
+    "memory_peak_bytes": 742137856
+  },
+  "resources_final": {
+    "cpu_usec": 25863564,
+    "memory_current_bytes": 482578432,
+    "memory_peak_bytes": 742137856
+  },
+  "total_ms": 24294.578
+}

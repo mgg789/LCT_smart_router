@@ -63,6 +63,7 @@ class GuiTests(unittest.TestCase):
         self.assertTrue(predicate(), "GUI event queue did not reach the expected state")
 
     def test_failed_distribution_does_not_disable_online_mode_or_hide_version_link(self):
+        self.assertFalse(self.app.redis_beta.get())
         self.assertTrue(self.app.online.get())
         self.assertEqual(self.app.online_checkbox["state"], "normal")
         self.assertEqual(self.app.pin["state"], "disabled")
@@ -75,7 +76,8 @@ class GuiTests(unittest.TestCase):
 
     def test_saved_restart_and_configuration_preserve_credentials_without_displaying_password(self):
         options = dict(
-            online=False, osrm=False, mode="headless", ui_port=None, api_port=19087, autostart=False
+            online=False, osrm=False, mode="headless", ui_port=None, api_port=19087, autostart=False,
+            redis_beta=True,
         )
         env = (
             'DISPATCHER_EMAIL="operator@example.test"\nDISPATCHER_PASSWORD="saved-local-password"\n'
@@ -86,6 +88,7 @@ class GuiTests(unittest.TestCase):
         self.assertEqual(self.app.email.get(), "operator@example.test")
         self.assertEqual(self.app.password.get(), "")
         self.assertEqual(self.app.api_port.get(), "19087")
+        self.assertTrue(self.app.redis_beta.get())
         release = threading.Event()
 
         def launch(*args, **kwargs):
@@ -125,12 +128,14 @@ class GuiTests(unittest.TestCase):
             {"status": "stopped", "record": {"project": "fixture"}, "options": options}, env
         )
         self.app.mode.set("full")
+        self.app.redis_beta.set(True)
         self.app.ui_port.insert(0, "5195")
         self.app.api_port.delete(0, "end")
         with patch.object(core, "launch", return_value={"web": "http://127.0.0.1:5195"}) as started:
             self.app.start_button.invoke()
             self.pump(lambda: not self.app._busy)
         self.assertEqual(started.call_args.args[0]["mode"], "full")
+        self.assertTrue(started.call_args.args[0]["redis_beta"])
         self.assertEqual(started.call_args.args[0]["ui_port"], 5195)
         self.assertIsNone(started.call_args.args[0]["api_port"])
         self.assertEqual(

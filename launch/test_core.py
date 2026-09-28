@@ -110,6 +110,7 @@ class CoreTests(unittest.TestCase):
             ui_port=5173,
             autostart=False,
             env="/tmp/bundled.env",
+            redis_beta=False,
         )
         with (
             patch.object(cli.sys.stdin, "isatty", return_value=True),
@@ -143,6 +144,7 @@ class CoreTests(unittest.TestCase):
                 "5195",
                 "--no-osrm",
                 "--no-autostart",
+                "--no-redis-beta",
                 "--env",
                 "fixture.env",
             ]
@@ -214,6 +216,10 @@ class CoreTests(unittest.TestCase):
             self.assertNotIn("osrm", config["services"])
             self.assertNotIn("route-engine3", config["services"])
             self.assertEqual(config["services"]["router"]["environment"]["ROUTER_HYBRID"], "false")
+            self.assertNotIn("redis", config["services"])
+            self.assertEqual(
+                config["services"]["router"]["environment"]["ROUTER_REDIS_BETA"], "false"
+            )
             api = config["services"]["api"]
             self.assertEqual(api["environment"]["DISPATCHER_PASSWORD"], "it's$$буквы")
             self.assertNotIn("LLM_TOKEN", api["environment"])
@@ -240,6 +246,72 @@ class CoreTests(unittest.TestCase):
                     "DISPATCHER_PASSWORD"
                 ],
                 "it's$$буквы",
+            )
+
+    def test_redis_failure_is_optional_and_credentials_survive_switching_modes(self):
+        real_run = subprocess.run
+        calls, messages = [], []
+        options = dict(
+            mode="headless",
+            api_port=19081,
+            ui_port=None,
+            online=True,
+            osrm=False,
+            autostart=False,
+            redis_beta=True,
+        )
+
+        def run(args, **kwargs):
+            calls.append(args)
+            if "config" in args:
+                return real_run(args, **kwargs)
+            failed = "up" in args and args[-1] == "redis"
+            return subprocess.CompletedProcess(args, 1 if failed else 0, stdout="")
+
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch.object(core, "STATE", Path(temp)),
+            patch.object(core.subprocess, "run", side_effect=run),
+            patch.object(core.urllib.request, "build_opener") as opener,
+        ):
+            opener.return_value.open.return_value.__enter__.return_value.status = 200
+            env = "DISPATCHER_EMAIL=test@example.test\nDISPATCHER_PASSWORD=fixture-password\n"
+            core.launch(options, env, messages.append)
+            config = json.loads((Path(temp) / "compose.json").read_text())
+            identity = json.loads((Path(temp) / "identity.json").read_text())
+            redis = config["services"]["redis"]
+            self.assertNotIn("ports", redis)
+            self.assertEqual(redis["environment"]["REDIS_PASSWORD"], identity["REDIS_PASSWORD"])
+            router = config["services"]["router"]
+            self.assertEqual(router["environment"]["ROUTER_REDIS_BETA"], "true")
+            self.assertIn(identity["REDIS_PASSWORD"], router["environment"]["ROUTER_REDIS_URL"])
+            self.assertNotIn("redis", router.get("depends_on", {}))
+            self.assertFalse(
+                any(
+                    key.startswith("ROUTER_REDIS") or key == "REDIS_PASSWORD"
+                    for key in config["services"]["api"]["environment"]
+                )
+            )
+            self.assertTrue(any("Redis-beta недоступен" in message for message in messages))
+            self.assertTrue(
+                all(
+                    "redis" not in args[args.index("up") + 1 :]
+                    for args in calls
+                    if "up" in args and "--wait" in args
+                )
+            )
+            namespace = router["environment"]["ROUTER_REDIS_NAMESPACE"]
+            core.launch({**options, "redis_beta": False}, env, messages.append)
+            self.assertNotIn(
+                "redis", json.loads((Path(temp) / "compose.json").read_text())["services"]
+            )
+            core.launch(options, env, messages.append)
+            self.assertEqual(identity, json.loads((Path(temp) / "identity.json").read_text()))
+            self.assertEqual(
+                namespace,
+                json.loads((Path(temp) / "compose.json").read_text())["services"]["router"][
+                    "environment"
+                ]["ROUTER_REDIS_NAMESPACE"],
             )
 
 

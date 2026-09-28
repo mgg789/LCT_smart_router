@@ -106,11 +106,13 @@ class Launcher(tk.Tk):
         self.online = tk.BooleanVar(value=not self._initial_offline)
         self.osrm = tk.BooleanVar(value=False)
         self.autostart = tk.BooleanVar(value=False)
+        self.redis_beta = tk.BooleanVar(value=False)
         for index, (text, variable) in enumerate(
             (
                 ("Online режим", self.online),
                 ("OSRM маршрутизация", self.osrm),
                 ("Автозапуск", self.autostart),
+                ("Redis-beta · экспериментальный кэш", self.redis_beta),
             )
         ):
             checkbox = tk.Checkbutton(
@@ -150,7 +152,7 @@ class Launcher(tk.Tk):
         self._interactive_widgets.extend((self.api_port, self.ui_port))
         secrets = tk.LabelFrame(root, text="Доступ и настройки", bg=BG, fg=TEXT, padx=12, pady=8)
         secrets.pack(fill="x", pady=18)
-        self.pin = self._labeled_entry(secrets, "PIN (рекомендуется)")
+        self.pin = self._labeled_entry(secrets, "PIN (рекомендуется)", masked=True)
         self.email = self._labeled_entry(secrets, "Почта диспетчера")
         self.password = self._labeled_entry(
             secrets, "Пароль диспетчера (пусто — сохранить существующий)", masked=True
@@ -245,9 +247,24 @@ class Launcher(tk.Tk):
             "removed": "Экземпляр удалён; данные и настройки сохранены",
         }
         self.installation_var.set(labels[status["status"]])
+        if self._saved_options.get("redis_beta"):
+            self.installation_var.set(
+                self.installation_var.get()
+                + (
+                    " · Redis-beta готов"
+                    if status.get("redis_ready")
+                    else " · Redis-beta недоступен, обычный расчёт сохранён"
+                )
+            )
         if not status["record"]:
             self.management.pack_forget()
             self.start_button.configure(text="Установить и запустить")
+            self.redis_beta.set(False)
+            for entry in (self.password, self.pin, self.llm_token):
+                entry.configure(state="normal")
+                entry.delete(0, "end")
+            self.env_path.set("")
+            self._set_controls_enabled(self._preflight_ready and not self._busy)
             return
         if not self.management.winfo_manager():
             self.management.pack(fill="x", pady=(0, 12), before=self.form)
@@ -257,6 +274,7 @@ class Launcher(tk.Tk):
             ("online", self.online),
             ("osrm", self.osrm),
             ("autostart", self.autostart),
+            ("redis_beta", self.redis_beta),
         ):
             if key in options:
                 variable.set(options[key])
@@ -375,6 +393,7 @@ class Launcher(tk.Tk):
             "api_port": api_port,
             "ui_port": ui_port,
             "autostart": self.autostart.get(),
+            "redis_beta": self.redis_beta.get(),
         }
         env_path = Path(self.env_path.get()) if self.env_path.get() else None
         pin = self.pin.get().strip()

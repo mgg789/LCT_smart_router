@@ -10,6 +10,49 @@ afterEach(() => {
 });
 
 describe('HttpRouterClient', () => {
+  it('keeps cached settings through a failed background refresh and recovers', async (context) => {
+    let now = 1_000;
+    let version = 'ctx-before-restart';
+    let available = true;
+    context.mock.method(Date, 'now', () => now);
+    globalThis.fetch = async () => {
+      if (!available) throw new Error('Router connection refused');
+      return Response.json({
+        router_context_version: version,
+        technical_settings: {
+          lunches_enabled: false,
+          departure_lateness_tolerance_sec: 0,
+          task_start_lateness_tolerance_sec: 0,
+          travel_time_mode: 'graph_with_access_buffer',
+          access_buffer_sec: 600,
+          fixed_travel_time_sec: 1200,
+          early_finish_replan_threshold_sec: 900,
+          task_overrun_tolerance_sec: 600,
+        },
+      });
+    };
+    const client = new HttpRouterClient({ baseUrl: 'http://router:8100', requestTimeoutMs: 100 });
+    const initial = await client.getTechnicalSettings();
+    now += 31_000;
+    available = false;
+    assert.deepEqual(await client.getTechnicalSettings(), initial);
+    // An unobserved rejection fails node:test on this turn of the event loop.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    available = true;
+    version = 'ctx-after-restart';
+    assert.deepEqual(await client.getTechnicalSettings(), initial);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal((await client.getTechnicalSettings()).routerContextVersion, version);
+  });
+
+  it('still rejects the first settings read when no cached answer exists', async () => {
+    globalThis.fetch = async () => {
+      throw new Error('Router connection refused');
+    };
+    const client = new HttpRouterClient({ baseUrl: 'http://router:8100', requestTimeoutMs: 100 });
+    await assert.rejects(() => client.getTechnicalSettings(), /Router connection refused/);
+  });
+
   it('reports an unfinished policy calculation as a refreshable state conflict', async () => {
     globalThis.fetch = async () => new Response('', { status: 503 });
     const client = new HttpRouterClient({ baseUrl: 'http://router:8100', requestTimeoutMs: 100 });

@@ -1,0 +1,228 @@
+{
+  "budget_ms": 1000,
+  "repeats": 3,
+  "methodology": "Fresh Linux container per trial; HTTP loopback, official east data. Off and miss alternate order. Hit follows miss in the same unique namespace. Warm means five further requests in the same process. Redis stats include idle resident overhead. Host load is uncontrolled.",
+  "docker": "29.7.2",
+  "memory_limit": "1536m",
+  "image": "navix-launch-router:f7262319ae71",
+  "cpu_limit": 2,
+  "trials": [
+    {
+      "redis_cpu_sec": 0.08179100000000017,
+      "expected_cache": "off",
+      "redis_after": {
+        "used_cpu_sec": 1.2741,
+        "used_memory_rss_bytes": 20148224,
+        "keyspace": "keys=3,expires=3,avg_ttl=374249,subexpiry=0",
+        "used_memory_bytes": 3598832
+      },
+      "cache": {
+        "enabled": false
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.1923089999999998,
+        "used_memory_rss_bytes": 20148224,
+        "keyspace": "keys=3,expires=3,avg_ttl=403072,subexpiry=0",
+        "used_memory_bytes": 3598832
+      },
+      "label": "1-off"
+    },
+    {
+      "redis_cpu_sec": 0.07787999999999995,
+      "expected_cache": "miss",
+      "redis_after": {
+        "used_cpu_sec": 1.352463,
+        "used_memory_rss_bytes": 20959232,
+        "keyspace": "keys=4,expires=4,avg_ttl=389669,subexpiry=0",
+        "used_memory_bytes": 4516560
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 0,
+        "misses": 1,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 1,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.274583,
+        "used_memory_rss_bytes": 20148224,
+        "keyspace": "keys=3,expires=3,avg_ttl=374148,subexpiry=0",
+        "used_memory_bytes": 3598832
+      },
+      "label": "1-miss"
+    },
+    {
+      "redis_cpu_sec": 0.04378700000000002,
+      "expected_cache": "hit",
+      "redis_after": {
+        "used_cpu_sec": 1.396835,
+        "used_memory_rss_bytes": 21176320,
+        "keyspace": "keys=4,expires=4,avg_ttl=393729,subexpiry=0",
+        "used_memory_bytes": 4516560
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 1,
+        "misses": 0,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 0,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.353048,
+        "used_memory_rss_bytes": 20959232,
+        "keyspace": "keys=4,expires=4,avg_ttl=389976,subexpiry=0",
+        "used_memory_bytes": 4516560
+      },
+      "label": "1-hit"
+    },
+    {
+      "redis_cpu_sec": 0.0749740000000001,
+      "expected_cache": "miss",
+      "redis_after": {
+        "used_cpu_sec": 1.4723300000000001,
+        "used_memory_rss_bytes": 21987328,
+        "keyspace": "keys=5,expires=5,avg_ttl=390012,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 0,
+        "misses": 1,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 1,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.397356,
+        "used_memory_rss_bytes": 21176320,
+        "keyspace": "keys=4,expires=4,avg_ttl=393647,subexpiry=0",
+        "used_memory_bytes": 4516560
+      },
+      "label": "2-miss"
+    },
+    {
+      "redis_cpu_sec": 0.09448000000000012,
+      "expected_cache": "off",
+      "redis_after": {
+        "used_cpu_sec": 1.5670730000000002,
+        "used_memory_rss_bytes": 21913600,
+        "keyspace": "keys=5,expires=5,avg_ttl=386640,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "cache": {
+        "enabled": false
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.472593,
+        "used_memory_rss_bytes": 21987328,
+        "keyspace": "keys=5,expires=5,avg_ttl=390012,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "label": "2-off"
+    },
+    {
+      "redis_cpu_sec": 0.06185499999999977,
+      "expected_cache": "hit",
+      "redis_after": {
+        "used_cpu_sec": 1.6295449999999998,
+        "used_memory_rss_bytes": 22700032,
+        "keyspace": "keys=5,expires=5,avg_ttl=368379,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 1,
+        "misses": 0,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 0,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.56769,
+        "used_memory_rss_bytes": 21913600,
+        "keyspace": "keys=5,expires=5,avg_ttl=386640,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "label": "2-hit"
+    },
+    {
+      "redis_cpu_sec": 0.09545400000000015,
+      "expected_cache": "off",
+      "redis_after": {
+        "used_cpu_sec": 1.725708,
+        "used_memory_rss_bytes": 21843968,
+        "keyspace": "keys=5,expires=5,avg_ttl=336592,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "cache": {
+        "enabled": false
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.6302539999999999,
+        "used_memory_rss_bytes": 22700032,
+        "keyspace": "keys=5,expires=5,avg_ttl=368379,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "label": "3-off"
+    },
+    {
+      "redis_cpu_sec": 0.07837499999999986,
+      "expected_cache": "miss",
+      "redis_after": {
+        "used_cpu_sec": 1.804618,
+        "used_memory_rss_bytes": 22654976,
+        "keyspace": "keys=6,expires=6,avg_ttl=331067,subexpiry=0",
+        "used_memory_bytes": 6352048
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 0,
+        "misses": 1,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 1,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.7262430000000002,
+        "used_memory_rss_bytes": 21843968,
+        "keyspace": "keys=5,expires=5,avg_ttl=336592,subexpiry=0",
+        "used_memory_bytes": 5434320
+      },
+      "label": "3-miss"
+    },
+    {
+      "redis_cpu_sec": 0.05058299999999982,
+      "expected_cache": "hit",
+      "redis_after": {
+        "used_cpu_sec": 1.8557169999999998,
+        "used_memory_rss_bytes": 22605824,
+        "keyspace": "keys=6,expires=6,avg_ttl=336233,subexpiry=0",
+        "used_memory_bytes": 6352048
+      },
+      "cache": {
+        "enabled": true,
+        "hits": 1,
+        "misses": 0,
+        "errors": 0,
+        "invalid": 0,
+        "writes": 0,
+        "oversized": 0
+      },
+      "redis_before": {
+        "used_cpu_sec": 1.805134,
+        "used_memory_rss_bytes": 22654976,
+        "keyspace": "keys=6,expires=6,avg_ttl=331067,subexpiry=0",
+        "used_memory_bytes": 6352048
+      },
+      "label": "3-hit"
+    }
+  ],
+  "created_at_utc": "2026-09-28T14:25:45.5091527Z"
+}
