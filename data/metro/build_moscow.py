@@ -36,7 +36,7 @@ EARTH_RADIUS_M = 6_371_000.0
 # real timetable (Кожуховская → Таганская: 20.5 predicted vs ~12 actual).
 RIDE_SPEED_MPS = 50_000.0 / 3_600.0
 RIDE_STRETCH = 1.15
-WALK_SPEED_MPS = 1.75  # transfer walking: escalators, brisk pace; was 1.4 — inflated interchange times ~2x
+WALK_SPEED_MPS = 1.4
 MIN_RIDE_SEC = 60
 MIN_TRANSFER_SEC = 60
 
@@ -170,6 +170,23 @@ def estimate_ride(distance_m: float) -> int:
 def estimate_transfer(distance_m: float) -> int:
     """Estimate interchange walking time; runtime adds its fixed transfer penalty."""
     return max(MIN_TRANSFER_SEC, math.ceil(distance_m / WALK_SPEED_MPS))
+
+
+def _drop_group_outliers(points: list[tuple[float, float]], max_span_m: float = 400.0) -> list[tuple[float, float]]:
+    """Keep the densest 400 m cluster of a platform group.
+
+    One wrongly referenced stop node (a station entrance on a far square, a
+    stale name) drags the group mean hundreds of metres off the real station;
+    the densest cluster is the platform group itself.
+    """
+    if len(points) <= 2:
+        return points
+    best_anchor, best_cluster = None, None
+    for anchor in points:
+        cluster = [p for p in points if haversine_m(anchor, p) <= max_span_m]
+        if best_cluster is None or len(cluster) > len(best_cluster):
+            best_anchor, best_cluster = anchor, cluster
+    return best_cluster
 
 
 def _pair_key(first: str, second: str) -> tuple[str, str]:
@@ -430,6 +447,12 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         sequences.append(sequence)
     if dropped_stops:
         print(f"dropped {len(dropped_stops)} off-track stop nodes: {', '.join(dropped_stops)}")
+
+    for key, group in grouped.items():
+        kept = _drop_group_outliers(group["points"])
+        if len(kept) != len(group["points"]):
+            print(f"station {key[0]}:{group['name']} — dropped {len(group['points']) - len(kept)} outlier stop nodes")
+        group["points"] = kept
 
     station_ids = {
         key: f"m{key[0]}:{station_slug(group['name'])}"
