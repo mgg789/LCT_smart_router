@@ -203,10 +203,15 @@ export function PhoneAiPane({
         style={{
           minHeight: eu(112),
           borderRadius: eu(56),
-          paddingLeft: eu(10),
-          paddingRight: eu(10),
-          paddingTop: eu(12),
-          paddingBottom: eu(12),
+          paddingLeft: eu(14),
+          paddingRight: eu(14),
+          // 78 for the round controls plus 17 above and below fills the bar's own 112
+          // exactly, so an empty composer is symmetric — the same relation the
+          // dispatcher's composer already has (63 in a 79 bar). At eu(12) the two
+          // circles were pushed to the bottom by `items-end`, leaving a band of dark
+          // above them that made the bar look mis-drawn.
+          paddingTop: eu(17),
+          paddingBottom: eu(17),
           gap: eu(10),
         }}
       >
@@ -326,7 +331,10 @@ export function PhoneAiPane({
             <div
               ref={scrollRef}
               className="min-h-0 flex-1 overflow-y-auto"
-              style={{ paddingBottom: eu(140) }}
+              // Clears the floating composer: eu(112) for the bar plus the eu(48)/eu(24)
+              // the gradient wrapper puts around it, so the newest line can always be
+              // scrolled clear of it.
+              style={{ paddingBottom: eu(200) }}
             >
               <div className="flex flex-col" style={{ gap: eu(28) }}>
                 {spoken.map((message, index) =>

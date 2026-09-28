@@ -802,7 +802,18 @@ export function MainDashboardPage() {
               onToastAction={(toast) => {
                 if (!toast.actionLabel) return;
                 const next = dash.pendingDelta ?? rememberedDelta.current;
-                if (next) setReviewDelta(next);
+                if (next) {
+                  setReviewDelta(next);
+                  return;
+                }
+                // With no delta left to review «Подробнее» used to do nothing at all.
+                // Everything a notification is about is on the alerts screen, so that is
+                // where the button goes.
+                setNotifOpen(false);
+                setToastColumnPinned(false);
+                setStackDir(stackSlideDir(stackNav, 'alerts'));
+                setStackNav('alerts');
+                setActiveNav('alerts');
               }}
             />
             <AnimatePresence>
