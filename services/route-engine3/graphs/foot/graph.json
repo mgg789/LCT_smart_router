@@ -1,0 +1,8 @@
+{
+  "graph_id": "foot",
+  "profile": "foot",
+  "map_version": "moscow-mkad-foot-v1",
+  "max_table_size": 4096,
+  "speeds_kmh": {"walk": 5.0, "bike": 15.0},
+  "comment": "MKAD pedestrian/cyclist graph (osrm v26.x, MLD, pedestrian.lua)"
+}
