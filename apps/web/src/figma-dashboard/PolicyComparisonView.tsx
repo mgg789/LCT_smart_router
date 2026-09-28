@@ -1,12 +1,14 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { type SimulationResponse, simulateChange } from '../api/client';
+import type { LiveWorkday } from '../api/live';
 import type {
   DashboardSnapshot,
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
+import { businessAt } from '../domain/liveClock';
 import type { RegionSelection } from '../domain/regions';
 import { locale, t } from '../i18n';
 import { comparisonValue, comparisonWinners, strategyDescription } from '../lib/policyComparison';
@@ -36,6 +38,7 @@ const SHORT_NAME: Record<string, string> = {
  */
 export function PolicyComparisonView({
   snapshot,
+  workday,
   comparison,
   loading,
   error,
@@ -48,6 +51,8 @@ export function PolicyComparisonView({
   motionOn,
 }: {
   snapshot: DashboardSnapshot | null;
+  /** The running day, so «Расчёт» is told on the clock the rest of the board uses. */
+  workday?: LiveWorkday | null;
   comparison: PolicyComparisonResponse | null;
   loading: boolean;
   error: string | null;
@@ -228,7 +233,7 @@ export function PolicyComparisonView({
         <div className="absolute left-[30px] top-[118px] flex flex-wrap gap-[8px]">
           <MetaChip
             label={t('figma-dashboard.PolicyComparisonView.5e7ce1b2fa', {
-              value0: formatClock(comparison.computedAt),
+              value0: formatClock(businessAt(comparison.computedAt, workday)),
             })}
           />
           <MetaChip label={t('figma-dashboard.PolicyComparisonView.9e1b808417')} />

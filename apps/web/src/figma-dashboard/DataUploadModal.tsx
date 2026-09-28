@@ -584,8 +584,7 @@ function UploadPreview({ file }: { file: DataUploadFile }) {
         {file.mode === 'new_region'
           ? t('figma-dashboard.DataUploadModal.6ee32b0951')
           : t('figma-dashboard.DataUploadModal.0207074be4')}{' '}
-        · {file.requests.length}
-        {t('figma-dashboard.DataUploadModal.a7b7ba4108')}
+        · {t('common.requests', { count: file.requests.length })}
       </p>
     </div>
   );

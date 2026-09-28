@@ -35,6 +35,7 @@ import {
 } from '../domain/alerts';
 import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
+import { formatClock } from '../lib/time';
 import { InboxButton } from './inboxCard';
 import { WorsenModal } from './WorsenModal';
 
@@ -357,8 +358,10 @@ function WindowAiNote({ token, alertId }: { token: string; alertId: string }) {
         setText(
           result.status === 'available' && offer
             ? t('figma-dashboard.AlertActions.f6f4399d97', {
-                value0: alertWindowInput(offer.windowStartAt),
-                value1: alertWindowInput(offer.windowEndAt),
+                // A sentence for the dispatcher, not a value for a datetime input:
+                // `alertWindowInput` spells the whole ISO moment out.
+                value0: formatClock(offer.windowStartAt),
+                value1: formatClock(offer.windowEndAt),
               })
             : t('figma-dashboard.AlertActions.143a384ad6'),
         );

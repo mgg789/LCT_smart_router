@@ -29,7 +29,7 @@ export const ru = {
     'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.',
   'api.client.890dabf416': 'Обед не помещается в текущий маршрут. Требуется выбор диспетчера.',
   'api.client.60c40a2374': 'Назначено заявок: {{value0}} → {{value1}}.',
-  'api.client.ce4471e17d': 'Подробности доступны в структурированных данных',
+  'api.client.ce4471e17d': 'Маршруты обновлены. Новый план доступен на карте.',
   'api.client.de2eeb60e1':
     'Заявка изменилась или подтверждение устарело. Откройте действие заново.',
   'api.client.5a8cee96af': 'Ответ сервера не соответствует контракту',
@@ -334,7 +334,7 @@ export const ru = {
   'domain.alerts.02ae5507db':
     'Задать заявке новое точное окно обслуживания по московскому времени.',
   'domain.alerts.5d6673c180':
-    'Router предложит выполнимое окно сегодня. После сохранения назначение будет пересчитано; алёрт останется открытым до подтверждённого назначения.',
+    'Планировщик предложит выполнимое окно сегодня. После сохранения назначение будет пересчитано; алерт останется открытым до подтверждённого назначения.',
   'domain.alerts.c10a0dbda0': 'Позволяет найти выполнимое время без переноса на другой день.',
   'domain.alerts.a14b502d36': 'Новое окно нужно заранее согласовать с клиентом.',
   'domain.alerts.17ea4891c4': 'Добавить инженера',
@@ -460,7 +460,7 @@ export const ru = {
   'domain.planQuality.79463780ad':
     '{{value0}} может не закрыть смену. Загрузка уже выравнивается, хвост лучше снять вручную.',
   'domain.planQuality.5986a59fc3':
-    '{{value0}} может не закрыть смену. «Ровнее загрузка» разнесёт хвост по свободным.',
+    '{{value0}} может не закрыть смену. «Ровнее загрузку» разнесёт хвост по свободным.',
   'domain.planQuality.e11f38ef7c':
     'Менять политику не нужно: в большинстве проверок день проходит без опозданий.',
   'domain.planQuality.e57713f5e8':
@@ -486,7 +486,7 @@ export const ru = {
   'domain.policyRecommend.bf4dd5bdee':
     'Даже быстрый выезд оставляет мало запаса. «Бережнее к окнам» держит запас до конца окна.',
   'domain.policyRecommend.a3ef25f6c5':
-    'Кто-то может не закрыть смену. «Ровнее загрузка» разносит хвост по свободным.',
+    'Кто-то может не закрыть смену. «Ровнее загрузку» разносит хвост по свободным.',
   'domain.policyRecommend.30e0a36854': 'Пробег можно ужать, не теряя покрытие.',
   'domain.policyRecommend.66180192bd':
     'Эта политика лучше держит покрытие и запас по времени на том же наборе заявок.',
@@ -524,7 +524,7 @@ export const ru = {
     'Чтобы увидеть заявки этого адреса, войдите кодом из письма.',
   'figma-client.ClientEmailGate.1a9fb1f3cf': 'Назад',
   'figma-client.ClientEmailGate.d675af9943': 'NAVIX',
-  'figma-client.ClientEmailGate.969ccbd3cf': 'Email',
+  'figma-client.ClientEmailGate.969ccbd3cf': 'Почта',
   'figma-client.ClientEmailGate.264e53d937': 'example@gmail.com',
   'figma-client.ClientEmailGate.d137bee310': 'Код из письма',
   'figma-client.ClientEmailGate.1a0517bfd5': 'Новый код',
@@ -548,7 +548,7 @@ export const ru = {
   'figma-client.ClientNewRequest.5978ea1714': 'Открыть карту',
   'figma-client.ClientNewRequest.a1f5d39a12': 'с',
   'figma-client.ClientNewRequest.102dcd5d86': 'до',
-  'figma-client.ClientNewRequest.969ccbd3cf': 'Email',
+  'figma-client.ClientNewRequest.969ccbd3cf': 'Почта',
   'figma-client.ClientNewRequest.264e53d937': 'example@gmail.com',
   'figma-client.ClientNewRequest.899dce11fb': 'Отправляем…',
   'figma-client.ClientNewRequest.ceb68a9287': 'Отправить',
@@ -673,9 +673,9 @@ export const ru = {
   'figma-dashboard.AlertActions.90f68f2e16':
     'Подбор доступен только при подключении к рабочему серверу.',
   'figma-dashboard.AlertActions.b16175e011':
-    'Найдено выполнимое окно с учётом дороги и текущего маршрута инженера. Это расчёт, не резервирование; алёрт останется до подтверждённого назначения.',
+    'Найдено выполнимое окно с учётом дороги и текущего маршрута инженера. Это расчёт, не резервирование; алерт останется до подтверждённого назначения.',
   'figma-dashboard.AlertActions.7e04b8e3d7':
-    'В текущих маршрутах на сегодня выполнимое окно не найдено. Рекомендуем «На завтра». Можно задать окно вручную — алёрт останется до назначения.',
+    'В текущих маршрутах на сегодня выполнимое окно не найдено. Рекомендуем «На завтра». Можно задать окно вручную — алерт останется до назначения.',
   'figma-dashboard.AlertActions.cbd6e7db44':
     'Не удалось проверить окно через Router. Это не означает, что окна нет. Закройте и повторите подбор или укажите окно вручную.',
   'figma-dashboard.AlertActions.27e20f534d':
@@ -815,8 +815,8 @@ export const ru = {
   'figma-dashboard.DataUploadModal.106eb83f8f': 'Заявки: +',
   'figma-dashboard.DataUploadModal.5b622a13c6': ', инженеры: +',
   'figma-dashboard.DataUploadModal.5e8b1dd7bc': 'Загрузка доступна в живом контуре после входа.',
-  'figma-dashboard.DataUploadModal.bbc31f0cba': 'Не удалось загрузить сет из ТЗ',
-  'figma-dashboard.DataUploadModal.6b7c20f521': 'Использовать сет из ТЗ',
+  'figma-dashboard.DataUploadModal.bbc31f0cba': 'Не удалось загрузить набор из ТЗ',
+  'figma-dashboard.DataUploadModal.6b7c20f521': 'Использовать набор из ТЗ',
   'figma-dashboard.DataUploadModal.8fbe9b75cb': 'Отмена',
   'figma-dashboard.DataUploadModal.5b0e622ef9': 'Не удалось загрузить пакет',
   'figma-dashboard.DataUploadModal.22a5d91124': 'Загружаем…',
@@ -1224,7 +1224,7 @@ export const ru = {
   'figma-dashboard.PolicyComparisonView.568e623109': 'Быстрее',
   'figma-dashboard.PolicyComparisonView.1024b68fd8': 'Дешевле',
   'figma-dashboard.PolicyComparisonView.3869fe38ea': 'По окнам',
-  'figma-dashboard.PolicyComparisonView.94b4982ffa': 'Ровнее загрузка',
+  'figma-dashboard.PolicyComparisonView.94b4982ffa': 'Ровнее загрузку',
   'figma-dashboard.PolicyComparisonView.25907df14d': 'Короче пробег',
   'figma-dashboard.PolicyComparisonView.0ae6737c4d': 'Полное покрытие',
   'figma-dashboard.PolicyComparisonView.70eba3ac85':
@@ -1375,16 +1375,16 @@ export const ru = {
   'figma-dashboard.SettingsModal.cf1dfa079c': 'Начало дня',
   'figma-dashboard.SettingsModal.9046545750': 'Конец дня',
   'figma-dashboard.SettingsModal.7e45b15e9d': 'Допустимое опоздание, мин',
-  'figma-dashboard.SettingsModal.91dd7dae26': 'Только alert',
+  'figma-dashboard.SettingsModal.91dd7dae26': 'Только алерты',
   'figma-dashboard.SettingsModal.b6103c4b20':
     'До этих порогов диспетчер видит предупреждение, план сам не пересчитывается.',
   'figma-dashboard.SettingsModal.69b3b8bde2': 'Невыход, мин',
   'figma-dashboard.SettingsModal.9e071f34a7': 'Опоздание инженера, мин',
   'figma-dashboard.SettingsModal.23d02e0526': 'Риск окна, мин',
-  'figma-dashboard.SettingsModal.6e57becadd': 'Повтор alert, мин',
+  'figma-dashboard.SettingsModal.6e57becadd': 'Повтор алерта, мин',
   'figma-dashboard.SettingsModal.0f037c1941': 'После этого — пересчёт',
   'figma-dashboard.SettingsModal.85f00bf1c7':
-    'Пороги Router: раннее окончание и переработка на точке публикуют новый снимок.',
+    'Пороги планировщика: раннее окончание и переработка на точке публикуют новый снимок.',
   'figma-dashboard.SettingsModal.d6cfb3abcf': 'Ранний финиш, мин',
   'figma-dashboard.SettingsModal.4f35eb760d': 'Переработка на точке, мин',
   'figma-dashboard.SettingsModal.9f93f2879e': 'Буфер доступа, мин',
@@ -1667,7 +1667,7 @@ export const ru = {
   'figma-dashboard.addEntity.4244bde3da': 'Выберите регион привязки',
   'figma-dashboard.addEntity.cec37ac4e6': 'Укажите адрес офиса',
   'figma-dashboard.addEntity.e45da69c3e': 'Укажите название',
-  'figma-dashboard.addEntity.056218708b': 'Выберите тип алёрта',
+  'figma-dashboard.addEntity.056218708b': 'Выберите тип алерта',
   'figma-dashboard.addEntity.0f285212ad': 'Укажите причину',
   'figma-dashboard.alertsInbox.5b7075c8fc': 'Причина: не указана',
   'figma-dashboard.alertsInbox.449f62a839': 'Причина:',
@@ -1715,7 +1715,7 @@ export const ru = {
   'figma-dashboard.fixtures.568e623109': 'Быстрее',
   'figma-dashboard.fixtures.107a45fc89': 'Меньше инженеров',
   'figma-dashboard.fixtures.e5d759f5a5': 'Бережнее к окнам',
-  'figma-dashboard.fixtures.94b4982ffa': 'Ровнее загрузка',
+  'figma-dashboard.fixtures.94b4982ffa': 'Ровнее загрузку',
   'figma-dashboard.fixtures.25907df14d': 'Короче пробег',
   'figma-dashboard.fixtures.fbd36f8a94': 'Базовая из ТЗ',
   'figma-dashboard.fixtures.255f2a4738': 'План дня',
@@ -2009,7 +2009,7 @@ export const ru = {
   'figma-dashboard.toasts.92c6eefacd': 'Сообщение от Игорь...',
   'figma-dashboard.toasts.3ba80b36c2': 'Перерасчет завершен',
   'figma-dashboard.toasts.ba10b7210f': 'Перерасчет выполнен за 1876мс',
-  'figma-dashboard.toasts.38fd090346': 'Алёрт: непокрытие заявок',
+  'figma-dashboard.toasts.38fd090346': 'Алерт: непокрытие заявок',
   'figma-dashboard.toasts.7cd33064da':
     'Выбранная политика покрывает на 4 заявки меньше, чем прошлая',
   'figma-dashboard.toasts.23b8864f49':
@@ -2017,16 +2017,16 @@ export const ru = {
   'figma-dashboard.toasts.c19b16eaf4': 'Маршрут обновлён',
   'figma-dashboard.toasts.907e49c0b0':
     'Бригада 2 получила новый порядок остановок после пересчёта.',
-  'figma-dashboard.toasts.23714eaf9a': 'Алёрт: окно заявки',
+  'figma-dashboard.toasts.23714eaf9a': 'Алерт: окно заявки',
   'figma-dashboard.toasts.8d90d0d7b9':
     'Заявка №86160 не укладывается в окно 11:27–13:27 при текущем порядке смены.',
-  'figma-dashboard.toasts.72bd38a8b2': 'Алёрт: нет навыка',
+  'figma-dashboard.toasts.72bd38a8b2': 'Алерт: нет навыка',
   'figma-dashboard.toasts.7d55956a42':
     'На «подключение» в восточном секторе свободно только 2 бригады, 5 заявок без назначения.',
   'figma-dashboard.toasts.34d8132a67': 'Обед сдвинут',
   'figma-dashboard.toasts.0e4bb59b00':
     'Бригаде Соколова обед перенесён на 13:00, заявка №1077 стартует после него.',
-  'figma-dashboard.toasts.b256c3ff97': 'Алёрт: риск SLA',
+  'figma-dashboard.toasts.b256c3ff97': 'Алерт: риск SLA',
   'figma-dashboard.toasts.6109f55914':
     '3 срочные заявки выходят за расчётное окно при политике «Полное покрытие».',
   'figma-dashboard.toasts.993c6a7ca2': 'Сообщение от Петрова',
@@ -2037,7 +2037,7 @@ export const ru = {
   'figma-dashboard.toasts.cf0a1624c6': 'Загружен пакет восточного округа: 48 заявок, 7 бригад.',
   'figma-dashboard.toasts.9855b9764d':
     'Политика «Быстрее» сократила пробег на 14 км, 1 заявка осталась без назначения.',
-  'figma-dashboard.toasts.5c26e49bfe': 'Алёрт: {{value0}}',
+  'figma-dashboard.toasts.5c26e49bfe': 'Алерт: {{value0}}',
   'figma-dashboard.toasts.abbe406797': 'Маршруты обновлены. Новый план доступен на карте.',
   'figma-dashboard.toasts.59589fe2a5': 'Подробнее',
   'figma-dashboard.toasts.4ebf918cfa': 'Ошибка входа',
@@ -2116,7 +2116,7 @@ export const ru = {
   'figma-engineer.EngineerLogin.78bbe6d207': 'Проверьте адрес почты.',
   'figma-engineer.EngineerLogin.4ebf918cfa': 'Ошибка входа',
   'figma-engineer.EngineerLogin.d675af9943': 'NAVIX',
-  'figma-engineer.EngineerLogin.969ccbd3cf': 'Email',
+  'figma-engineer.EngineerLogin.969ccbd3cf': 'Почта',
   'figma-engineer.EngineerLogin.264e53d937': 'example@gmail.com',
   'figma-engineer.EngineerLogin.d137bee310': 'Код из письма',
   'figma-engineer.EngineerLogin.1a0517bfd5': 'Новый код',
@@ -2127,7 +2127,7 @@ export const ru = {
   'figma-engineer.EngineerSettings.86657fb2a8': 'Назад к списку',
   'figma-engineer.EngineerSettings.985b5e0f2c': 'Настройки',
   'figma-engineer.EngineerSettings.1da7e9372e': 'Имя',
-  'figma-engineer.EngineerSettings.969ccbd3cf': 'Email',
+  'figma-engineer.EngineerSettings.969ccbd3cf': 'Почта',
   'figma-engineer.EngineerSettings.826f702afc': 'Вид транспорта',
   'figma-engineer.EngineerSettings.9c27c381dd': 'Сохраняем…',
   'figma-engineer.EngineerSettings.b4d30cae52': 'Сохранить',
@@ -2353,7 +2353,7 @@ export const ru = {
   'hooks.useDashboard.8464c6ba27': 'Доступ к рабочим данным закрыт. Войдите снова.',
   'hooks.useDashboard.6404743fab': 'Сессия закончилась. Войдите снова.',
   'hooks.useDashboard.0b61a22f11': 'Демо: {{value0}}. Записанный результат Router.',
-  'hooks.useDashboard.29dad6f34e': '{{value0}}. Router пересчитывает план…',
+  'hooks.useDashboard.29dad6f34e': '{{value0}}. Планировщик пересчитывает план…',
   'hooks.useDashboard.637733c787': 'Применён план rev.{{value0}} ({{value1}}).',
   'hooks.useDashboard.2ebe9e3623':
     'Результат изменения не подтверждён. Проверьте актуальный план перед повторным действием.',
@@ -2418,10 +2418,10 @@ export const ru = {
   'hooks.useDashboard.ada58283fe':
     'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
   'hooks.useDashboard.5cafa28064': 'Датасет принят, но экран не обновился: {{value0}}',
-  'hooks.useDashboard.a9d2aad489': 'Датасет из ТЗ: {{value0}} заявок, {{value1}} инженеров.',
-  'hooks.useDashboard.0a71f4cd4c': 'Официальный датасет из ТЗ уже был загружен.',
+  'hooks.useDashboard.a9d2aad489': 'Датанабор из ТЗ: {{value0}} заявок, {{value1}} инженеров.',
+  'hooks.useDashboard.0a71f4cd4c': 'Официальный датанабор из ТЗ уже был загружен.',
   'hooks.useDashboard.382ae877b4': 'Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.',
-  'hooks.useDashboard.b99696ea67': 'Router не успел применить новую ревизию за {{value0}} секунд',
+  'hooks.useDashboard.b99696ea67': 'Планировщик не успел применить новый план за {{value0}} секунд',
   'hooks.useDashboard.8f9c4884b8': 'Не удалось выполнить запрос',
   'hooks.useDashboard.a9cf7bedb2': 'на линии',
   'hooks.useDashboard.f2d86ccb74': 'отключён',
@@ -2587,7 +2587,7 @@ export const ru = {
   'lib.reasons.1024b68fd8': 'Дешевле',
   'lib.reasons.0b6a715a58': 'Быстрее до клиента',
   'lib.reasons.e5d759f5a5': 'Бережнее к окнам',
-  'lib.reasons.94b4982ffa': 'Ровнее загрузка',
+  'lib.reasons.94b4982ffa': 'Ровнее загрузку',
   'lib.reasons.25907df14d': 'Короче пробег',
   'lib.reasons.0ae6737c4d': 'Полное покрытие',
   'lib.reasons.e407aab96e':
@@ -2654,6 +2654,11 @@ export const ru = {
   'fixtures.dev-day.330a4e5fcb': 'Короче пробег',
   'fixtures.dev-day.6a1fe69174': 'Полное покрытие',
   'main.daf042c9e1': 'Не найден корневой элемент приложения',
+  'common.requests': '{{count}} заявок',
+  'common.requests_one': '{{count}} заявка',
+  'common.requests_few': '{{count}} заявки',
+  'common.requests_many': '{{count}} заявок',
+  'common.requests_other': '{{count}} заявки',
   'common.unassigned': '{{count}} заявок без назначения',
   'common.unassigned_one': '{{count}} заявка без назначения',
   'common.unassigned_few': '{{count}} заявки без назначения',

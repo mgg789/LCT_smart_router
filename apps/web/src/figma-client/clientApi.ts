@@ -207,14 +207,23 @@ export function loadClientProfile(token: string): Promise<ClientProfileMemory> {
   return requestJson('/api/v1/client/profile', profileSchema, token);
 }
 
-/** Every sent request of this account, including completed and cancelled ones. */
-export async function loadClientHistory(token: string): Promise<ClientApiRequest[]> {
+/**
+ * Every sent request of this account, including completed and cancelled ones, with the
+ * business clock the visit is scheduled against.
+ *
+ * `nowAt` is the same clock the dispatcher and the engineer read, which a running demo
+ * day moves hours away from the wall clock — the customer used to be shown their own
+ * `Date.now()` beside times taken from that other clock.
+ */
+export async function loadClientHistory(
+  token: string,
+): Promise<{ requests: ClientApiRequest[]; nowAt: number }> {
   const body = await requestJson(
     '/api/v1/client/requests?scope=all',
-    z.object({ requests: z.array(requestSchema) }),
+    z.object({ requests: z.array(requestSchema), nowAt: z.number().int() }),
     token,
   );
-  return body.requests;
+  return { requests: body.requests, nowAt: body.nowAt };
 }
 
 /** One owned request. A missing or foreign id is a not-found error. */

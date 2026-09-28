@@ -456,9 +456,11 @@ export class DispatchChatsService {
         throw SysError.notFound('Engineer', { engineerId: target.engineerId });
       }
       if (!engineer.accountId) {
+        // Reaches the dispatcher's screen verbatim, so it is written for them: the UI
+        // shows `message` as-is and the whole product speaks Russian.
         throw new SysError(
           'CHAT_TARGET_UNREACHABLE',
-          'This engineer has no application login, so there is no chat to write into',
+          'У инженера нет входа в приложение — привяжите почту, чтобы открыть чат',
           { details: { engineerId: engineer.id } },
         );
       }
@@ -481,7 +483,7 @@ export class DispatchChatsService {
     if (!request.clientAccountId) {
       throw new SysError(
         'CHAT_TARGET_UNREACHABLE',
-        'This request has no customer account, so there is no chat to write into',
+        'У этой заявки нет личного кабинета клиента — писать некуда',
         { details: { requestId: request.id } },
       );
     }
@@ -509,7 +511,7 @@ export class DispatchChatsService {
     if (!granted) {
       throw new SysError(
         'CHAT_TARGET_UNREACHABLE',
-        `This account has no ${role} role, so it cannot hold a ${role} dialogue`,
+        'У этого аккаунта нет нужной роли, диалог в этой ветке невозможен',
         { details: { ...details, accountId } },
       );
     }

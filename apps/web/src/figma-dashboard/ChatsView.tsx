@@ -1,14 +1,16 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { AiMessage, AiRoleProfile, DispatchChatView } from '../api/ai';
+import type { LiveWorkday } from '../api/live';
+import { businessAt } from '../domain/liveClock';
 import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { AiMarkdown } from './AiMarkdown';
 import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { useArtboardStretch } from './artboardStretch';
-import { FIGMA_ASSETS } from './assets';
-import { engineerPortrait } from './engineerPortrait';
+import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
+import { engineerPortrait, engineerPortraitIndex } from './engineerPortrait';
 import { FigmaIcon, FigmaText } from './primitives';
 import { shortRequestId } from './requestsTable';
 
@@ -39,6 +41,8 @@ export interface ChatsViewProps {
   readonly onSendMessage: (conversationId: string, text: string) => Promise<void>;
   readonly onFinish: (conversationId: string) => Promise<void>;
   readonly onMarkRead: (conversationId: string, seq: number) => void;
+  /** The running day, so message stamps are told on the clock the board is drawn in. */
+  readonly workday?: LiveWorkday | null;
   readonly engineers: readonly {
     readonly id: string;
     readonly displayName: string;
@@ -126,12 +130,17 @@ export function chatStatus(chat: DispatchChatView): string {
 }
 
 /**
- * The same face the roster uses for this person. Keyed by engineer id and name, so a row,
- * the thread header and the engineer card cannot drift onto different portraits.
+ * The portrait for a chat row. An engineer keeps the same face as on the roster.
+ * A customer has no roster row, so the pool is picked from their name rather than
+ * borrowing a crew member's portrait.
  */
 function portraitForChat(chat: DispatchChatView): string {
-  const engineerId = chat.handoff.engineerIds[0] ?? chat.conversation.id;
-  return engineerPortrait(engineerId, chatName(chat));
+  const name = chatName(chat);
+  const engineerId = chat.handoff.engineerIds[0];
+  if (engineerId) return engineerPortrait(engineerId, name);
+  return (
+    ENGINEER_PORTRAITS[engineerPortraitIndex(chat.conversation.id, name)] ?? ENGINEER_PORTRAITS[0]
+  );
 }
 
 /**
@@ -157,6 +166,7 @@ export function ChatsView({
   onSendMessage,
   onFinish,
   onMarkRead,
+  workday = null,
   engineers,
   onOpenEngineer,
 }: ChatsViewProps) {
@@ -380,6 +390,7 @@ export function ChatsView({
                         last={index === displayRows.length - 1 && engineersToStart.length === 0}
                         selected={rowSelected}
                         hideHairline={rowSelected || nextSelected}
+                        workday={workday}
                         onSelect={() => {
                           setPendingEngineer(null);
                           setSelectedId(chat.handoff.id);
@@ -571,6 +582,7 @@ function ChatRow({
   last,
   selected,
   hideHairline,
+  workday,
   onSelect,
 }: {
   chat: DispatchChatView;
@@ -579,11 +591,13 @@ function ChatRow({
   selected: boolean;
   /** The line under this row is also the line above the next one. A selected row drops both. */
   hideHairline: boolean;
+  workday: LiveWorkday | null;
   onSelect: () => void;
 }) {
   const activity = handoffMessage(chat);
   const preview = activity?.text ?? originLabel(chat);
-  const at = activity?.createdAt ?? chat.handoff.createdAt;
+  // Messages are stamped on the wall clock; the board is drawn in business time.
+  const at = businessAt(activity?.createdAt ?? chat.handoff.createdAt, workday);
   return (
     <button
       type="button"

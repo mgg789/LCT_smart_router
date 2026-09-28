@@ -7,6 +7,7 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import type { LiveWorkday } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
 import { t } from '../i18n';
 import { ChatsView } from './ChatsView';
@@ -21,12 +22,14 @@ export function DashboardChats({
   focusChatId,
   focusEngineerId,
   snapshot,
+  workday,
   onOpenEngineer,
 }: {
   token: string | null;
   focusChatId?: string | null;
   focusEngineerId?: string | null;
   snapshot: DashboardSnapshot | null;
+  workday?: LiveWorkday | null;
   onOpenEngineer: (engineerId: string, text: string) => Promise<DispatchChatView>;
 }) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
@@ -58,6 +61,17 @@ export function DashboardChats({
     [token],
   );
 
+  /** Replaces one committed chat in place; a row the list has not seen yet is appended. */
+  const applyChat = useCallback((chat: DispatchChatView) => {
+    setChats((current) => {
+      if (!current) return [chat];
+      const known = current.some((item) => item.handoff.id === chat.handoff.id);
+      return known
+        ? current.map((item) => (item.handoff.id === chat.handoff.id ? chat : item))
+        : [...current, chat];
+    });
+  }, []);
+
   useEffect(() => {
     refresh();
     const timer = window.setInterval(() => refresh(true), 5_000);
@@ -76,14 +90,23 @@ export function DashboardChats({
         writesDisabled={!token}
         onSendMessage={async (conversationId, text) => {
           if (!token) return;
-          await sendDispatchChatMessage(token, conversationId, crypto.randomUUID(), text);
-          refresh();
+          const written = await sendDispatchChatMessage(
+            token,
+            conversationId,
+            crypto.randomUUID(),
+            text,
+          );
+          // Show it the moment the server accepted it. Waiting for the five-second poll
+          // left the composer empty and the thread unchanged, so the dispatcher could
+          // not tell the message had gone and sent it a second time.
+          applyChat(written.chat);
         }}
         onFinish={async (conversationId) => {
           if (!token) return;
-          await finishDispatchChat(token, conversationId, crypto.randomUUID());
-          refresh();
+          const finished = await finishDispatchChat(token, conversationId, crypto.randomUUID());
+          applyChat(finished.chat);
         }}
+        workday={workday ?? null}
         onMarkRead={(conversationId, seq) => {
           if (!token) return;
           void readDispatchChat(token, conversationId, crypto.randomUUID(), seq);

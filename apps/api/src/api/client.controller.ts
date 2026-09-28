@@ -7,6 +7,7 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
 import { MiniAiService } from '../orchestrator/ai';
+import { businessNow } from '../orchestrator/live/business-clock';
 import { RequestsService } from '../orchestrator/requests';
 import { workTypeCatalogue } from '../orchestrator/requests/work-type.catalog';
 import { GeocodingService } from '../orchestrator/settings/geocoding.service';
@@ -335,11 +336,16 @@ export class ClientController {
     @CurrentActor() actor: Actor,
     @Query('clientEmail') clientEmail?: string,
     @Query('scope') scope?: string,
-  ): Promise<{ requests: RequestView[] }> {
+  ): Promise<{ requests: RequestView[]; nowAt: number }> {
+    // The clock the customer is shown has to be the one their visit is scheduled
+    // against: the dispatcher and the engineer both read the business clock, and a
+    // running demo day makes it hours away from the wall clock. The customer's app
+    // used its own `Date.now()` and showed 20:17 for a day everyone else called 09:22.
+    const nowAt = await businessNow(this.prisma, Math.floor(Date.now() / 1000));
     const clientAccountId = await this.existingClientAccountOf(actor, clientEmail);
     if (clientAccountId === null) {
       // A never-seen address owns no requests; a read does not create the account.
-      return { requests: [] };
+      return { requests: [], nowAt };
     }
     const requests = await this.prisma.request.findMany({
       // The default list is the open work. `scope=all` is the history of everything
@@ -355,7 +361,7 @@ export class ClientController {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return { requests: requests.map((request) => toRequestView(request)) };
+    return { requests: requests.map((request) => toRequestView(request)), nowAt };
   }
 
   @Get('requests/:id')

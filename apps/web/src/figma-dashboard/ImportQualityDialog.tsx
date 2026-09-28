@@ -4,6 +4,18 @@ import { createPortal } from 'react-dom';
 import type { ImportPreparationView } from '../api/types';
 import { t } from '../i18n';
 
+/**
+ * One example as the dispatcher knows it: the request number from the package.
+ *
+ * The checker keys its examples by `<регион>:<номер>` so they stay unique across a
+ * multi-region import, but the region prefix is an internal code — «southeast:32589»
+ * on screen told the dispatcher nothing they could look the request up by.
+ */
+export function exampleLabel(example: string): string {
+  const number = example.slice(example.lastIndexOf(':') + 1).trim();
+  return number.length > 0 ? `№ ${number}` : example;
+}
+
 /** Label for leaving the import review and returning to the upload form. */
 export const IMPORT_QUALITY_BACK_LABEL = t('figma-dashboard.ImportQualityDialog.6c99e7d8fb');
 /** Label for accepting the reviewed package without changing its contents. */
@@ -69,7 +81,7 @@ export function ImportQualityDialog({
                 </p>
                 <p className="mt-[4px] text-figma-muted">
                   {t('figma-dashboard.ImportQualityDialog.b16740dc0a')}
-                  {finding.examples.join(', ')}
+                  {finding.examples.map(exampleLabel).join(', ')}
                 </p>
               </li>
             ))}
