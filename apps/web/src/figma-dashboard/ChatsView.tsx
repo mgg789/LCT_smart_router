@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { AiMessage, AiRoleProfile, DispatchChatView } from '../api/ai';
+import type { LiveWorkday } from '../api/live';
+import { businessAt } from '../domain/liveClock';
 import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { AiMarkdown } from './AiMarkdown';
@@ -8,6 +10,7 @@ import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
+import { engineerPortrait, engineerPortraitIndex } from './engineerPortrait';
 import { FigmaIcon, FigmaText } from './primitives';
 import { shortRequestId } from './requestsTable';
 
@@ -31,6 +34,8 @@ export interface ChatsViewProps {
   readonly onSendMessage: (conversationId: string, text: string) => Promise<void>;
   readonly onFinish: (conversationId: string) => Promise<void>;
   readonly onMarkRead: (conversationId: string, seq: number) => void;
+  /** The running day, so message stamps are told on the clock the board is drawn in. */
+  readonly workday?: LiveWorkday | null;
   readonly engineers: readonly {
     readonly id: string;
     readonly displayName: string;
@@ -98,14 +103,22 @@ export function chatStatus(chat: DispatchChatView): string {
 }
 
 /**
- * A stable portrait per conversation. Neither side of a handover carries a photo and the
- * frame is drawn with one, so the pool is cycled by id rather than by list position — a
- * row must not change face when the list reorders around it.
+ * The portrait for a chat row. Nobody in a handover carries a photo and the frame is
+ * drawn with one, so an illustration is chosen — but by the same rule as everywhere
+ * else, not by hashing the conversation id: an engineer kept one face in «Инженеры»
+ * and a different one here, and a customer was given a member of the crew's.
+ *
+ * An engineer resolves to their own portrait through `engineerPortrait`. A customer has
+ * no roster row, so the pool is picked from their name, which at least keeps the
+ * illustration stable and consistent with how they are addressed.
  */
-function portraitFor(id: string): string {
-  let sum = 0;
-  for (let index = 0; index < id.length; index += 1) sum += id.charCodeAt(index);
-  return ENGINEER_PORTRAITS[sum % ENGINEER_PORTRAITS.length] as string;
+function portraitFor(chat: DispatchChatView): string {
+  const name = chatName(chat);
+  const engineerId = chat.handoff.engineerIds[0];
+  if (engineerId) return engineerPortrait(engineerId, name);
+  return (
+    ENGINEER_PORTRAITS[engineerPortraitIndex(chat.conversation.id, name)] ?? ENGINEER_PORTRAITS[0]
+  );
 }
 
 /**
@@ -135,6 +148,7 @@ export function ChatsView({
   onSendMessage,
   onFinish,
   onMarkRead,
+  workday = null,
   engineers,
   onOpenEngineer,
 }: ChatsViewProps) {
@@ -310,6 +324,7 @@ export function ChatsView({
                           (side !== 'engineer' || closedRows.length === 0)
                         }
                         selected={selected?.handoff.id === chat.handoff.id}
+                        workday={workday}
                         onSelect={() => setSelectedId(chat.handoff.id)}
                       />
                     ))}
@@ -347,6 +362,7 @@ export function ChatsView({
                           top={(liveRows.length + engineersToStart.length + index) * ROW_STEP}
                           last={index === closedRows.length - 1}
                           selected={selected?.handoff.id === chat.handoff.id}
+                          workday={workday}
                           onSelect={() => setSelectedId(chat.handoff.id)}
                         />
                       ))
@@ -366,7 +382,7 @@ export function ChatsView({
           >
             <img
               alt=""
-              src={portraitFor(selected.conversation.id)}
+              src={portraitFor(selected)}
               className="shrink-0 rounded-full object-cover"
               style={{ width: 54, height: 54 }}
             />
@@ -516,16 +532,20 @@ function ChatRow({
   top,
   last,
   selected,
+  workday,
   onSelect,
 }: {
   chat: DispatchChatView;
   top: number;
   last: boolean;
   selected: boolean;
+  workday: LiveWorkday | null;
   onSelect: () => void;
 }) {
   const preview = lastMessage(chat)?.text ?? originLabel(chat);
-  const at = lastMessage(chat)?.createdAt ?? chat.handoff.createdAt;
+  // Messages are stamped on the wall clock, as audit rows are; the rest of this board
+  // is drawn in business time, so the row is told on the same clock as the header.
+  const at = businessAt(lastMessage(chat)?.createdAt ?? chat.handoff.createdAt, workday);
   return (
     <button
       type="button"
@@ -544,7 +564,7 @@ function ChatRow({
       ) : null}
       <img
         alt=""
-        src={portraitFor(chat.conversation.id)}
+        src={portraitFor(chat)}
         className="absolute rounded-full object-cover"
         style={{ left: 0, top: 0, width: 60, height: 60 }}
       />
@@ -611,7 +631,7 @@ function EngineerStartRow({
     >
       <img
         alt=""
-        src={portraitFor(engineer.id)}
+        src={engineerPortrait(engineer.id, engineer.displayName)}
         className="absolute rounded-full object-cover"
         style={{ left: 0, top: 0, width: 60, height: 60 }}
       />

@@ -64,7 +64,7 @@ it('dispatcher login has named email, reachable submit and accessible password f
 it('engineer login has a named email field and keyboard-reachable action', async () => {
   const user = userEvent.setup();
   const { container } = render(<EngineerLogin motionOn={false} onSession={() => undefined} />);
-  const email = screen.getByRole('textbox', { name: 'Email' });
+  const email = screen.getByRole('textbox', { name: 'Почта' });
   await user.tab();
   expect(document.activeElement).toBe(email);
   await user.tab();
@@ -85,7 +85,7 @@ const clientProps = {
 };
 it('client login and every OTP cell have accessible names', async () => {
   const { container, rerender } = render(<ClientEmailGate {...clientProps} />);
-  expect(screen.getByRole('textbox', { name: 'Email' })).toBeTruthy();
+  expect(screen.getByRole('textbox', { name: 'Почта' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Назад' })).toBeTruthy();
   await expectAccessible(container);
   rerender(<ClientEmailGate {...clientProps} email="client@example.test" codeStep />);

@@ -64,19 +64,21 @@ export function buildCallDispatchHelperTool(
           where: { conversationId: ctx.conversationId },
           _max: { seq: true },
         });
+        const identified = await identify(tx, role, ctx.accountId, ctx.engineerId ?? null);
         const opened = await tx.aiHandoff.create({
           data: {
             conversationId: ctx.conversationId,
             requestedByAccountId: ctx.accountId,
             actorRole: role,
             initiatedBy: 'user',
-            requestIds: [],
+            requestIds: identified.requestIds,
             engineerIds: ctx.engineerId ? [ctx.engineerId] : [],
             state: 'waiting',
             startSeq: last._max.seq ?? 0,
             createdAt: BigInt(ctx.now),
           },
         });
+        await nameConversation(tx, ctx.conversationId, identified.title, ctx.now);
         await moveToDispatcherMode(tx, ctx.conversationId, ctx.now);
         const current = await tx.aiConversation.findUniqueOrThrow({
           where: { id: ctx.conversationId },
@@ -122,6 +124,58 @@ async function emitLive(
     return;
   }
   await deps.bus.emitForRun(runId, event);
+}
+
+/**
+ * Who the dispatcher is about to talk to, in the same shape a chat they opened
+ * themselves carries (`dispatch-chats.service.ts#resolveTarget`).
+ *
+ * Without this an escalated dialogue reached the board with no title at all and the
+ * row read «Без имени», although the name was on record the whole time: the engineer's
+ * own row, or the contact the customer filled in on their newest request. The handoff
+ * also carries that request, so the dispatcher opens the chat with the case in hand.
+ */
+async function identify(
+  tx: Tx,
+  role: 'client' | 'engineer' | 'dispatcher',
+  accountId: string,
+  engineerId: string | null,
+): Promise<{ title: string | null; requestIds: string[] }> {
+  if (role === 'engineer') {
+    const engineer = engineerId
+      ? await tx.engineer.findUnique({ where: { id: engineerId } })
+      : await tx.engineer.findFirst({ where: { accountId } });
+    return {
+      title: engineer ? `Инженер · ${engineer.displayName}` : null,
+      requestIds: [],
+    };
+  }
+  if (role === 'client') {
+    const request = await tx.request.findFirst({
+      where: { clientAccountId: accountId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!request) return { title: null, requestIds: [] };
+    return {
+      title: `Клиент · ${request.contactName?.trim() || request.addressText}`,
+      requestIds: [request.id],
+    };
+  }
+  return { title: null, requestIds: [] };
+}
+
+/** Names an unnamed dialogue; a title the dispatcher already saw is never overwritten. */
+async function nameConversation(
+  tx: Tx,
+  conversationId: string,
+  title: string | null,
+  now: number,
+): Promise<void> {
+  if (!title) return;
+  await tx.aiConversation.updateMany({
+    where: { id: conversationId, title: null },
+    data: { title, updatedAt: BigInt(now) },
+  });
 }
 
 /** Only when the conversation is still in `ai` mode: a second call (a retried tool call,

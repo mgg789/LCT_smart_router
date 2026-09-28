@@ -322,7 +322,10 @@ function ComparisonBars({
                 >
                   {value === null
                     ? t('figma-dashboard.PolicyComparisonOverview.3afae954a4')
-                    : `${number.format(value)} ${unit}`}
+                    : measure === 'assigned'
+                      ? // A count of requests, so it declines: «4 заявки», not «4 заявок».
+                        t('common.requests', { count: value })
+                      : `${number.format(value)} ${unit}`}
                   {delta === null
                     ? ''
                     : t('figma-dashboard.PolicyComparisonOverview.dc2e5dbe5c', { value0: delta })}

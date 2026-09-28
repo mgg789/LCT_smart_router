@@ -74,6 +74,9 @@ export function ClientApp() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<ClientRequestView | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  /** Business clock minus this device's wall clock; see `refreshHistory`. */
+  const [clockSkewMs, setClockSkewMs] = useState(0);
+  const businessNowMs = nowMs + clockSkewMs;
   const opened = requests.find((item) => item.id === openedId) ?? null;
 
   // Declared before the effects that reference it, and memoised: it sits in their
@@ -150,9 +153,13 @@ export function ClientApp() {
   };
 
   const refreshHistory = async (token: string) => {
-    const rows = await loadClientHistory(token);
-    const cards = rows.map(clientCardFromApi);
+    const history = await loadClientHistory(token);
+    const cards = history.requests.map(clientCardFromApi);
     setRequests(cards);
+    // The offset between the server's business clock and this device's wall clock; a
+    // running demo day makes it hours, and every time the customer sees has to come
+    // from the same clock the visit was planned on.
+    setClockSkewMs(history.nowAt * 1000 - Date.now());
     return cards;
   };
 
@@ -318,7 +325,7 @@ export function ClientApp() {
   const detail = opened ? (
     <ClientRequestDetail
       item={opened}
-      nowMs={nowMs}
+      nowMs={businessNowMs}
       notice={inlineNotice}
       onBack={closeDetail}
       onChangeTime={() => setNotice(t('figma-client.ClientApp.d4f8b2e820'))}
@@ -450,7 +457,7 @@ export function ClientApp() {
               className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
               style={{ fontSize: eu(32), position: 'relative', top: 2 }}
             >
-              {engineerHeaderStamp(nowMs)}
+              {engineerHeaderStamp(businessNowMs)}
             </p>
           ) : null}
           {screen === 'new' || screen === 'sent' ? (

@@ -262,8 +262,7 @@ function EngineerRow({
         </span>
         <span className="size-[3px] rounded-full bg-figma-muted" />
         <span className="figma-nowrap">
-          {engineer.requestCount}
-          {t('figma-dashboard.EngineerColumn.a7b7ba4108')}
+          {t('common.requests', { count: engineer.requestCount })}
         </span>
       </div>
       <div className="absolute left-[15px] top-[81px] h-[8px] w-[321px] rounded-[13px] bg-figma-track" />

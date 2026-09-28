@@ -1103,6 +1103,7 @@ export function MainDashboardPage() {
                       token={dash.token}
                       focusChatId={focusedChatId}
                       snapshot={visibleSnapshot}
+                      workday={dash.liveWorkday ?? null}
                       onOpenEngineer={async (engineerId) => {
                         if (!dash.token) {
                           throw new Error(t('figma-dashboard.DashboardAssist.df8d670234'));
@@ -1146,6 +1147,7 @@ export function MainDashboardPage() {
                   {stackViewKey(stackNav) === 'policy' ? (
                     <PolicyComparisonView
                       snapshot={dash.snapshot}
+                      workday={dash.liveWorkday ?? null}
                       comparison={dash.policyComparison}
                       loading={dash.policyComparisonLoading}
                       error={dash.policyComparisonError}
@@ -1368,11 +1370,14 @@ export function MainDashboardPage() {
                         dash.writesDisabled
                           ? undefined
                           : async (engineerId) => {
+                              const assign = () => dash.assignRequest(openedRequestId, engineerId);
                               if (dash.snapshot?.plan.mode !== 'manual') {
-                                openManualPlanning('mode');
+                                // Hand the gate the assignment it interrupted, so the
+                                // dispatcher's click still lands once the mode is on.
+                                openManualPlanning('mode', assign);
                                 return;
                               }
-                              await dash.assignRequest(openedRequestId, engineerId);
+                              await assign();
                             }
                       }
                     />
