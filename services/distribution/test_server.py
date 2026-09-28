@@ -2,14 +2,13 @@ import hashlib
 import http.client
 import json
 import os
-import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent))
-from server import App, create_server
+from services.distribution.server import App, configured_release, create_server
 
 
 class TestApp(unittest.TestCase):
@@ -34,6 +33,54 @@ class TestApp(unittest.TestCase):
         for _ in range(self.a.limit):
             self.assertTrue(self.a.reserve_attempt(ip))
         self.assertFalse(self.a.reserve_attempt(ip))
+
+    def test_public_version_is_available_when_private_distribution_is_closed(self):
+        self.a.open = False
+        self.a.release = {
+            "schema_version": 1,
+            "version": "1.7.0",
+            "download_url": "https://example.test/navix.zip",
+        }
+        server = create_server(self.a, ("127.0.0.1", 0))
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection(*server.server_address, timeout=2)
+            connection.request("GET", "/navix/version")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.loads(response.read()), self.a.release)
+            connection.close()
+            self.a.release = None
+            connection = http.client.HTTPConnection(*server.server_address, timeout=2)
+            connection.request("GET", "/navix/version")
+            response = connection.getresponse()
+            self.assertEqual(response.status, 503)
+            self.assertEqual(json.loads(response.read()), {"error": "release_not_configured"})
+            connection.close()
+        finally:
+            server.shutdown()
+            thread.join()
+            server.server_close()
+
+    def test_release_config_does_not_accept_credentials_or_executable_urls(self):
+        for url in ("javascript:run()", "https://user:secret@example.test/file"):
+            with patch.dict(os.environ, {"NAVIX_LATEST_VERSION": "1.7", "NAVIX_DOWNLOAD_URL": url}):
+                with self.assertRaises(ValueError):
+                    configured_release()
+
+    def test_invalid_release_metadata_does_not_disable_the_private_service(self):
+        with patch.dict(
+            os.environ,
+            {
+                "NAVIX_LATEST_VERSION": "invalid",
+                "NAVIX_DOWNLOAD_URL": "https://example.test/release.zip",
+            },
+        ):
+            app = App()
+        self.assertIsNone(app.release)
+        self.assertTrue(app.open)
+        self.assertTrue(app.payload.is_file())
 
     def test_http_runtime(self):
         server = create_server(self.a, ("127.0.0.1", 0))

@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 MAX_BODY = 1024
 
@@ -30,10 +31,13 @@ class App:
         self.payload = Path(os.environ["NAVIX_PAYLOAD_PATH"])
         if self.payload.is_file() and self.payload.stat().st_size > 262144:
             raise ValueError("Distribution payload exceeds 256 KiB")
-        self.db = os.environ.get(
-            "NAVIX_STATS_DB", "/var/lib/navix-distribution/stats.sqlite3"
-        )
+        self.db = os.environ.get("NAVIX_STATS_DB", "/var/lib/navix-distribution/stats.sqlite3")
         self.open = os.environ.get("NAVIX_DISTRIBUTION_OPEN", "false").lower() == "true"
+        try:
+            self.release = configured_release()
+        except ValueError:
+            # Invalid public metadata must not disable an existing PIN distribution.
+            self.release = None
         self.limit = int(os.environ.get("NAVIX_FAILURE_LIMIT", "5"))
         self.window = int(os.environ.get("NAVIX_FAILURE_WINDOW_SEC", "900"))
         if self.limit < 1 or self.window < 1:
@@ -62,9 +66,7 @@ class App:
     def record(self, ip: str, outcome: str) -> None:
         """Persist only pseudonymous request metadata, never body or credentials."""
         with self.connect() as con:
-            con.execute(
-                "insert into events values (?,?,?)", (int(time.time()), ip, outcome)
-            )
+            con.execute("insert into events values (?,?,?)", (int(time.time()), ip, outcome))
 
     def reserve_attempt(self, ip: str) -> bool:
         """Atomically reserve a PIN attempt before reading or validating its body."""
@@ -116,6 +118,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self):
+        if self.path == "/navix/version":
+            if self.app.release is None:
+                return self.send_json(503, {"error": "release_not_configured"})
+            return self.send_json(200, self.app.release)
         if self.path != "/navix/status":
             return self.send_json(404, {"error": "not_found"})
         self.app.record(self.app.ip(self.client_ip()), "status")
@@ -149,9 +155,7 @@ class Handler(BaseHTTPRequestHandler):
         valid = (
             isinstance(pin, str)
             and re.fullmatch(r"[0-9]{6}", pin) is not None
-            and hmac.compare_digest(
-                hashlib.sha256(pin.encode()).hexdigest(), self.app.pin_hash
-            )
+            and hmac.compare_digest(hashlib.sha256(pin.encode()).hexdigest(), self.app.pin_hash)
         )
         if not valid:
             self.app.record(ip, "failed")
@@ -167,6 +171,29 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+
+def configured_release() -> dict | None:
+    """Read public release metadata; PIN availability and private attachments are independent."""
+    version = os.environ.get("NAVIX_LATEST_VERSION", "").strip()
+    url = os.environ.get("NAVIX_DOWNLOAD_URL", "").strip()
+    if not version and not url:
+        return None
+    if not re.fullmatch(
+        r"v?(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?",
+        version,
+    ):
+        raise ValueError("Configure NAVIX_LATEST_VERSION as a release version")
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or any(ord(c) < 33 for c in url)
+    ):
+        raise ValueError("Configure NAVIX_DOWNLOAD_URL as a public HTTPS release link")
+    return {"schema_version": 1, "version": version, "download_url": url}
 
 
 def main() -> None:
