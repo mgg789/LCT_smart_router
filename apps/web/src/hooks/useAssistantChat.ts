@@ -3,6 +3,7 @@ import {
   type AiActionButton,
   type AiAssistMode,
   type AiConversation,
+  type AiConversationMode,
   type AiMessage,
   type AiMessageAuthor,
   type AiMessageKind,
@@ -65,6 +66,25 @@ export interface AiOperationView {
 export type AiUnavailableReason = 'provider' | 'quota' | 'auth' | 'stopped';
 
 export type HandoffStatus = 'waiting' | 'answered' | null;
+
+/**
+ * Resumed handover state, read from the transcript the server just returned.
+ *
+ * A reload has no `state` event to learn from, and the conversation view carries no
+ * handoff, so the banner is derived the same way the server decides it: a dispatcher
+ * is "on the line" only while their last message is newer than the person's last one
+ * (`dispatch-chats.service.ts#markAwaitingDispatcher`). Anything that arrives later
+ * overrides this.
+ */
+export function resumedHandoffStatus(
+  mode: AiConversationMode,
+  messages: readonly AiMessage[],
+): HandoffStatus {
+  if (mode !== 'dispatcher') return null;
+  const lastDispatcher = messages.findLast((item) => item.author === 'dispatcher')?.seq ?? -1;
+  const lastUser = messages.findLast((item) => item.author === 'user')?.seq ?? -1;
+  return lastDispatcher > lastUser ? 'answered' : 'waiting';
+}
 
 export interface UseAssistantChatOptions {
   readonly token: string | null;
@@ -379,10 +399,15 @@ export function useAssistantChat({
               break;
             case 'mode_changed':
               updateConversation((prev) => ({ ...prev, mode: event.mode }));
-              // A conversation only ever switches to `dispatcher` once a human has
-              // answered the handoff (schema.prisma, AiConversation.mode) — so the flip
-              // itself is the "answered" signal, not just a queued request.
-              if (event.mode === 'dispatcher') setHandoffStatus('answered');
+              // The mode flips the moment the handover is queued, not when a human
+              // picks it up: `handoff.tool.ts` emits `help_requested` and this event on
+              // the same turn. So it says the assistant stopped answering and nothing
+              // about a dispatcher being there — telling the person «На связи диспетчер»
+              // here promised a human who had not seen the chat yet. Only the chat
+              // stream's `state` event, which carries the handoff itself, may raise it.
+              setHandoffStatus((current) =>
+                event.mode === 'dispatcher' ? (current ?? 'waiting') : null,
+              );
               break;
             case 'quota':
               setQuota({
@@ -496,6 +521,7 @@ export function useAssistantChat({
       try {
         const stored = readStoredSession(key);
         let conv: AiConversation | undefined;
+        let resumed: readonly AiMessage[] = [];
         if (stored) {
           /*
            * The cache is keyed by surface, not by account, because the hook is
@@ -511,6 +537,7 @@ export function useAssistantChat({
             if (generation !== generationRef.current) return;
             if (result.conversation.closedAt == null) {
               conv = result.conversation;
+              resumed = result.messages;
               for (const item of result.messages) appendAuthoritative(messageFromApi(item));
               lastMessageSeqRef.current = result.messages.at(-1)?.seq ?? 0;
               // An empty transcript has nothing to resume. A leftover run id is what paints
@@ -541,11 +568,7 @@ export function useAssistantChat({
         setConversation(conv);
         conversationRef.current = conv;
         persist({ conversationId: conv.id });
-        // See the `mode_changed` handler above: reaching `dispatcher` mode at all means a
-        // human has already answered, so that is the resumed "answered" state; a request
-        // still awaiting a reply is restored from the replayed `help_requested` event once
-        // the run stream below reconnects.
-        setHandoffStatus(conv.mode === 'dispatcher' ? 'answered' : null);
+        setHandoffStatus(resumedHandoffStatus(conv.mode, resumed));
         if (conv.mode !== 'dispatcher' && runIdRef.current) {
           runStream(runIdRef.current, lastEventSeqRef.current, generation);
         }
@@ -661,7 +684,10 @@ export function useAssistantChat({
           // Already fully handed to a dispatcher: drop the local echo and let the poll
           // (fired immediately, then every 2s) bring back the authoritative copy.
           setMessages((current) => current.filter((item) => item.id !== localId));
-          setHandoffStatus('answered');
+          // Writing into a handed-over chat says nothing about whether a human has read
+          // it: the person who just wrote is now the one waiting. A dispatcher reply
+          // raises this through the chat stream's `state` event.
+          setHandoffStatus('waiting');
           persist({ runId: null });
           await pollDispatcherMessages(generationRef.current);
           return;

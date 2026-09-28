@@ -157,7 +157,13 @@ export class DispatchChatsController {
       },
     );
     const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) this.publishChatMessages(chat, [outcome.result.messageId]);
+    if (!outcome.replayed) {
+      this.publishChatMessages(chat, [outcome.result.messageId]);
+      // The reply is what moves the handoff from `waiting` to `answered` and stamps
+      // `firstReplyAt` (`dispatch-chats.service.ts#reply`). Without publishing that,
+      // the phone keeps showing «Передали диспетчеру» after a human already replied.
+      this.publishChatState(chat);
+    }
     return {
       message: toMessageView(this.requireChatMessage(chat, outcome.result.messageId)),
       chat: toDispatchChatView(chat),
