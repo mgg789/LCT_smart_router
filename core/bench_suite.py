@@ -538,15 +538,29 @@ def run_suite(
     exact_max_route_builds: int = 1_500_000,
     robustness_simulations: int = 300,
     determinism_repeats: int = 3,
+    strict_time_windows: bool = False,
 ) -> dict:
-    """Run every benchmark section and return the JSON-ready suite payload."""
+    """Run every benchmark section and return the JSON-ready suite payload.
+
+    The default ``strict_time_windows=False`` matches the enforced golden gate
+    and the product's default 600-second window-lateness tolerance, so the
+    measured configuration is the one customers actually run.
+    """
     if exact_instances is None:
         exact_instances = (
             {"name": "micro-2x7", "engineers": 2, "requests": 7},
             {"name": "micro-3x7", "engineers": 3, "requests": 7},
         )
-    settings = SearchSettings(time_limit_ms=budget_ms, solution_limit=solution_limit)
-    event_settings = SearchSettings(time_limit_ms=event_budget_ms, solution_limit=solution_limit)
+    settings = SearchSettings(
+        time_limit_ms=budget_ms,
+        solution_limit=solution_limit,
+        strict_time_windows=strict_time_windows,
+    )
+    event_settings = SearchSettings(
+        time_limit_ms=event_budget_ms,
+        solution_limit=solution_limit,
+        strict_time_windows=strict_time_windows,
+    )
     valid: tuple[Region, ...] = ("east", "southeast", "south_central")
     names = [name for name in regions if name in valid]
     scenarios = [load_official_region(dataset_dir, name) for name in names]
