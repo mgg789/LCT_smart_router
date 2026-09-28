@@ -224,13 +224,7 @@ def _nearest_distance_any(
 def _candidate_indices(
     chain: list[tuple[float, float]], point: tuple[float, float], tolerance_m: float
 ) -> list[int]:
-    """All chain indices whose node lies within `tolerance_m` of the point.
-
-    A station matches several nodes: both directional tracks, entrances, and
-    station-node duplicates. Slicing from a single nearest index jumps between
-    the parallel tracks and draws loops; enumerating every candidate and taking
-    the shortest span stays on one track.
-    """
+    """All chain indices whose node lies within `tolerance_m` of the point."""
     return [index for index, node in enumerate(chain) if haversine_m(node, point) <= tolerance_m]
 
 
@@ -249,37 +243,104 @@ def _simplify(points: list[tuple[float, float]], min_step_m: float = 20.0) -> li
     return kept
 
 
-def _edge_geometry(
-    segments: list[list[tuple[float, float]]],
-    source_point: tuple[float, float],
-    target_point: tuple[float, float],
-) -> list[list[float]] | None:
-    """Slice the line's track between the two stations, following real geometry.
+def _stitch_ways(way_path: list[int], ways: list[list[tuple[float, float]]]) -> list[tuple[float, float]]:
+    """Concatenate ways along a way-graph path, orienting each continuation."""
+    chain = list(ways[way_path[0]])
+    for index in way_path[1:]:
+        way = ways[index]
+        if chain[-1] == way[0]:
+            chain.extend(way[1:])
+        elif chain[-1] == way[-1]:
+            chain.extend(reversed(way[:-1]))
+        elif chain[0] == way[0]:
+            chain = list(reversed(chain)) + way[1:]
+        elif chain[0] == way[-1]:
+            chain = list(reversed(chain)) + list(reversed(way[:-1]))
+        else:
+            return []  # the BFS path broke; caller falls back to a chord
+    return chain
 
-    Chooses the shortest track span that covers both stations among all
-    segment candidates and all near-station node candidates, so a station on
-    both directional tracks never routes the long way around a loop or
-    zigzags between the tracks.
+
+def _way_graph(polylines: dict[int, list[tuple[float, float]]]) -> tuple[list, dict]:
+    """Ways list plus an endpoint index: ways join only at coinciding endpoints."""
+    ways = list(polylines.values())
+    index: dict[tuple[float, float], list[int]] = {}
+    for position, way in enumerate(ways):
+        for endpoint in (way[0], way[-1]):
+            index.setdefault(tuple(endpoint), []).append(position)
+    return ways, index
+
+
+def _ways_near(
+    ways: list[list[tuple[float, float]]], point: tuple[float, float], tolerance_m: float = 400.0
+) -> list[int]:
+    """Ways passing within `tolerance_m` of the point."""
+    return [
+        position
+        for position, way in enumerate(ways)
+        if min(haversine_m(node, point) for node in way) <= tolerance_m
+    ]
+
+
+def _way_route(
+    start: int,
+    goal: int,
+    ways: list[list[tuple[float, float]]],
+    endpoint_index: dict[tuple[float, float], list[int]],
+) -> list[int] | None:
+    """Fewest-ways route over the way graph (BFS on shared endpoints)."""
+    from collections import deque
+
+    previous: dict[int, int | None] = {start: None}
+    queue: deque[int] = deque([start])
+    while queue:
+        current = queue.popleft()
+        if current == goal:
+            path = []
+            while current is not None:
+                path.append(current)
+                current = previous[current]
+            return list(reversed(path))
+        way = ways[current]
+        for endpoint in (way[0], way[-1]):
+            for neighbor in endpoint_index.get(tuple(endpoint), ()):
+                if neighbor not in previous:
+                    previous[neighbor] = current
+                    queue.append(neighbor)
+    return None
+
+
+def _edge_geometry(
+    way_graph, source_point: tuple[float, float], target_point: tuple[float, float]
+) -> list[list[float]] | None:
+    """Route the ride over the line's own way graph, one directional track.
+
+    The old slice-by-index approach zigzagged whenever the chained track
+    interleaved the two parallel directional ways. Routing over ways (ways join
+    only at coinciding endpoints) keeps the polyline on a single track; among
+    all (start way, end way) candidates the shortest trimmed span wins.
     """
+    ways, endpoint_index = way_graph
     best = None
-    for chain in segments:
-        source_distance = _nearest_distance(chain, source_point)
-        target_distance = _nearest_distance(chain, target_point)
-        if source_distance > 400 or target_distance > 400:
-            continue  # this segment does not cover both stations
-        for source_index in _candidate_indices(chain, source_point, 400.0):
-            for target_index in _candidate_indices(chain, target_point, 400.0):
-                if abs(target_index - source_index) < 3:
-                    continue
-                low, high = min(source_index, target_index), max(source_index, target_index)
-                slice_ = chain[low : high + 1]
-                if len(slice_) < 4:
-                    continue
-                # The shortest index span wins: it stays on one track and
-                # never takes the long way around a loop chain.
-                score = (high - low) + source_distance + target_distance
-                if best is None or score < best[0]:
-                    best = (score, slice_)
+    for start in _ways_near(ways, source_point):
+        for goal in _ways_near(ways, target_point):
+            path = _way_route(start, goal, ways, endpoint_index)
+            if path is None:
+                continue
+            stitched = _stitch_ways(path, ways)
+            if len(stitched) < 4:
+                continue
+            source_index = min(range(len(stitched)), key=lambda i: haversine_m(stitched[i], source_point))
+            target_index = min(range(len(stitched)), key=lambda i: haversine_m(stitched[i], target_point))
+            if abs(target_index - source_index) < 3:
+                continue
+            low, high = min(source_index, target_index), max(source_index, target_index)
+            span = stitched[low : high + 1]
+            if len(span) < 4:
+                continue
+            score = sum(haversine_m(span[i], span[i + 1]) for i in range(len(span) - 1))
+            if best is None or score < best[0]:
+                best = (score, span)
     if best is None:
         return None
     simplified = _simplify(best[1])
@@ -342,6 +403,7 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
     line_segments = {
         line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
     }
+    line_way_graphs = {line: _way_graph(polylines) for line, polylines in line_ways.items()}
     PLATFORM_TRACK_TOLERANCE_M = 300.0
     dropped_stops: list[str] = []
     for relation in relations:
@@ -428,7 +490,7 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
                 # Track-following geometry; the chord between stations stays
                 # the runtime fallback when the line chain cannot resolve it.
                 "geometry": _edge_geometry(
-                    line_segments.get(source_station["line_id"], []), source_point, target_point
+                    line_way_graphs.get(source_station["line_id"]), source_point, target_point
                 ),
             }
 
