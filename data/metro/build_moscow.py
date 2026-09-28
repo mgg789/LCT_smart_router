@@ -30,7 +30,11 @@ ROUTE_FILE = "moscow_subway_routes.json"
 BOUNDARY_FILE = "moscow_boundary_nominatim.json"
 
 EARTH_RADIUS_M = 6_371_000.0
-RIDE_SPEED_MPS = 41_000.0 / 3_600.0
+# Moscow metro commercial speed incl. stops is ~48–50 km/h on the long
+# straight sections; the 1.15 stretch compensates the haversine underestimating
+# curved tunnels. 2026-09-28: 41 km/h made every ride ~1.6x slower than the
+# real timetable (Кожуховская → Таганская: 20.5 predicted vs ~12 actual).
+RIDE_SPEED_MPS = 50_000.0 / 3_600.0
 RIDE_STRETCH = 1.15
 WALK_SPEED_MPS = 1.4
 MIN_RIDE_SEC = 60
@@ -210,35 +214,76 @@ def _nearest_distance(chain: list[tuple[float, float]], point: tuple[float, floa
     return min(haversine_m(node, point) for node in chain) if chain else math.inf
 
 
+def _nearest_distance_any(
+    segments: list[list[tuple[float, float]]], point: tuple[float, float]
+) -> float:
+    """Distance from one point to the nearest node across all track segments."""
+    return min((_nearest_distance(chain, point) for chain in segments), default=math.inf)
+
+
+def _candidate_indices(
+    chain: list[tuple[float, float]], point: tuple[float, float], tolerance_m: float
+) -> list[int]:
+    """All chain indices whose node lies within `tolerance_m` of the point.
+
+    A station matches several nodes: both directional tracks, entrances, and
+    station-node duplicates. Slicing from a single nearest index jumps between
+    the parallel tracks and draws loops; enumerating every candidate and taking
+    the shortest span stays on one track.
+    """
+    return [index for index, node in enumerate(chain) if haversine_m(node, point) <= tolerance_m]
+
+
+def _simplify(points: list[tuple[float, float]], min_step_m: float = 20.0) -> list[tuple[float, float]]:
+    """Drop intermediate points closer than `min_step_m` to the previous kept one.
+
+    Parallel track ways sit ~30–60 m apart; without this the sliced polyline
+    zigzags between them at way joints. Real curves have gentler steps and
+    survive.
+    """
+    kept = [points[0]]
+    for point in points[1:]:
+        if haversine_m(kept[-1], point) >= min_step_m:
+            kept.append(point)
+    kept.append(points[-1])
+    return kept
+
+
 def _edge_geometry(
     segments: list[list[tuple[float, float]]],
     source_point: tuple[float, float],
     target_point: tuple[float, float],
 ) -> list[list[float]] | None:
-    """Slice the line's track between the two stations, following real geometry."""
+    """Slice the line's track between the two stations, following real geometry.
+
+    Chooses the shortest track span that covers both stations among all
+    segment candidates and all near-station node candidates, so a station on
+    both directional tracks never routes the long way around a loop or
+    zigzags between the tracks.
+    """
     best = None
     for chain in segments:
         source_distance = _nearest_distance(chain, source_point)
         target_distance = _nearest_distance(chain, target_point)
         if source_distance > 400 or target_distance > 400:
             continue  # this segment does not cover both stations
-        source_index = min(
-            range(len(chain)), key=lambda index: (haversine_m(chain[index], source_point), index)
-        )
-        target_index = min(
-            range(len(chain)), key=lambda index: (haversine_m(chain[index], target_point), index)
-        )
-        if abs(target_index - source_index) < 3:
-            continue
-        slice_ = chain[min(source_index, target_index) : max(source_index, target_index) + 1]
-        if len(slice_) < 4:
-            continue
-        score = source_distance + target_distance
-        if best is None or score < best[0]:
-            best = (score, slice_)
+        for source_index in _candidate_indices(chain, source_point, 400.0):
+            for target_index in _candidate_indices(chain, target_point, 400.0):
+                if abs(target_index - source_index) < 3:
+                    continue
+                low, high = min(source_index, target_index), max(source_index, target_index)
+                slice_ = chain[low : high + 1]
+                if len(slice_) < 4:
+                    continue
+                # The shortest index span wins: it stays on one track and
+                # never takes the long way around a loop chain.
+                score = (high - low) + source_distance + target_distance
+                if best is None or score < best[0]:
+                    best = (score, slice_)
     if best is None:
         return None
-    return [[round(point[0], 7), round(point[1], 7)] for point in best[1]]
+    simplified = _simplify(best[1])
+    return [[round(point[0], 7), round(point[1], 7)] for point in simplified]
 
 
 def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str, Any]:
@@ -275,35 +320,9 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
     }
     line_ways: dict[str, dict[int, list[tuple[float, float]]]] = {}
     for relation in relations:
-        raw_ref = relation.get("tags", {}).get("ref")
-        if not raw_ref:
-            raise ValueError(f"subway relation {relation.get('id')} has no ref")
-        sequence: list[tuple[str, tuple[float, float]]] = []
-        for member in relation.get("members", []):
-            if member.get("type") != "node" or not str(member.get("role", "")).startswith("stop"):
-                continue
-            node = nodes.get(member.get("ref"))
-            if node is None:
-                raise ValueError(f"missing stop node {member.get('ref')}")
-            tags = node.get("tags", {})
-            name = tags.get("name")
-            if not name or "lat" not in node or "lon" not in node:
-                raise ValueError(f"incomplete stop node {member.get('ref')}")
-            normalized = normalize_name(name)
-            point = (float(node["lat"]), float(node["lon"]))
-            # The 4A branch shares its ordinary stops with line 4 but also has
-            # branch-only stops. Keep those unique stops on raw line 4A so all
-            # 17 raw line families remain represented.
-            canonical = (
-                "4"
-                if raw_ref in {"4А", "4A"} and normalized in line4_names
-                else line_id(raw_ref)
-            )
-            key = (canonical, normalized)
-            group = grouped.setdefault(key, {"name": name, "points": []})
-            group["points"].append(point)
-            sequence.append((canonical, normalized, point))
-        raw_line = line_id(raw_ref)
+        raw_line = line_id(relation.get("tags", {}).get("ref") or "")
+        if not raw_line:
+            continue
         line_polylines = line_ways.setdefault(raw_line, {})
         for member in relation.get("members", []):
             way = ways_index.get(member.get("ref")) if member.get("type") == "way" else None
@@ -316,9 +335,54 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
             ]
             if len(polyline) >= 2:
                 line_polylines[way["id"]] = polyline
+    # A platform must sit on its line's own track: OSM occasionally carries
+    # stop nodes named for a station but placed kilometres away (renamed or
+    # planned stations). Such a phantom drags the group's mean point to a
+    # wrong location and inflates every ride estimate through it.
+    line_segments = {
+        line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
+    }
+    PLATFORM_TRACK_TOLERANCE_M = 300.0
+    dropped_stops: list[str] = []
+    for relation in relations:
+        raw_ref = relation.get("tags", {}).get("ref")
+        if not raw_ref:
+            raise ValueError(f"subway relation {relation.get('id')} has no ref")
+        raw_line = line_id(raw_ref)
+        segments = line_segments.get(raw_line, [])
+        sequence: list[tuple[str, tuple[float, float]]] = []
+        for member in relation.get("members", []):
+            if member.get("type") != "node" or not str(member.get("role", "")).startswith("stop"):
+                continue
+            node = nodes.get(member.get("ref"))
+            if node is None:
+                raise ValueError(f"missing stop node {member.get('ref')}")
+            tags = node.get("tags", {})
+            name = tags.get("name")
+            if not name or "lat" not in node or "lon" not in node:
+                raise ValueError(f"incomplete stop node {member.get('ref')}")
+            point = (float(node["lat"]), float(node["lon"]))
+            if segments and _nearest_distance_any(segments, point) > PLATFORM_TRACK_TOLERANCE_M:
+                dropped_stops.append(f"{raw_line}:{name}@{point[0]:.4f},{point[1]:.4f}")
+                continue
+            normalized = normalize_name(name)
+            # The 4A branch shares its ordinary stops with line 4 but also has
+            # branch-only stops. Keep those unique stops on raw line 4A so all
+            # 17 raw line families remain represented.
+            canonical = (
+                "4"
+                if raw_ref in {"4А", "4A"} and normalized in line4_names
+                else line_id(raw_ref)
+            )
+            key = (canonical, normalized)
+            group = grouped.setdefault(key, {"name": name, "points": []})
+            group["points"].append(point)
+            sequence.append((canonical, normalized, point))
         if len(sequence) < 2:
             raise ValueError(f"subway relation {relation.get('id')} has too few stops")
         sequences.append(sequence)
+    if dropped_stops:
+        print(f"dropped {len(dropped_stops)} off-track stop nodes: {', '.join(dropped_stops)}")
 
     station_ids = {
         key: f"m{key[0]}:{station_slug(group['name'])}"
@@ -338,9 +402,6 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         )
 
     rides: dict[tuple[str, str, str], dict[str, Any]] = {}
-    line_segments = {
-        line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
-    }
     for sequence in sequences:
         # Adjacent relation members can repeat only for an explicit loop closure;
         # keep the closing edge while removing accidental consecutive duplicates.
