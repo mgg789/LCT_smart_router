@@ -17,6 +17,7 @@ from core.geo import (
     configure_forecast_traffic,
     configure_travel,
     forecast_traffic_factor,
+    haversine_m,
     quote_at,
     routing_context_version,
 )
@@ -175,7 +176,6 @@ def test_straight_travel_walk_factor_is_calibrated():
     origin = GeoPoint(lat=55.75, lon=37.62)
     destination = GeoPoint(lat=55.76, lon=37.64)
     walk = StraightTravel().quote(origin, destination, "walk")
-    car = StraightTravel().quote(origin, destination, "car")
-    assert walk is not None and car is not None
-    assert walk.distance_m == math.ceil(car.distance_m * 1.35 / 1.25)
+    assert walk is not None
+    assert walk.distance_m == math.ceil(haversine_m(origin, destination) * 1.35)
     assert walk.version == "straight-v2"
