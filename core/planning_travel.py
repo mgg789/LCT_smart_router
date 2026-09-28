@@ -373,5 +373,8 @@ def planning_configuration() -> dict:
         "ROUTER_OSRM_BIKE_URL",
         "ROUTER_OSRM_MAP_VERSION",
         "ROUTER_OSRM_OFFLINE",
+        "ROUTE3_URL",
+        "ROUTE3_OFFLINE",
+        "ROUTER_HYBRID",
     )
     return {"version": PLANNING_TRAVEL_VERSION, **{key: os.environ.get(key, "") for key in names}}

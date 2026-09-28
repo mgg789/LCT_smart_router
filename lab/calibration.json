@@ -1,0 +1,28 @@
+{
+  "sampled_pairs": 900,
+  "mean_graph_over_haversine": 1.445,
+  "median_graph_over_haversine": 1.363,
+  "p90_graph_over_haversine": 1.729,
+  "current_factor": 1.25,
+  "per_region": {
+    "east-v1": {
+      "pairs": 300,
+      "mean_ratio": 1.419,
+      "median_ratio": 1.329,
+      "p90_ratio": 1.706
+    },
+    "southeast-v1": {
+      "pairs": 300,
+      "mean_ratio": 1.477,
+      "median_ratio": 1.399,
+      "p90_ratio": 1.79
+    },
+    "south-central-v1": {
+      "pairs": 300,
+      "mean_ratio": 1.438,
+      "median_ratio": 1.345,
+      "p90_ratio": 1.654
+    }
+  },
+  "recommended_factor_walk_bike_transit": 1.35
+}
