@@ -31,6 +31,12 @@
 `~/Projects/LCT/moscow-road-graph` (`scripts/pipeline.sh`: mkad → extract →
 graph → serve; тяжёлая обработка OSM — pyosmium на хосте).
 
+> **Преемник:** контракты v3 (`/route3`, `/matrix3`, `/metro3`), пешеходный
+> граф и универсальная загрузка графов — в отдельном юните
+> [`services/route-engine3`](../route-engine3/docs/route3.md) (документ
+> `docs/route3.md`); графы обоих сервисов вендорятся в одном месте
+> (`services/route-engine3/graphs/`).
+
 ## Локально
 
 ```bash
