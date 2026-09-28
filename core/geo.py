@@ -32,7 +32,18 @@ from core.traffic_engine import (
     forecast_traffic_factor as forecast_traffic_factor,
 )
 
-_FALLBACK_ROAD_FACTOR = 1.25
+# Straight-line fallback factors, calibrated 2026-09-28 against the route-engine3
+# MKAD foot graph (lab/calibrate_walk.py, 900 pairs over the three official
+# regions): true pedestrian road distance is ~1.36x the haversine (median), so
+# the legacy 1.25 underestimated walking. Car keeps its legacy factor — its ETA
+# error is dominated by the flat 28 km/h speed, handled by road verification.
+_FALLBACK_ROAD_FACTORS: dict[Transport, float] = {
+    "car": 1.25,
+    "walk": 1.35,
+    "bike": 1.35,
+    "transit": 1.35,
+}
+_FALLBACK_ROAD_FACTOR = 1.25  # legacy default for callers without a profile
 _FALLBACK_SPEED_KMH: dict[Transport, float] = {
     "car": 28.0,
     "walk": 6.0,
@@ -170,13 +181,13 @@ class StraightTravel:
     Exact polylines are drawn later, one selected plan edge at a time.
     """
 
-    version = "straight-v1"
+    version = "straight-v2"
 
     def quote(
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
         """Duration from haversine distance and the disclosed fallback speed."""
-        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTORS[profile])
         if distance == 0:
             return TravelQuote(0, 0, (origin, destination), "approximate")
         duration = max(
@@ -497,7 +508,7 @@ class GraphTravel:
         """Return a graph path, or a disclosed deterministic fallback for unknown points."""
         source, target = self._node(origin), self._node(destination)
         if source is None or target is None:
-            distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+            distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTORS[profile])
             if distance == 0:
                 return TravelQuote(0, 0, (origin, destination), "approximate")
             duration = max(

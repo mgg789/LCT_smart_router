@@ -1,5 +1,6 @@
 """Road direction, fallback, traffic context and address ambiguity."""
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -167,3 +168,14 @@ def test_construction_quote_is_a_straight_line():
         GeoPoint(lat=55.76, lon=37.64),
     )
     assert quote.duration_sec > 0
+
+
+def test_straight_travel_walk_factor_is_calibrated():
+    """Foot-graph calibration (2026-09-28): walking detour ~1.36x, not 1.25x."""
+    origin = GeoPoint(lat=55.75, lon=37.62)
+    destination = GeoPoint(lat=55.76, lon=37.64)
+    walk = StraightTravel().quote(origin, destination, "walk")
+    car = StraightTravel().quote(origin, destination, "car")
+    assert walk is not None and car is not None
+    assert walk.distance_m == math.ceil(car.distance_m * 1.35 / 1.25)
+    assert walk.version == "straight-v2"
