@@ -33,7 +33,16 @@ def test_resource_shape_and_directed_connectivity() -> None:
         "edges", "enter_sec", "exit_sec", "wait_sec", "transfer_sec", "max_access_m",
     }
     assert all(set(station) == {"station_id", "name", "location", "line_id"} for station in resource["stations"])
-    assert all(set(edge) == {"source", "target", "duration_sec", "distance_m", "kind"} for edge in resource["edges"])
+    base_edge_keys = {"source", "target", "duration_sec", "distance_m", "kind"}
+    for edge in resource["edges"]:
+        assert base_edge_keys <= set(edge) <= base_edge_keys | {"geometry"}
+        geometry = edge.get("geometry")
+        if geometry is not None:
+            assert edge["kind"] == "ride" and len(geometry) >= 3
+            assert all(
+                len(point) == 2 and -90 <= point[0] <= 90 and -180 <= point[1] <= 180
+                for point in geometry
+            )
     station_ids = {station["station_id"] for station in resource["stations"]}
     adjacency = {station_id: [] for station_id in station_ids}
     for edge in resource["edges"]:

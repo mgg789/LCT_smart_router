@@ -87,6 +87,10 @@ services:
       ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_ROAD_API_CACHE: /app/state/road-api-cache
       ROUTER_ROAD_API_MAP_VERSION: moscow-mkad
+      # Universal route engine v3 (/route3, /matrix3, /metro3): car matrix with
+      # traffic, pedestrian/cyclist graph and metro paths as pluggable graphs.
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
+      ROUTER_HYBRID: ${ROUTER_HYBRID:-false}
       ROUTER_METRICS_ENABLED: ${ROUTER_METRICS_ENABLED:-false}
       ROUTER_OTEL_ENABLED: ${ROUTER_OTEL_ENABLED:-false}
       ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
@@ -152,6 +156,7 @@ services:
       # The API borrows selected-leg polylines. Router prepares costs separately
       # from the same road service before searching; it never queries each move.
       API_ROAD_API_URL: ${API_ROAD_API_URL:-http://road-api:8123}
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:
@@ -189,7 +194,8 @@ services:
       timeout: 5s
       retries: 3
 
-  # MKAD road graph (OSRM MLD, vendored under services/road-api/osrm). Serves road
+  # MKAD road graph (OSRM MLD, vendored under services/route-engine3/graphs/car —
+  # one vendored copy shared by road-api and route-engine3). Serves road
   # geometry and travel times to the road-api below; graph pages are copied into a
   # tmpfs so cold queries stay in milliseconds (services/road-api/README.md).
   osrm:
@@ -201,7 +207,7 @@ services:
       sh -c 'cp /src/moscow-mkad.osrm* /graph/ &&
       osrm-routed --algorithm mld --max-table-size 4096 /graph/moscow-mkad.osrm'
     volumes:
-      - ../services/road-api/osrm:/src:ro
+      - ../services/route-engine3/graphs/car:/src:ro
     tmpfs:
       - /graph:size=768m
 
@@ -225,6 +231,31 @@ services:
       timeout: 30s
       retries: 10
       start_period: 60s
+
+  # Universal route engine v3 (docs/route3.md): a self-contained unit that
+  # supervises one osrm-routed per graph folder (graphs/car, graphs/foot — drop
+  # a folder to add a graph) and serves /route3, /matrix3, /metro3. Walk/bike
+  # costs are flat average speeds; traffic forecasting applies to car only.
+  route-engine3:
+    build:
+      context: ../services/route-engine3
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      METRO_DATA_PATH: /srv/metro/moscow.json
+    volumes:
+      - ../services/route-engine3/graphs:/srv/graphs:ro
+      - ../core/resources/metro:/srv/metro:ro
+    tmpfs:
+      # Both vendored graphs are copied here before osrm-routed starts so that
+      # every query stays in memory rather than faulting over the bind mount.
+      - /graph-pages:size=1024m
+    healthcheck:
+      test: ['CMD-SHELL', 'python3 -c "import json,urllib.request; assert json.load(urllib.request.urlopen(\"http://127.0.0.1:8124/health\", timeout=25))[\"ready\"]"']
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 90s
 
   web:
     build:

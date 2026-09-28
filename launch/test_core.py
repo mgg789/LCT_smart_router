@@ -212,6 +212,8 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(result["api"], "http://127.0.0.1:19081")
             self.assertNotIn("web", config["services"])
             self.assertNotIn("osrm", config["services"])
+            self.assertNotIn("route-engine3", config["services"])
+            self.assertEqual(config["services"]["router"]["environment"]["ROUTER_HYBRID"], "false")
             api = config["services"]["api"]
             self.assertEqual(api["environment"]["DISPATCHER_PASSWORD"], "it's$$буквы")
             self.assertNotIn("LLM_TOKEN", api["environment"])

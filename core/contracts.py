@@ -641,6 +641,9 @@ class RouterResult(Record):
     main_evidence: PlanEvidence | None = None
     baseline_evidence: PlanEvidence | None = None
     regional_progress: list["RegionalProgress"] = Field(default_factory=list)
+    # Hybrid mode report (docs/route3.md): /route3 verification drift per route
+    # and the corrected quotes used when a window breach forced a re-solve.
+    verification: dict | None = Field(default=None, exclude_if=lambda value: value is None)
     errors: list[Diagnostic] = Field(default_factory=list)
 
     @model_validator(mode="after")

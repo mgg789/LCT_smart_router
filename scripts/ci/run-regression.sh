@@ -56,7 +56,10 @@ compose exec -T regression timeout 90 bash -ec '
   pnpm --filter api exec prisma migrate deploy
   pnpm --filter api exec node --test dist-test/test/integration/engineers.test.js
 ' 2>&1 | tee "$output/api-engineers.log"
-compose exec -T regression timeout 100 pnpm smoke 2>&1 | tee "$output/smoke.log"
+compose exec -T regression timeout 100 node apps/api/dist-test/scripts/smoke.js 2>&1 | tee "$output/smoke.log"
+# The optional Route Engine 3 has its own live graph benchmark; the browser
+# scenarios use the standard router and need the graph tmpfs memory released.
+compose stop route-engine3 2>&1 | tee "$output/route-engine3-stop.log"
 compose exec -T regression timeout 240 pnpm test:e2e 2>&1 | tee "$output/browser.log"
 compose stop router 2>&1 | tee "$output/router-stop.log"
 compose exec -T -e E2E_PHASE=router-down regression timeout 60 pnpm test:e2e 2>&1 | tee "$output/router-down.log"

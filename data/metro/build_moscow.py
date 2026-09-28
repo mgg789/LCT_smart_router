@@ -172,6 +172,75 @@ def _pair_key(first: str, second: str) -> tuple[str, str]:
     return (first, second) if first < second else (second, first)
 
 
+def _chain_line_ways(ways: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+    """Chain one line's member ways into maximal connected track segments.
+
+    OSM subway relations reference their track ways in arbitrary order; two
+    ways connect when an endpoint coincides. Branches, small snapshot gaps and
+    sidings produce several segments — ride edges pick the segment that
+    actually covers both stations, so nothing here blocks the build.
+    """
+    segments: list[list[tuple[float, float]]] = []
+    remaining = list(ways)
+    while remaining:
+        chain = remaining.pop(0)
+        extended = True
+        while extended and remaining:
+            extended = False
+            for index, way in enumerate(remaining):
+                if way[0] == chain[-1]:
+                    chain.extend(way[1:])
+                elif way[-1] == chain[-1]:
+                    chain.extend(point for point in reversed(way[:-1]))
+                elif way[-1] == chain[0]:
+                    chain = way[:-1] + chain
+                elif way[0] == chain[0]:
+                    chain = list(reversed(way[1:])) + chain
+                else:
+                    continue
+                remaining.pop(index)
+                extended = True
+                break
+        segments.append(chain)
+    return segments
+
+
+def _nearest_distance(chain: list[tuple[float, float]], point: tuple[float, float]) -> float:
+    """Distance from one point to the nearest chain node."""
+    return min(haversine_m(node, point) for node in chain) if chain else math.inf
+
+
+def _edge_geometry(
+    segments: list[list[tuple[float, float]]],
+    source_point: tuple[float, float],
+    target_point: tuple[float, float],
+) -> list[list[float]] | None:
+    """Slice the line's track between the two stations, following real geometry."""
+    best = None
+    for chain in segments:
+        source_distance = _nearest_distance(chain, source_point)
+        target_distance = _nearest_distance(chain, target_point)
+        if source_distance > 400 or target_distance > 400:
+            continue  # this segment does not cover both stations
+        source_index = min(
+            range(len(chain)), key=lambda index: (haversine_m(chain[index], source_point), index)
+        )
+        target_index = min(
+            range(len(chain)), key=lambda index: (haversine_m(chain[index], target_point), index)
+        )
+        if abs(target_index - source_index) < 3:
+            continue
+        slice_ = chain[min(source_index, target_index) : max(source_index, target_index) + 1]
+        if len(slice_) < 4:
+            continue
+        score = source_distance + target_distance
+        if best is None or score < best[0]:
+            best = (score, slice_)
+    if best is None:
+        return None
+    return [[round(point[0], 7), round(point[1], 7)] for point in best[1]]
+
+
 def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str, Any]:
     """Convert raw relations into strict stations, ride edges and reviewed transfers."""
     elements = route.get("elements")
@@ -199,6 +268,12 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
     # station platform groups first so opposite directions converge on one node.
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     sequences: list[list[tuple[str, str, tuple[float, float]]]] = []
+    # Track geometry: one way-id-keyed collection per line so opposite
+    # directions (which reference the same OSM ways) deduplicate naturally.
+    ways_index = {
+        element["id"]: element for element in elements if element.get("type") == "way"
+    }
+    line_ways: dict[str, dict[int, list[tuple[float, float]]]] = {}
     for relation in relations:
         raw_ref = relation.get("tags", {}).get("ref")
         if not raw_ref:
@@ -228,6 +303,19 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
             group = grouped.setdefault(key, {"name": name, "points": []})
             group["points"].append(point)
             sequence.append((canonical, normalized, point))
+        raw_line = line_id(raw_ref)
+        line_polylines = line_ways.setdefault(raw_line, {})
+        for member in relation.get("members", []):
+            way = ways_index.get(member.get("ref")) if member.get("type") == "way" else None
+            if way is None:
+                continue
+            polyline = [
+                (float(nodes[ref]["lat"]), float(nodes[ref]["lon"]))
+                for ref in way.get("nodes", [])
+                if ref in nodes and "lat" in nodes[ref]
+            ]
+            if len(polyline) >= 2:
+                line_polylines[way["id"]] = polyline
         if len(sequence) < 2:
             raise ValueError(f"subway relation {relation.get('id')} has too few stops")
         sequences.append(sequence)
@@ -250,6 +338,9 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         )
 
     rides: dict[tuple[str, str, str], dict[str, Any]] = {}
+    line_segments = {
+        line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
+    }
     for sequence in sequences:
         # Adjacent relation members can repeat only for an explicit loop closure;
         # keep the closing edge while removing accidental consecutive duplicates.
@@ -273,6 +364,11 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
                 "duration_sec": estimate_ride(distance),
                 "distance_m": distance,
                 "kind": "ride",
+                # Track-following geometry; the chord between stations stays
+                # the runtime fallback when the line chain cannot resolve it.
+                "geometry": _edge_geometry(
+                    line_segments.get(source_station["line_id"], []), source_point, target_point
+                ),
             }
 
     transfer_pairs: set[tuple[str, str]] = set()

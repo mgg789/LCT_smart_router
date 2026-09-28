@@ -32,7 +32,18 @@ from core.traffic_engine import (
     forecast_traffic_factor as forecast_traffic_factor,
 )
 
-_FALLBACK_ROAD_FACTOR = 1.25
+# Straight-line fallback factors, calibrated 2026-09-28 against the route-engine3
+# MKAD foot graph (lab/calibrate_walk.py, 900 pairs over the three official
+# regions): true pedestrian road distance is ~1.36x the haversine (median), so
+# the legacy 1.25 underestimated walking. Car keeps its legacy factor — its ETA
+# error is dominated by the flat 28 km/h speed, handled by road verification.
+_FALLBACK_ROAD_FACTORS: dict[Transport, float] = {
+    "car": 1.25,
+    "walk": 1.35,
+    "bike": 1.35,
+    "transit": 1.35,
+}
+_FALLBACK_ROAD_FACTOR = 1.25  # legacy default for callers without a profile
 _FALLBACK_SPEED_KMH: dict[Transport, float] = {
     "car": 28.0,
     "walk": 6.0,
@@ -170,13 +181,13 @@ class StraightTravel:
     Exact polylines are drawn later, one selected plan edge at a time.
     """
 
-    version = "straight-v1"
+    version = "straight-v2"
 
     def quote(
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
         """Duration from haversine distance and the disclosed fallback speed."""
-        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTORS[profile])
         if distance == 0:
             return TravelQuote(0, 0, (origin, destination), "approximate")
         duration = max(
@@ -257,11 +268,7 @@ class TechnicalTravel:
         )
         segments = quote.segments
         if self.settings.travel_time_mode == "fixed_normative":
-            segments = (
-                TravelSegment(
-                    quote.points, "approximate", duration_sec, quote.distance_m
-                ),
-            )
+            segments = (TravelSegment(quote.points, "approximate", duration_sec, quote.distance_m),)
         elif segments and self.settings.access_buffer_sec:
             first = segments[0]
             segments = (
@@ -294,12 +301,14 @@ def configure_travel(
     from core.weather import WeatherTravel, weather_kind, weather_multiplier
 
     if settings.strict_time_windows:
-        settings = settings.model_copy(update={
-            "window_lateness_tolerance_sec": 0,
-            "departure_lateness_tolerance_sec": 0,
-            "task_start_lateness_tolerance_sec": 0,
-            "task_overrun_tolerance_sec": 0,
-        })
+        settings = settings.model_copy(
+            update={
+                "window_lateness_tolerance_sec": 0,
+                "departure_lateness_tolerance_sec": 0,
+                "task_start_lateness_tolerance_sec": 0,
+                "task_overrun_tolerance_sec": 0,
+            }
+        )
 
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
@@ -355,10 +364,14 @@ class ProfilePolicyTravel:
     def __init__(self, travel: TravelSource):
         self.travel = travel
         self.version = content_hash(
-            json.dumps({"base_version": travel.version, "profile_policy": "micro-v1"}, sort_keys=True).encode()
+            json.dumps(
+                {"base_version": travel.version, "profile_policy": "micro-v1"}, sort_keys=True
+            ).encode()
         )
 
-    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
         """Use static quotes while enforcing cross-provider mode ordering."""
         return self._apply(origin, destination, profile, None)
 
@@ -375,16 +388,22 @@ class ProfilePolicyTravel:
         if profile == "car" and haversine_m(origin, destination) <= 300:
             # Do not ask a paid car provider for a micro-leg: the walking quote is
             # the authoritative product cost for both profiles at this distance.
-            return self.travel.quote(origin, destination, "walk") if departure_at is None else quote_at(
-                self.travel, origin, destination, "walk", departure_at
+            return (
+                self.travel.quote(origin, destination, "walk")
+                if departure_at is None
+                else quote_at(self.travel, origin, destination, "walk", departure_at)
             )
-        quote = self.travel.quote(origin, destination, effective_profile) if departure_at is None else quote_at(
-            self.travel, origin, destination, effective_profile, departure_at
+        quote = (
+            self.travel.quote(origin, destination, effective_profile)
+            if departure_at is None
+            else quote_at(self.travel, origin, destination, effective_profile, departure_at)
         )
         if profile != "bike":
             return quote
-        walking = self.travel.quote(origin, destination, "walk") if departure_at is None else quote_at(
-            self.travel, origin, destination, "walk", departure_at
+        walking = (
+            self.travel.quote(origin, destination, "walk")
+            if departure_at is None
+            else quote_at(self.travel, origin, destination, "walk", departure_at)
         )
         if walking is None or walking.distance_m == 0:
             return quote
@@ -460,13 +479,51 @@ class GraphTravel:
         for edges in self.adjacency.values():
             edges.sort(key=lambda e: (e.target, e.distance_m, e.model_dump_json()))
         self._trees: dict[tuple[str, str], tuple[dict, dict]] = {}
+        self._grid: dict[tuple[int, int], list[tuple[str, GeoPoint]]] | None = None
+
+    def _search_grid(self) -> dict[tuple[int, int], list[tuple[str, GeoPoint]]]:
+        """Lazy 0.01° bucket grid over node coordinates for bounded nearest() scans."""
+        if self._grid is None:
+            grid: dict[tuple[int, int], list[tuple[str, GeoPoint]]] = {}
+            for key, p in self.nodes.items():
+                grid.setdefault((round(p.lat * 100), round(p.lon * 100)), []).append((key, p))
+            self._grid = grid
+        return self._grid
 
     def nearest(self, point: GeoPoint, limit_m: float) -> tuple[str, GeoPoint, float] | None:
-        """Return a candidate projection with distance; callers must accept it explicitly."""
+        """Return a candidate projection with distance; callers must accept it explicitly.
+
+        Expands concentric 0.01° cell rings around the point and stops once no
+        unsearched cell can hold a closer node; ties resolve by node id exactly
+        like the previous whole-grid scan.
+        """
         if not self.nodes:
             return None
-        distance, key = min((haversine_m(point, p), key) for key, p in self.nodes.items())
-        return (key, self.nodes[key], distance) if distance <= limit_m else None
+        grid = self._search_grid()
+        origin = (round(point.lat * 100), round(point.lon * 100))
+        # Lon cells shrink with latitude; use the point's own latitude for the
+        # per-ring lower bound so the early stop stays provably safe.
+        cell_m = min(1113.2, 1113.2 * math.cos(math.radians(point.lat)) or 1113.2)
+        best: tuple[float, str] | None = None
+        ring = 0
+        while True:
+            ring_floor = max(0, ring - 1) * cell_m
+            if (best is not None and best[0] <= ring_floor) or ring_floor > limit_m:
+                break
+            for dlat in range(-ring, ring + 1):
+                for dlon in range(-ring, ring + 1):
+                    if max(abs(dlat), abs(dlon)) != ring:
+                        continue
+                    for key, p in grid.get((origin[0] + dlat, origin[1] + dlon), ()):
+                        distance = haversine_m(point, p)
+                        if distance > limit_m:
+                            continue
+                        if best is None or (distance, key) < best:
+                            best = (distance, key)
+            ring += 1
+        if best is None:
+            return None
+        return (best[1], self.nodes[best[1]], best[0])
 
     def _node(self, point: GeoPoint) -> str | None:
         direct = self.locations.get((point.lat, point.lon))
@@ -497,7 +554,7 @@ class GraphTravel:
         """Return a graph path, or a disclosed deterministic fallback for unknown points."""
         source, target = self._node(origin), self._node(destination)
         if source is None or target is None:
-            distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+            distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTORS[profile])
             if distance == 0:
                 return TravelQuote(0, 0, (origin, destination), "approximate")
             duration = max(
@@ -644,21 +701,31 @@ class MixedTravel:
         departure_at: int | None,
     ) -> TravelQuote | None:
         """Quote the base graph, then a live overlay when this leg is not already road-quality."""
-        if profile == "car" and getattr(self.overlay, "replaces_car_graph", False) and origin != destination:
+        if (
+            profile == "car"
+            and getattr(self.overlay, "replaces_car_graph", False)
+            and origin != destination
+        ):
             # A prepared car matrix is authoritative. Building a Dijkstra path first
             # would spend most search time producing geometry that is discarded.
             try:
-                return self.overlay.quote(origin, destination, profile) if departure_at is None else quote_at(
-                    self.overlay, origin, destination, profile, departure_at
+                return (
+                    self.overlay.quote(origin, destination, profile)
+                    if departure_at is None
+                    else quote_at(self.overlay, origin, destination, profile, departure_at)
                 )
             except TravelUnavailable as exc:
                 if profile not in self._warned_profiles:
                     logging.getLogger(__name__).warning(
-                        "TRAVEL_OVERLAY_UNAVAILABLE profile=%s code=%s; using local travel", profile, exc
+                        "TRAVEL_OVERLAY_UNAVAILABLE profile=%s code=%s; using local travel",
+                        profile,
+                        exc,
                     )
                     self._warned_profiles.add(profile)
-                return self.travel.quote(origin, destination, profile) if departure_at is None else quote_at(
-                    self.travel, origin, destination, profile, departure_at
+                return (
+                    self.travel.quote(origin, destination, profile)
+                    if departure_at is None
+                    else quote_at(self.travel, origin, destination, profile, departure_at)
                 )
         base = (
             self.travel.quote(origin, destination, profile)

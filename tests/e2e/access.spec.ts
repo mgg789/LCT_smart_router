@@ -7,7 +7,7 @@ test('dispatcher creates and revokes an integration key through the UI', async (
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByRole('button', { name: 'API', exact: true }).click();
+  await page.getByRole('tab', { name: 'API', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Regression client');
   await page.getByRole('combobox', { name: 'Права', exact: true }).selectOption('client');
   const createdResponse = page.waitForResponse(
@@ -28,7 +28,7 @@ test('dispatcher creates and revokes an integration key through the UI', async (
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
-  await page.getByRole('button', { name: 'API', exact: true }).click();
+  await page.getByRole('tab', { name: 'API', exact: true }).click();
   await expect(page.getByText('Regression client', { exact: true })).toBeVisible();
   await expect(page.locator('code')).toHaveCount(0);
   await page.getByRole('button', { name: 'Отозвать', exact: true }).click();

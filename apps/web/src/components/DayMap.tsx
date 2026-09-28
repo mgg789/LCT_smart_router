@@ -390,6 +390,7 @@ export function DayMap({
     }
     let fallback = forceLocal;
     const markReady = () => setMapReady(true);
+    map.on('load', markReady);
     map.on('idle', markReady);
     const activateLocalMap = () => {
       if (fallback) return;
@@ -417,6 +418,7 @@ export function DayMap({
     return () => {
       observer.disconnect();
       stopWatching();
+      map.off('load', markReady);
       map.off('idle', markReady);
       map.remove();
       mapRef.current = null;

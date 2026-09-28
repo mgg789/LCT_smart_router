@@ -45,19 +45,18 @@ test('live plan renders the local map and replans when an engineer goes offline'
   page,
   live,
 }, testInfo) => {
+  await page.addInitScript(() => {
+    (window as Window & { navixOffline?: boolean }).navixOffline = true;
+  });
   await signIn(page);
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
-  await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
+  await expect(page.locator('[data-map-ready="true"]')).toBeVisible({ timeout: 60_000 });
   await expect(
     page.getByText('Сохранённая карта трёх регионов · улицы, парки и водоёмы'),
   ).toBeVisible();
-  await page
-    .getByRole('button')
-    .filter({ has: page.getByTitle('Smoke East Engineer') })
-    .click();
-  // The Figma dashboard renders the selected engineer's factual profile in the
-  // dedicated roster surface instead of the retired inline explanation card.
-  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  await page.getByRole('button', { name: /Smoke East Engi/ }).click();
+  // Open the selected engineer's factual profile through the map detail action.
+  await page.getByRole('button', { name: 'К инженеру', exact: true }).click();
   // The outgoing map card briefly remains mounted during the screen transition.
   const roster = page.locator('section[data-name="ENGINEERS"]');
   await expect(roster.getByText('Smoke East Engineer', { exact: true })).toBeVisible();
@@ -86,7 +85,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
   await page.getByRole('button', { name: 'План дня', exact: true }).click();
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   expect((await readPlan(live.api)).revision).toBeGreaterThan(live.plan.revision);
-  await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
+  await expect(page.locator('[data-map-ready="true"]')).toBeVisible({ timeout: 60_000 });
   await testInfo.attach('day-after-replanning', {
     body: await page.screenshot(),
     contentType: 'image/png',

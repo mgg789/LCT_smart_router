@@ -27,7 +27,7 @@ export function AnimatedEngineerSearch({
   return (
     <motion.label
       data-eng-chrome
-      className={`absolute z-20 flex origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px] ${className}`}
+      className={`absolute z-20 flex origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px] transition-shadow focus-within:ring-2 focus-within:ring-figma-bee ${className}`}
       style={style}
       animate={
         !animateMotion

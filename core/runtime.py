@@ -35,6 +35,7 @@ from core.engine import (
 )
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
+from core.hybrid import hybrid_enabled, hybrid_plan
 from core.osrm import OSRMTravel
 from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
@@ -45,6 +46,7 @@ from core.predict_calibration import (
     factory_calibration,
 )
 from core.roadimport import ImportedRoadOverlay
+from core.route3 import route3_from_env
 from core.route_search import RouteEvaluator, improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
@@ -269,10 +271,28 @@ def calculate(
             learned_weather=learned_weather,
             learned_weather_enabled=learned_weather_enabled,
         )
-        output = solve(snapshot, provider, settings, memory, context_version)
+        verification = None
+        if hybrid_enabled():
+            # Fast solve → /route3 verification of the chosen legs → one
+            # corrected re-solve when the verified schedule breaks a window
+            # (docs/route3.md). The engine degrades to the fast plan silently.
+            run = hybrid_plan(
+                snapshot,
+                provider,
+                settings,
+                memory,
+                context_version,
+                client=route3_from_env(),
+            )
+            output = run.output
+            evidence_provider = run.provider
+            verification = run.verification
+        else:
+            output = solve(snapshot, provider, settings, memory, context_version)
+            evidence_provider = provider
         effective_snapshot = output.memory.snapshot
-        main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
-        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, provider)
+        main_evidence = build_plan_evidence(effective_snapshot, output.main, evidence_provider)
+        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, evidence_provider)
     except Exception as exc:
         return RouterResult(
             status="error",
@@ -301,6 +321,7 @@ def calculate(
         baseline=output.baseline,
         main_evidence=main_evidence,
         baseline_evidence=baseline_evidence,
+        verification=verification,
     )
     return result, output
 

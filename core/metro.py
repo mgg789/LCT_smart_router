@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from core.contracts import GeoPoint, Record, Transport
 from core.geo import TravelQuote, TravelSegment, TravelSource, content_hash, haversine_m, quote_at
@@ -38,6 +38,19 @@ class MetroEdge(Record):
     distance_m: int = Field(ge=0)
     kind: Literal["ride", "transfer"] = "ride"
     geometry: list[GeoPoint] | None = None
+
+    @field_validator("geometry", mode="before")
+    @classmethod
+    def _parse_geometry(cls, value):
+        """Accept the artifact's compact [[lat, lon], ...] geometry payloads."""
+        if isinstance(value, list):
+            return [
+                GeoPoint.model_validate({"lat": point[0], "lon": point[1]})
+                if isinstance(point, (list, tuple))
+                else point
+                for point in value
+            ]
+        return value
 
 
 class MetroBoundaryGeoJSON(Record):
@@ -120,6 +133,7 @@ class _Path:
     distance_m: int
     station_ids: tuple[str, ...]
     has_ride: bool
+    edges: tuple["MetroEdge", ...] = ()
 
 
 def choose_metro(walking_sec: int | None, metro_sec: int | None, *, shelter: bool) -> bool:
@@ -242,6 +256,7 @@ class MetroTravel:
             metres,
             tuple(reversed(ids)),
             any(edge.kind == "ride" for edge in path_edges),
+            tuple(reversed(path_edges)),
         )
 
     def _metro_quote(
@@ -280,7 +295,7 @@ class MetroTravel:
                 )
                 if egress is None:
                     continue
-                metro_points = tuple(self.stations[station_id].location for station_id in path.station_ids)
+                metro_points = _path_points(path, self.stations)
                 segments = (
                     TravelSegment(access.points, access.provenance, access.duration_sec, access.distance_m),
                     TravelSegment(
@@ -313,6 +328,24 @@ class MetroTravel:
         if departure_at is None:
             return self.travel.quote(origin, destination, "walk")
         return quote_at(self.travel, origin, destination, "walk", departure_at)
+
+
+def _path_points(path: _Path, stations: dict[str, "MetroStation"]) -> tuple[GeoPoint, ...]:
+    """Middle-segment polyline: per-edge line geometry when present, else chords.
+
+    Edges are already in travel order; the join keeps only shared endpoints so
+    the result is one continuous polyline from entry to exit station.
+    """
+    points: list[GeoPoint] = []
+    for edge in path.edges:
+        polyline = edge.geometry or (
+            stations[edge.source].location,
+            stations[edge.target].location,
+        )
+        for point in polyline:
+            if not points or point != points[-1]:
+                points.append(point)
+    return tuple(points)
 
 
 def _join_points(*parts: tuple[GeoPoint, ...]) -> tuple[GeoPoint, ...]:

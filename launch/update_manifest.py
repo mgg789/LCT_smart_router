@@ -46,6 +46,7 @@ def main() -> None:
         "packages",
         "services/sys1",
         "services/road-api",
+        "services/route-engine3",
         "docs/knowledge",
         "infra/postgres",
     ):

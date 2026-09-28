@@ -79,6 +79,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Navix launcher")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--osrm", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--route3",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Запускать route-engine3 (по умолчанию следует за --osrm)",
+    )
     parser.add_argument("--mode", choices=("full", "headless"))
     parser.add_argument("--api-port", type=int)
     parser.add_argument("--ui-port", type=int)
@@ -208,6 +214,7 @@ def run(args: argparse.Namespace) -> int:
         if args.osrm is not None
         else interactive
         and yes("Запускать OSRM (дорожные маршруты)?", saved_options.get("osrm", False)),
+        "route3": getattr(args, "route3", None),
         "autostart": args.autostart
         if args.autostart is not None
         else interactive
