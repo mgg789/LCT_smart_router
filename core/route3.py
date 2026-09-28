@@ -302,7 +302,13 @@ def verify_plan_with_route3(
 
 
 class VerifiedRoute3:
-    """Baseline travel with exact-pair overrides from /route3 verification."""
+    """Baseline travel with exact-pair overrides from /route3 verification.
+
+    Correction lookup is transit/walk-equivalent: the engine's static search
+    and the timed scheduler may express the same pedestrian leg under either
+    profile name, and a correction stored under one of them must be visible
+    to both — otherwise solve-time and validation-time schedules diverge.
+    """
 
     def __init__(self, base: TravelSource, corrections: dict):
         self.travel = base
@@ -316,17 +322,29 @@ class VerifiedRoute3:
     def profiles(self):
         return getattr(self.travel, "profiles", None)
 
+    @staticmethod
+    def _keys(origin, destination, profile):
+        """Correction keys for the profile and its transit/walk equivalent."""
+        base = (origin.lat, origin.lon, destination.lat, destination.lon)
+        equivalent = "walk" if profile == "transit" else ("transit" if profile == "walk" else profile)
+        for name in dict.fromkeys((profile, equivalent)):
+            yield (*base, name)
+
     def quote(self, origin, destination, profile):
-        key = (origin.lat, origin.lon, destination.lat, destination.lon, profile)
-        if key in self.corrections:
-            return self.corrections[key]
+        for key in self._keys(origin, destination, profile):
+            if key in self.corrections:
+                return self.corrections[key]
         return self.travel.quote(origin, destination, profile)
 
     def quote_at(self, origin, destination, profile, departure_at):
-        key = (origin.lat, origin.lon, destination.lat, destination.lon, profile)
-        if key in self.corrections:
-            return self.corrections[key]
-        return self.travel.quote_at(origin, destination, profile, departure_at)
+        for key in self._keys(origin, destination, profile):
+            if key in self.corrections:
+                return self.corrections[key]
+        timed = getattr(self.travel, "quote_at", None)
+        if timed is None:
+            # Static sources (StraightTravel) only carry quote().
+            return self.travel.quote(origin, destination, profile)
+        return timed(origin, destination, profile, departure_at)
 
 
 def _document(path: Path, fetch, offline: bool) -> dict:
@@ -355,12 +373,23 @@ class PreparedRoute3Matrix:
     falls back to the base graph); unreachable cells quote None.
     """
 
-    def __init__(self, client_version: str, per_profile: dict[str, dict], points: list[GeoPoint]):
+    def __init__(
+        self,
+        client_version: str,
+        per_profile: dict[str, dict],
+        points: list[GeoPoint],
+        *,
+        fallback: TravelSource | None = None,
+    ):
+        """`fallback` answers points outside the matrix (metro station access
+        legs, invented intermediate nodes) exactly like GraphTravel's own
+        disclosed straight-line fallback; unreachable cells still quote None."""
         self.version = content_hash(
             json.dumps(
                 {"v": ROUTE3_VERSION, "client": client_version, "profiles": sorted(per_profile)}
             ).encode()
         )
+        self.fallback = fallback
         self.provenance = "road_matrix"
         self.profiles = frozenset(per_profile)
         self.index = {(p.lat, p.lon): i for i, p in enumerate(points)}
@@ -408,17 +437,32 @@ class PreparedRoute3Matrix:
                     else:
                         raise ValueError(f"invalid route3 matrix mode: {mode}")
 
+    def _fallback_quote(self, origin, destination, profile, departure_at):
+        """Answer an out-of-matrix point from the fallback source when configured."""
+        if self.fallback is None:
+            return None
+        if departure_at is None:
+            return self.fallback.quote(origin, destination, profile)
+        timed = getattr(self.fallback, "quote_at", None)
+        if timed is None:
+            return self.fallback.quote(origin, destination, profile)
+        return timed(origin, destination, profile, departure_at)
+
     def quote(self, origin, destination, profile) -> TravelQuote | None:
         return self.quote_at(origin, destination, profile, 0)
 
-    def quote_at(self, origin, destination, profile, departure_at: int) -> TravelQuote | None:
+    def quote_at(self, origin, destination, profile, departure_at: int | None) -> TravelQuote | None:
         """Matrix lookup; car selects the forecast band by Moscow-local time."""
         origin_index = self.index.get((origin.lat, origin.lon))
         destination_index = self.index.get((destination.lat, destination.lon))
         if origin_index is None or destination_index is None:
+            if self.fallback is not None:
+                return self._fallback_quote(origin, destination, profile, departure_at)
             raise TravelUnavailable("ROUTE3_MATRIX_POINT_MISSING")
         key = (profile, origin_index, destination_index)
         if key not in self.cells:
+            if self.fallback is not None:
+                return self._fallback_quote(origin, destination, profile, departure_at)
             raise TravelUnavailable("ROUTE3_MATRIX_PAIR_MISSING")
         cell = self.cells[key]
         if cell is None:
@@ -448,12 +492,14 @@ def prepare_route3(
     departure: int,
     traffic: bool = True,
     planning: bool = True,
+    fallback: TravelSource | None = None,
 ) -> PreparedRoute3Matrix | None:
     """Prepare multi-profile cells; None when the engine has no usable profile.
 
     Car asks for traffic-aware planning bands; walk and bike ask for flat
     distances. Each profile response is cached on disk separately, so a
-    failed foot call does not invalidate a good car matrix.
+    failed foot call does not invalidate a good car matrix. `fallback`
+    answers points outside the matrix (see PreparedRoute3Matrix).
     """
     if not points:
         return None
@@ -487,4 +533,4 @@ def prepare_route3(
             _LOGGER.warning("ROUTE3_MATRIX_UNAVAILABLE profile=%s; keeping other sources", profile)
     if not per_profile:
         return None
-    return PreparedRoute3Matrix(client.version, per_profile, points)
+    return PreparedRoute3Matrix(client.version, per_profile, points, fallback=fallback)
