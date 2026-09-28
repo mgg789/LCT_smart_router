@@ -297,12 +297,15 @@ export class DatasetImportService {
     equipmentSettings?: DispatcherSettings,
   ): Promise<number> {
     const now = BigInt(context.now);
-    const workDate = localDate(context.now, timeZoneOffsetSec);
-    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     const horizonStart = Math.min(
       ...prepared.parsed.requests.map((request) => request.windowStartAt),
     );
     const horizonEnd = Math.max(...prepared.parsed.requests.map((request) => request.windowEndAt));
+    // Keyed to the day the rebased requests land on, not to "now": those differ once
+    // the set's own opening hour has already passed today, and a shift row filed under
+    // the wrong date leaves the crew with no working day at all.
+    const workDate = localDate(horizonStart, timeZoneOffsetSec);
+    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     const equipmentByBrigade = allocateMorningEquipment(
       prepared.parsed.requests,
       prepared.brigades,
@@ -497,7 +500,8 @@ export class DatasetImportService {
 
     const horizonStart = Math.min(...parsed.requests.map((request) => request.windowStartAt));
     const horizonEnd = Math.max(...parsed.requests.map((request) => request.windowEndAt));
-    const workDate = localDate(context.now, timeZoneOffsetSec);
+    // See `upsertImportedDays`: the shift belongs to the day its own requests fall on.
+    const workDate = localDate(horizonStart, timeZoneOffsetSec);
     const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     let engineersCreated = 0;
     for (const brigade of brigades) {
@@ -752,8 +756,18 @@ function deserializePreparedRegion(item: PreparedOfficialRegion): PreparedRegion
   };
 }
 
-/** Moves a historical benchmark to a future horizon without changing relative windows. */
-function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
+/**
+ * Moves a historical benchmark to a future horizon without changing relative windows.
+ *
+ * The shift is a whole number of days, so every window keeps the local time of day it
+ * was quoted for. Anchoring it to the wall-clock minute instead -- which is what this
+ * did before -- dragged a set quoted for 10:00-22:00 to whatever minute the import was
+ * run and wrapped the rest of it past midnight: importing at 20:26 put about half the
+ * ТЗ set between 00:00 and 08:00 and gave every crew a 20:27-08:27 night shift, so
+ * almost nothing could be planned. The regional offset is a fixed number of seconds
+ * (`DATASET_TIME_ZONE_OFFSET_SEC`), so whole days preserve the clock time exactly.
+ */
+export function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
   const constrained = parsed.requests.filter(
     (request) =>
       request.windowOrigin !== 'declared_full_day' &&
@@ -762,7 +776,7 @@ function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
   const anchors = constrained.length > 0 ? constrained : parsed.requests;
   const sourceStart = Math.min(...anchors.map((request) => request.windowStartAt));
   const sourceEnd = Math.max(...anchors.map((request) => request.windowEndAt));
-  const targetStart = now + 60;
+  const targetStart = nextWholeDayAtOrAfter(sourceStart, now + 60);
   const targetEnd = targetStart + (sourceEnd - sourceStart);
 
   return {
@@ -780,6 +794,13 @@ function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
       };
     }),
   };
+}
+
+/** First occurrence of `moment`'s time of day that is not before `notBefore`. */
+function nextWholeDayAtOrAfter(moment: number, notBefore: number): number {
+  const day = 24 * 60 * 60;
+  if (moment >= notBefore) return moment;
+  return moment + Math.ceil((notBefore - moment) / day) * day;
 }
 
 function localDate(now: number, offsetSec: number): string {
