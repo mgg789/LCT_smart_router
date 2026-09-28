@@ -497,18 +497,35 @@ export function useAssistantChat({
         const stored = readStoredSession(key);
         let conv: AiConversation | undefined;
         if (stored) {
-          const result = await loadAiMessages(token as string, stored.conversationId, 0);
-          if (generation !== generationRef.current) return;
-          if (result.conversation.closedAt == null) {
-            conv = result.conversation;
-            for (const item of result.messages) appendAuthoritative(messageFromApi(item));
-            lastMessageSeqRef.current = result.messages.at(-1)?.seq ?? 0;
-            // An empty transcript has nothing to resume. A leftover run id is what paints
-            // the thinking row and a stop control that the server no longer drives.
-            if (result.messages.length > 0) {
-              runIdRef.current = stored.runId;
-              lastEventSeqRef.current = stored.lastEventSeq;
+          /*
+           * The cache is keyed by surface, not by account, because the hook is
+           * given a token and not an identity. So a device that signs in as
+           * somebody else — a second engineer on a shared phone, or the same
+           * phone after the stand was reset — resumes a dialogue that is not
+           * its own, and the server rightly refuses it. That is a cold cache,
+           * not a failure: drop it and open the conversation this account
+           * actually has, which is what `createAiConversation` returns.
+           */
+          try {
+            const result = await loadAiMessages(token as string, stored.conversationId, 0);
+            if (generation !== generationRef.current) return;
+            if (result.conversation.closedAt == null) {
+              conv = result.conversation;
+              for (const item of result.messages) appendAuthoritative(messageFromApi(item));
+              lastMessageSeqRef.current = result.messages.at(-1)?.seq ?? 0;
+              // An empty transcript has nothing to resume. A leftover run id is what paints
+              // the thinking row and a stop control that the server no longer drives.
+              if (result.messages.length > 0) {
+                runIdRef.current = stored.runId;
+                lastEventSeqRef.current = stored.lastEventSeq;
+              }
             }
+          } catch {
+            if (generation !== generationRef.current) return;
+            window.localStorage.removeItem(key);
+            lastMessageSeqRef.current = 0;
+            lastEventSeqRef.current = 0;
+            runIdRef.current = null;
           }
         }
         if (!conv) {

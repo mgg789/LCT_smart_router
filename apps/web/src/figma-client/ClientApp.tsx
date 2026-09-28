@@ -10,13 +10,13 @@ import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
-import { ClientAiPane } from './ClientAiPane';
 import { ClientEmailGate } from './ClientEmailGate';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
 import { ClientRequestDetail } from './ClientRequestDetail';
 import { ClientRequests } from './ClientRequests';
 import { ClientSent } from './ClientSent';
+import { ClientSupport } from './ClientSupport';
 import {
   clientCardFromApi,
   createSubmittedClientRequest,
@@ -496,11 +496,11 @@ export function ClientApp() {
         {screen === 'support' ? (
           <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
             {session ? (
-              <ClientAiPane
+              <ClientSupport
                 token={session.token}
+                contactName={draft.contactName || null}
                 sessionScope={session.email}
                 onSessionExpired={forgetSession}
-                displayName={draft.contactName || null}
                 onOperationApplied={() => {
                   void refreshHistory(session.token).catch((error: unknown) => {
                     if (isDeadSession(error)) forgetSession();

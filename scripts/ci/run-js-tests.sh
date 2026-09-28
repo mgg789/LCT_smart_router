@@ -38,11 +38,13 @@ docker exec "$pg_name" pg_isready -U lct -d lct
 
 docker run --rm -i --network host \
   -v "$PWD:/app" \
+  -v /app/node_modules \
   -w /app \
   -e DATABASE_URL="$database_url" \
   -e TEST_DATABASE_URL="$database_url" \
   -e MIGRATE_DATABASE_URL="$database_url" \
   -e NODE_ENV=test \
+  -e CI=true \
   -e AUTH_DEV_EXPOSE_CODES=true \
   docker.io/library/node:24-bookworm \
   bash -se <<'NODE_TESTS'

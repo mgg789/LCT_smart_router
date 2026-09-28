@@ -1030,7 +1030,12 @@ export function MainDashboardPage() {
                 void dash.signOut();
               }}
             />
-            {activeNav === 'requests' && openedRequestId ? null : (
+            {/*
+             * «Чаты» draws its own heading in this slot (Figma CHATS 95:991), the same
+             * way an opened request takes the whole strip over.
+             */}
+            {(activeNav === 'requests' && openedRequestId) ||
+            stackViewKey(stackNav) === 'chats' ? null : (
               <div
                 className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
                 style={{ top: DATE_TOP }}

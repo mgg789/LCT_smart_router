@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AiHandoffState, DispatchChatView } from '../api/ai';
-import { ChatsPage } from './ChatsPage';
+import { ChatsView, chatName } from './ChatsView';
 
 /** Every chat this endpoint lists is already in `dispatcher` mode (the server only ever
  *  returns those) -- the state under test here is the handoff's own `state`, not
@@ -71,10 +71,43 @@ function chat(
 
 const noop = async () => {};
 
-describe('ChatsPage', () => {
+describe('chatName', () => {
+  /** The switch above the list already says which side is being read; repeating it on
+   *  every row cost the width the name needed. */
+  it('drops the role the title is prefixed with, whatever dash joins it', () => {
+    const named = (title: string | null): DispatchChatView => ({
+      ...chat('waiting'),
+      conversation: { ...chat('waiting').conversation, title },
+    });
+    expect(chatName(named('Инженер · Алексей Волков'))).toBe('Алексей Волков');
+    expect(chatName(named('Клиент — Мария Смирнова'))).toBe('Мария Смирнова');
+    expect(chatName(named('Клиент: Пётр'))).toBe('Пётр');
+  });
+
+  it('keeps a name that merely begins with those letters', () => {
+    const named = (title: string): DispatchChatView => ({
+      ...chat('waiting'),
+      conversation: { ...chat('waiting').conversation, title },
+    });
+    expect(chatName(named('Клиентова Анна'))).toBe('Клиентова Анна');
+  });
+
+  /** An escalated chat names nobody: no title, no engineer id, no request id. Borrowing
+   *  the role as a name would be the very thing this strips everywhere else. */
+  it('says so when the handover carries no name at all', () => {
+    expect(
+      chatName({
+        ...chat('waiting'),
+        conversation: { ...chat('waiting').conversation, title: null },
+      }),
+    ).toBe('Без имени');
+  });
+});
+
+describe('ChatsView', () => {
   it('shows waiting, never a false "диспетчер подключён", before a human has replied', () => {
     const html = renderToStaticMarkup(
-      createElement(ChatsPage, {
+      createElement(ChatsView, {
         token: 'tok',
         chats: [chat('waiting')],
         loading: false,
@@ -82,19 +115,17 @@ describe('ChatsPage', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
     expect(html).toContain('Ожидает ответа');
-    expect(html).toContain('Ожидаем первого ответа диспетчера');
     expect(html).not.toContain('диспетчер подключён');
     expect(html).not.toContain('Диалог ведёт диспетчер');
   });
 
   it('shows answered only once the handoff actually recorded a dispatcher reply', () => {
     const html = renderToStaticMarkup(
-      createElement(ChatsPage, {
+      createElement(ChatsView, {
         token: 'tok',
         chats: [chat('answered')],
         loading: false,
@@ -102,17 +133,16 @@ describe('ChatsPage', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
-    expect(html).toContain('Ответ отправлен');
     expect(html).toContain('Диалог ведёт диспетчер');
+    expect(html).not.toContain('Ожидает ответа');
   });
 
   it('renders a finished chat read-only, with no composer and no «Завершить чат»', () => {
     const html = renderToStaticMarkup(
-      createElement(ChatsPage, {
+      createElement(ChatsView, {
         token: 'tok',
         chats: [chat('closed', { closedAt: 3_600 })],
         loading: false,
@@ -120,39 +150,58 @@ describe('ChatsPage', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
     expect(html).toContain('Чат завершён');
-    // The page's own subtitle mentions the phrase in passing ("... до «Завершить чат»."),
-    // so assert there is no button carrying it as its own label, not just its absence.
+    // The frame always draws a composer, so a finished chat is proved read-only by the
+    // controls being disabled — not by them being gone.
     expect(html).not.toContain('>Завершить чат<');
-    expect(html).not.toContain('<textarea');
-    expect(html).not.toContain('>Отправить<');
+    expect(html).toMatch(/<input[^>]*placeholder="Чат завершён"[^>]*disabled/);
   });
 
-  it('labels a dispatcher-initiated chat by its own origin, not the assistant escalation copy', () => {
-    const html = renderToStaticMarkup(
-      createElement(ChatsPage, {
+  /** The frame previews the newest line. A chat with none yet has nothing to preview, and
+   *  falls back to how it started — which differs per side and must not be confused. */
+  it('previews an empty chat by its own origin, not the other side’s copy', () => {
+    const empty = (initiatedBy: 'user' | 'dispatcher'): DispatchChatView => ({
+      ...chat('waiting', { initiatedBy }),
+      messages: [],
+    });
+
+    const mine = renderToStaticMarkup(
+      createElement(ChatsView, {
         token: 'tok',
-        chats: [chat('waiting', { initiatedBy: 'dispatcher' })],
+        chats: [empty('dispatcher')],
         loading: false,
         error: null,
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
-    expect(html).toContain('Вы написали первым');
-    expect(html).not.toContain('попросил диспетчера');
+    expect(mine).toContain('Вы написали первым');
+    expect(mine).not.toContain('попросил диспетчера');
+
+    const theirs = renderToStaticMarkup(
+      createElement(ChatsView, {
+        token: 'tok',
+        chats: [empty('user')],
+        loading: false,
+        error: null,
+        writesDisabled: false,
+        onSendMessage: noop,
+        onFinish: noop,
+        onMarkRead: () => {},
+      }),
+    );
+    expect(theirs).toContain('Клиент попросил диспетчера');
+    expect(theirs).not.toContain('Вы написали первым');
   });
 
   it('renders two handover episodes of the same conversation as two distinct rows', () => {
     const html = renderToStaticMarkup(
-      createElement(ChatsPage, {
+      createElement(ChatsView, {
         token: 'tok',
         chats: [
           chat('closed', { handoffId: 'h-1', conversationId: 'c-1', closedAt: 1_800 }),
@@ -163,11 +212,14 @@ describe('ChatsPage', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
-    expect(html).toContain('Активные · 1');
-    expect(html).toContain('Завершённые · 1');
+    // One row per episode: the same conversation handed over twice is two rows.
+    expect(html.match(/aria-current=/g) ?? []).toHaveLength(2);
+    // And the live episode is the one opened, not the finished one that shares its
+    // conversation id — a closed chat has no «Завершить чат».
+    expect(html).toContain('Ожидает ответа');
+    expect(html).toContain('>Завершить чат<');
   });
 });
