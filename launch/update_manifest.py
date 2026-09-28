@@ -34,6 +34,7 @@ def main() -> None:
         "generated",
         ".pytest_cache",
         ".ruff_cache",
+        ".mimosa",
         "osrm",
         "state",
         "payload",

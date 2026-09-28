@@ -9,10 +9,34 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from launch import cli, core
+from launch import cli, core, update_manifest
 
 
 class CoreTests(unittest.TestCase):
+    def test_manifest_excludes_local_tool_ledgers_from_portable_packages(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in (
+                "launch/entry.py",
+                "apps/api/app.ts",
+                "apps/api/.mimosa/ledger.json",
+                "infra/docker-compose.yml",
+                "package.json",
+                "pnpm-lock.yaml",
+                "pnpm-workspace.yaml",
+            ):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("fixture\n")
+            with (
+                patch.object(update_manifest, "root", root),
+                patch("sys.argv", ["update_manifest"]),
+            ):
+                update_manifest.main()
+            manifest = json.loads((root / "launch/manifest.json").read_text())
+            self.assertIn("apps/api/app.ts", manifest)
+            self.assertNotIn("apps/api/.mimosa/ledger.json", manifest)
+
     def test_missing_or_unresponsive_docker_has_a_concise_diagnostic(self):
         for error in (FileNotFoundError(), subprocess.TimeoutExpired(["docker"], 20)):
             with patch.object(core.subprocess, "run", side_effect=error):
