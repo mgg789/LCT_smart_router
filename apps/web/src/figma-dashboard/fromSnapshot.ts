@@ -83,7 +83,7 @@ export function nextRouterSettings(
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
     metroEnabled: current?.metroEnabled ?? false,
-    strictTimeWindows: current?.strictTimeWindows ?? false,
+    strictTimeWindows: current?.strictTimeWindows ?? true,
     departureLatenessToleranceSec: current?.departureLatenessToleranceSec ?? 0,
     taskStartLatenessToleranceSec: current?.taskStartLatenessToleranceSec ?? 0,
     windowLatenessToleranceSec: current?.windowLatenessToleranceSec ?? 0,

@@ -198,7 +198,7 @@ const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
-  strict_time_windows: z.boolean().default(false),
+  strict_time_windows: z.boolean().default(true),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
@@ -436,7 +436,7 @@ export class HttpRouterClient extends RouterClient {
       body: JSON.stringify({
         operation_id: input.operationId,
         expected_context_version: input.expectedContextVersion,
-        strict_time_windows: input.strictTimeWindows ?? false,
+        strict_time_windows: input.strictTimeWindows ?? true,
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,

@@ -80,6 +80,7 @@ export function EngineersView({
   onUpdateProfile,
   onDeleteEngineer,
   onSetAvailability,
+  onOpenChat,
 }: {
   token?: string;
   snapshot: DashboardSnapshot | null;
@@ -95,8 +96,11 @@ export function EngineersView({
   ) => Promise<void>;
   onDeleteEngineer: (engineerId: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
+  onOpenChat: (engineerId: string) => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
+  const [chatOpening, setChatOpening] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const roster = useMemo(
     () => engineerProfilesFromSnapshot(snapshot, handoffs),
     [handoffs, snapshot],
@@ -625,26 +629,53 @@ export function EngineersView({
       />
 
       {focused ? (
-        <motion.button
-          type="button"
-          data-eng-chrome
-          disabled
-          aria-disabled
-          title={t('figma-dashboard.EngineersView.72c299e0d6')}
-          className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
-          style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
-        >
-          <FigmaText className="font-bold text-[20px] text-figma-ink">
-            {t('figma-dashboard.EngineersView.3ad76b849d')}
-          </FigmaText>
-          <FigmaIcon
-            src={FIGMA_ASSETS.engChat}
-            alt=""
-            width={43}
-            height={43}
-            className="absolute right-[4px] top-1/2 -translate-y-1/2"
-          />
-        </motion.button>
+        <>
+          <motion.button
+            type="button"
+            data-eng-chrome
+            disabled={!token || busy || chatOpening}
+            title={
+              !token
+                ? t('figma-dashboard.EngineersView.chatNeedsLiveDay')
+                : t('figma-dashboard.EngineersView.3ad76b849d')
+            }
+            onClick={() => {
+              setChatError(null);
+              setChatOpening(true);
+              void onOpenChat(focused.id)
+                .catch((cause: unknown) => {
+                  setChatError(
+                    cause instanceof Error
+                      ? cause.message
+                      : t('figma-dashboard.EngineersView.chatOpenFailed'),
+                  );
+                })
+                .finally(() => setChatOpening(false));
+            }}
+            className="absolute z-20 flex h-[51px] w-[225px] items-center rounded-[27px] bg-figma-bee px-[16px] disabled:cursor-not-allowed disabled:opacity-45"
+            style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
+          >
+            <FigmaText className="font-bold text-[20px] text-figma-ink">
+              {t('figma-dashboard.EngineersView.3ad76b849d')}
+            </FigmaText>
+            <FigmaIcon
+              src={FIGMA_ASSETS.engChat}
+              alt=""
+              width={43}
+              height={43}
+              className="absolute right-[4px] top-1/2 -translate-y-1/2"
+            />
+          </motion.button>
+          {chatError ? (
+            <p
+              role="alert"
+              className="absolute z-20 max-w-[320px] text-[16px] text-figma-ink"
+              style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP + 58 }}
+            >
+              {chatError}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       <motion.label

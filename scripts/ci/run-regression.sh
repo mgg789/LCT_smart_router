@@ -52,6 +52,7 @@ compose exec -T regression timeout 60 pnpm test:e2e:types 2>&1 | tee "$output/ty
 compose exec -T postgres createdb -U lct lct_api_checks
 compose exec -T regression timeout 90 bash -ec '
   export DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/lct_api_checks"
+  export TEST_DATABASE_URL="$DATABASE_URL"
   pnpm --filter api exec prisma migrate deploy
   pnpm --filter api exec node --test dist-test/test/integration/engineers.test.js
 ' 2>&1 | tee "$output/api-engineers.log"

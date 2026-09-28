@@ -18,7 +18,7 @@ export const PERSONAL_POLICY_PRESET_DEFAULTS = {
   trafficEnabled: true,
   metroEnabled: false,
   equipmentTransfersEnabled: false,
-  strictTimeWindows: false,
+  strictTimeWindows: true,
   ordinaryReplanningDisabled: false,
 };
 export const personalPolicyPresetSchema = z.object({

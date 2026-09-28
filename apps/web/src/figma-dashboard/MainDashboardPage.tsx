@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
@@ -36,11 +37,12 @@ import {
 } from './dashboardSlide';
 import { EngineerColumn } from './EngineerColumn';
 import { EngineersView } from './EngineersView';
-import { FIGMA_ARTBOARD, type NavItemId, type NotificationTone } from './fixtures';
+import { FIGMA_ARTBOARD, type NotificationTone } from './fixtures';
 import { nextRouterSettings, policyLabel } from './fromSnapshot';
 import { ManualPlanningProvider, openManualPlanning } from './ManualPlanning';
 import { MapCard, RouteCard } from './MapRoute';
 import { McpAgentIndicator } from './McpAgentIndicator';
+import type { NavItemId } from './navigation';
 import { PersonalPolicyDialog } from './PersonalPolicyDialog';
 import {
   type PlanHistoryAnchor,
@@ -149,6 +151,7 @@ export function MainDashboardPage() {
   }, [dash.token, policyOpen]);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
+  const [focusedChatId, setFocusedChatId] = useState<string | null>(null);
   const [settledPane, setSettledPane] = useState('main');
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -384,7 +387,7 @@ export function MainDashboardPage() {
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const metroOn = dash.snapshot?.routerSettings?.metroEnabled ?? false;
   const equipmentTransfersOn = dash.snapshot?.routerSettings?.equipmentTransfersEnabled ?? false;
-  const strictTimeWindowsOn = dash.snapshot?.routerSettings?.strictTimeWindows ?? false;
+  const strictTimeWindowsOn = dash.snapshot?.routerSettings?.strictTimeWindows ?? true;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
   const planLabel = view?.planLabel ?? t('figma-dashboard.MainDashboardPage.4ef18de84c');
@@ -450,7 +453,7 @@ export function MainDashboardPage() {
     dash.applyRoutingSettings(
       dash.snapshot.policyId,
       nextRouterSettings(dash.snapshot, {
-        strictTimeWindows: !(dash.snapshot.routerSettings?.strictTimeWindows ?? false),
+        strictTimeWindows: !(dash.snapshot.routerSettings?.strictTimeWindows ?? true),
       }),
     );
   };
@@ -1074,7 +1077,7 @@ export function MainDashboardPage() {
                   onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
                 >
                   {stackViewKey(stackNav) === 'chats' ? (
-                    <DashboardChats token={dash.token} />
+                    <DashboardChats token={dash.token} focusChatId={focusedChatId} />
                   ) : null}
                   {stackViewKey(stackNav) === 'ai' ? (
                     <DashboardAi
@@ -1167,6 +1170,17 @@ export function MainDashboardPage() {
                       onDeleteEngineer={dash.deleteEngineer}
                       onSetAvailability={(engineerId, availability) => {
                         void dash.updateEngineerAvailability(engineerId, availability);
+                      }}
+                      onOpenChat={async (engineerId) => {
+                        if (!dash.token) return;
+                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
+                          kind: 'engineer',
+                          engineerId,
+                        });
+                        setFocusedChatId(chat.handoff.id);
+                        setStackDir(stackSlideDir(stackNav, 'chats'));
+                        setStackNav('chats');
+                        setActiveNav('chats');
                       }}
                     />
                   ) : null}

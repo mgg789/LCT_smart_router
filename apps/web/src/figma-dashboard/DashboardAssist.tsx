@@ -14,7 +14,13 @@ import { DashboardAi } from './DispatcherAiPane';
 export { DashboardAi };
 
 /** Dispatcher chat list for the sidebar tab. Reads the handover contour and writes replies. */
-export function DashboardChats({ token }: { token: string | null }) {
+export function DashboardChats({
+  token,
+  focusChatId,
+}: {
+  token: string | null;
+  focusChatId?: string | null;
+}) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +60,7 @@ export function DashboardChats({ token }: { token: string | null }) {
     <div className="absolute inset-0 overflow-hidden bg-figma-canvas">
       <ChatsView
         token={token}
+        focusChatId={focusChatId}
         chats={chats}
         loading={loading}
         error={error}

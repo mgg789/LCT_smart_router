@@ -478,7 +478,7 @@ const technicalSettingsSchema = z.object({
   metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
-  strictTimeWindows: z.boolean().default(false),
+  strictTimeWindows: z.boolean().default(true),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
@@ -1120,7 +1120,7 @@ export async function updateRouterTechnicalSettings(
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
-        strictTimeWindows: settings.strictTimeWindows ?? false,
+        strictTimeWindows: settings.strictTimeWindows ?? true,
         lunchesEnabled: settings.lunchesEnabled,
         metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,

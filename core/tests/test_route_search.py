@@ -99,7 +99,7 @@ def test_replaces_terminal_only_visit_to_recover_multiple_later_jobs(
     start = snapshot.planning_as_of
 
     class FixedRoads:
-        settings = RouterTechnicalSettings(window_lateness_tolerance_sec=600)
+        settings = RouterTechnicalSettings(window_lateness_tolerance_sec=600, strict_time_windows=False)
 
         def quote_at(self, origin, destination, profile, departure_at):
             return TravelQuote(800, 1000, (origin, destination), "traffic_api")
@@ -208,6 +208,7 @@ def test_regular_window_lateness_is_explicit_and_does_not_extend_shifts(
         access_buffer_sec=0,
         lunches_enabled=True,
         window_lateness_tolerance_sec=minutes * 60,
+        strict_time_windows=False,
     )
     result = solve(task, GraphTravel(graph), settings)
     for plan in (result.main, result.baseline):
@@ -264,7 +265,7 @@ def test_completion_window_grace_tries_another_engineer(snapshot, graph):
         }
     )
     task = snapshot.model_copy(update={"requests": [request], "engineers": [first, second]})
-    output = solve(task, GraphTravel(graph), SearchSettings(access_buffer_sec=0))
+    output = solve(task, GraphTravel(graph), SearchSettings(access_buffer_sec=0, strict_time_windows=False))
     assignment = output.main.assignments[0]
     assert assignment.status == "assigned"
     assert assignment.engineer_id == "eng-2"

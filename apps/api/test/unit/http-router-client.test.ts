@@ -152,7 +152,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
-      strictTimeWindows: false,
+      strictTimeWindows: true,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       travelTimeMode: 'graph_with_access_buffer',
@@ -299,7 +299,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
-      strictTimeWindows: false,
+      strictTimeWindows: true,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       windowLatenessToleranceSec: 900,

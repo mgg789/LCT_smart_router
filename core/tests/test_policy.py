@@ -118,7 +118,8 @@ def test_fast_and_sla_expose_a_real_tradeoff_inside_identical_window_bounds(snap
         "window_end_at": start + (650 if index == 1 else 7200),
     }) for index, request in enumerate(snapshot.requests[:2])]
     settings = SearchSettings(time_limit_ms=300, access_buffer_sec=0, traffic_enabled=False,
-                              window_lateness_tolerance_sec=600, metro_enabled=False)
+                              window_lateness_tolerance_sec=600, metro_enabled=False,
+                              strict_time_windows=False)
     task = snapshot.model_copy(update={"requests": requests})
     fast = solve(task.model_copy(update={"policy": Policy(policy_id="fast", parameters={})}), travel, settings).main
     sla = solve(task.model_copy(update={"policy": Policy(policy_id="sla", parameters={})}), travel, settings).main

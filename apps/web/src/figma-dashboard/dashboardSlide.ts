@@ -1,5 +1,5 @@
 import { isNavixOffline } from '../domain/mapAvailability';
-import type { NavItemId } from './fixtures';
+import type { NavItemId } from './navigation';
 
 /**
  * Vertical stack of MAIN sidebar tabs, in sidebar order.

@@ -51,7 +51,7 @@
       "type": "boolean"
     },
     "strict_time_windows": {
-      "default": false,
+      "default": true,
       "title": "Strict Time Windows",
       "type": "boolean"
     },

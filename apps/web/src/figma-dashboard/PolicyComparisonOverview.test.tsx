@@ -93,6 +93,7 @@ describe('honest policy comparisons', () => {
     );
     expect(html).toContain('10 из 20');
     expect(html).toContain('+5 к FIFO');
+    expect(html).toContain('назначено 10 заявок против 5 у FIFO');
     expect(html).toContain('-20%');
     expect(html).toContain('резервных инженеров');
     expect(html).toContain('Показатель расходов');

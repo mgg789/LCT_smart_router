@@ -52,7 +52,7 @@ class RouteEvaluator:
     def __init__(self, snapshot: RouterTaskSnapshot, travel: TravelProvider):
         self.snapshot = snapshot
         self.travel = travel
-        self.strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
+        self.strict = getattr(getattr(travel, "settings", None), "strict_time_windows", True)
         self.requests = {r.request_id: r for r in snapshot.requests}
         self.engineers = sorted(snapshot.engineers, key=lambda e: e.engineer_id)
         self.allowed = {

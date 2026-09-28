@@ -6,14 +6,10 @@ import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
-import {
-  formatNotificationCount,
-  NAV_ITEMS,
-  type NavItemId,
-  type NotificationTone,
-} from './fixtures';
+import { formatNotificationCount, type NotificationTone } from './fixtures';
 import { policyLabel } from './fromSnapshot';
 import { openManualPlanning } from './ManualPlanning';
+import { NAV_ITEMS, type NavItemId } from './navigation';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 

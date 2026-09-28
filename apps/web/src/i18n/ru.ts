@@ -943,7 +943,8 @@ export const ru = {
   'figma-dashboard.EngineersView.cad3c12081': 'Не удалось сохранить почту',
   'figma-dashboard.EngineersView.4a782d73a4': 'Не удалось удалить инженера',
   'figma-dashboard.EngineersView.2bea5a2c77': 'Нет инженеров',
-  'figma-dashboard.EngineersView.72c299e0d6': 'Скоро',
+  'figma-dashboard.EngineersView.chatNeedsLiveDay': 'Чат доступен в живом дне',
+  'figma-dashboard.EngineersView.chatOpenFailed': 'Не удалось открыть чат',
   'figma-dashboard.EngineersView.3ad76b849d': 'Перейти в чат',
   'figma-dashboard.EngineersView.6614a726f7': 'Найти инженера',
   'figma-dashboard.EngineersView.2a539d6520': 'email@example.com',
@@ -1191,6 +1192,8 @@ export const ru = {
     'Показан лучший результат по каждому показателю среди основных политик; это могут быть разные планы.',
   'figma-dashboard.PolicyComparisonOverview.42a0a48819':
     ' На этом наборе основные политики дали одинаковые показатели.',
+  'figma-dashboard.PolicyComparisonOverview.coverageDistanceNote':
+    'Общий пробег выше, потому что назначено {{value0}} заявок против {{value1}} у FIFO. Сравнивайте его вместе с покрытием и километрами на заявку.',
   'figma-dashboard.PolicyComparisonOverview.e6aec5423d': 'Сколько заявок удаётся назначить',
   'figma-dashboard.PolicyComparisonOverview.a2f012e5ff': 'заявок',
   'figma-dashboard.PolicyComparisonOverview.bcb32d2cc5':

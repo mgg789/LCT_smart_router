@@ -1509,7 +1509,7 @@ function sameRouterSettings(
     left.lunchesEnabled === right.lunchesEnabled &&
     left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
-    (left.strictTimeWindows ?? false) === (right.strictTimeWindows ?? false) &&
+    (left.strictTimeWindows ?? true) === (right.strictTimeWindows ?? true) &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&

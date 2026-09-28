@@ -13,6 +13,7 @@
     "dev": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
     "test": "pnpm --filter api test && pnpm --filter web test",
+    "test:isolated": "bash scripts/ci/run-js-tests.sh",
     "lint": "biome check . && pnpm lint:i18n && pnpm lint:openapi",
     "lint:openapi": "pnpm --filter api lint:openapi",
     "format": "biome format --write .",

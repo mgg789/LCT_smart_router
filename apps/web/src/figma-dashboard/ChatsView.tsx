@@ -21,6 +21,7 @@ const HAIRLINE = 'rgba(114,116,120,0.25)';
 
 export interface ChatsViewProps {
   readonly token: string | null;
+  readonly focusChatId?: string | null;
   readonly chats: DispatchChatView[] | null;
   readonly loading: boolean;
   readonly error: string | null;
@@ -118,6 +119,7 @@ function portraitFor(id: string): string {
  */
 export function ChatsView({
   token,
+  focusChatId,
   chats,
   loading,
   error,
@@ -131,6 +133,11 @@ export function ChatsView({
   const [sidePicked, setSidePicked] = useState<SideFilter | null>(null);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusChatId) return;
+    setSelectedId(focusChatId);
+    setSidePicked('engineer');
+  }, [focusChatId]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);

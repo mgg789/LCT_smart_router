@@ -191,7 +191,7 @@ class RouterTechnicalSettings(Record):
     equipment_enabled: bool = True
     equipment_transfers_enabled: bool = False
     metro_enabled: bool = False
-    strict_time_windows: bool = False
+    strict_time_windows: bool = True
     window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)

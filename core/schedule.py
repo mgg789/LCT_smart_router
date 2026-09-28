@@ -274,7 +274,7 @@ def schedule_steps(
     """
     # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
     # client package: static SSRF rules flag that shape even though no network call exists.
-    strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
+    strict = getattr(getattr(travel, "settings", None), "strict_time_windows", True)
     request_map = {r.request_id: r for r in snapshot.requests}
     job_steps = [item for item in steps if isinstance(item, str)]
     terminal_candidate = len(job_steps) == 1 and len(steps) == 1
