@@ -75,7 +75,10 @@ def way_selected(tags) -> bool:
             return True
         if tags.get("sidewalk:both") in SIDEWALK_VALUES:
             return True
-        if tags.get("sidewalk:left") in SIDEWALK_VALUES or tags.get("sidewalk:right") in SIDEWALK_VALUES:
+        if (
+            tags.get("sidewalk:left") in SIDEWALK_VALUES
+            or tags.get("sidewalk:right") in SIDEWALK_VALUES
+        ):
             return True
         if tags.get("foot") in FOOT_ACCESS_VALUES:
             return True
@@ -126,13 +129,15 @@ def main():
     parser.add_argument(
         "--pbf",
         type=Path,
-        default=Path.home() / "Projects/LCT/moscow-road-graph/data/central-fed-district-latest.osm.pbf",
+        default=Path.home()
+        / "Projects/LCT/moscow-road-graph/data/central-fed-district-latest.osm.pbf",
         help="Central Federal District OSM extract (837 MB)",
     )
     parser.add_argument(
         "--polygon",
         type=Path,
-        default=Path.home() / "Projects/LCT/moscow-road-graph/data/mkad-buffered.geojson",
+        default=Path.home()
+        / "Projects/LCT/moscow-road-graph/data/mkad-buffered.geojson",
         help="MKAD ring +500 m buffer geojson from the car-graph pipeline",
     )
     parser.add_argument(
@@ -145,8 +150,12 @@ def main():
     if not args.pbf.exists():
         raise SystemExit(f"missing {args.pbf}")
     if not args.polygon.exists():
-        raise SystemExit(f"missing {args.polygon} — build it with build_mkad_polygon.py")
-    polygon = shape(json.loads(args.polygon.read_text(encoding="utf-8"))["features"][0]["geometry"])
+        raise SystemExit(
+            f"missing {args.polygon} — build it with build_mkad_polygon.py"
+        )
+    polygon = shape(
+        json.loads(args.polygon.read_text(encoding="utf-8"))["features"][0]["geometry"]
+    )
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out_ways = args.out_dir / "moscow-mkad-foot-ways.osm.pbf"

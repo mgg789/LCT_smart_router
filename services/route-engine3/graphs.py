@@ -1,8 +1,8 @@
 """Graph discovery and osrm-routed supervision for route-engine3.
 
-A graph is one subdirectory of the graphs root containing exactly one
-``*.osrm`` base file (for example ``moscow-mkad.osrm``) plus its companion
-pages, and an optional ``graph.json`` metadata file::
+A graph is one subdirectory of the graphs root containing an OSRM page family
+(``*.osrm`` base and/or its ``*.osrm.*`` companion pages) and an optional
+``graph.json`` metadata file::
 
     {
         "graph_id": "car",
@@ -24,11 +24,9 @@ is enough to serve a new graph — no service code changes.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 import threading
-import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -40,7 +38,11 @@ DEFAULT_SPEEDS_KMH = {"walk": 5.0, "bike": 15.0}
 
 @dataclass(frozen=True)
 class GraphSpec:
-    """One discovered OSRM graph folder and its declared capabilities."""
+    """One discovered OSRM graph folder and its declared capabilities.
+
+    base_file is the dataset prefix handed to osrm-routed; the ``.osrm`` base
+    file itself may be absent — MLD graphs consist purely of companion pages.
+    """
 
     graph_id: str
     directory: Path
@@ -75,10 +77,15 @@ def discover_graphs(root: Path) -> list[GraphSpec]:
     if not root.is_dir():
         return specs
     for directory in sorted(p for p in root.iterdir() if p.is_dir()):
-        bases = sorted(directory.glob("*.osrm"))
-        bases = [path for path in bases if path.is_file()]
-        if not bases:
+        # osrm-routed takes the dataset PREFIX, not a required base file: an
+        # MLD graph directory carries only *.osrm.* companion pages, so derive
+        # the prefix from whichever page is present.
+        pages = sorted(path for path in directory.glob("*.osrm*") if path.is_file())
+        if not pages:
             continue
+        first = pages[0].name
+        stem = first.split(".osrm.")[0] if ".osrm." in first else first[: -len(".osrm")]
+        base_file = directory / f"{stem}.osrm"
         meta: dict = {}
         meta_path = directory / "graph.json"
         if meta_path.exists():
@@ -100,14 +107,16 @@ def discover_graphs(root: Path) -> list[GraphSpec]:
         speeds_kmh = {
             key: float(speeds[key])
             for key in ("walk", "bike")
-            if isinstance(speeds, dict) and isinstance(speeds.get(key), (int, float)) and speeds[key] > 0
+            if isinstance(speeds, dict)
+            and isinstance(speeds.get(key), (int, float))
+            and speeds[key] > 0
         }
         speeds_kmh = {**DEFAULT_SPEEDS_KMH, **speeds_kmh}
         specs.append(
             GraphSpec(
                 graph_id=graph_id,
                 directory=directory,
-                base_file=bases[0],
+                base_file=base_file,
                 profile=profile,
                 map_version=str(meta.get("map_version") or directory.name),
                 max_table_size=int(meta.get("max_table_size") or 4096),
@@ -118,10 +127,18 @@ def discover_graphs(root: Path) -> list[GraphSpec]:
 
 
 def probe_osrm(port: int, timeout: float = 1.0) -> bool:
-    """True when an osrm-routed answers on the loopback port (any HTTP counts)."""
+    """True when an osrm-routed answers on the loopback port.
+
+    The root path answers 404 — any HTTP response at all, error statuses
+    included, means the child is alive and serving.
+    """
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=timeout) as response:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/", timeout=timeout
+        ) as response:
             return response.status < 500
+    except urllib.error.HTTPError:
+        return True
     except (urllib.error.URLError, OSError):
         return False
 
@@ -239,7 +256,9 @@ class GraphSupervisor:
             str(runtime.port),
             str(served / runtime.spec.base_file.name),
         ]
-        return subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False)
+        return subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False
+        )
 
     def _page_graph(self, spec: GraphSpec) -> Path | None:
         """Copy graph pages into the fast directory; None when that fails."""
