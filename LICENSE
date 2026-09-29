@@ -1,3 +1,17 @@
+## License scope (exception notice)
+
+This license (PolyForm Noncommercial 1.0.0) applies to the entire
+LCT Smart Router repository **except** the directory
+`services/route-engine3/`, which is licensed under the
+**Apache License, Version 2.0** (see `services/route-engine3/LICENSE`).
+The route-engine3 routing engine may therefore be used, modified and
+redistributed in commercial projects; the rest of the repository —
+including the solver core, API, web apps, datasets and graphs — stays
+noncommercial. In case of conflict for files under
+`services/route-engine3/`, the Apache License 2.0 prevails.
+
+---
+
 # PolyForm Noncommercial License 1.0.0
 
 <https://polyformproject.org/licenses/noncommercial/1.0.0>
