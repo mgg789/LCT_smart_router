@@ -21575,254 +21575,269 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "chat": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "handoff": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "conversationId": {
-                              "type": "string"
-                            },
-                            "requestedByAccountId": {
-                              "type": "string"
-                            },
-                            "actorRole": {
-                              "type": "string"
-                            },
-                            "initiatedBy": {
-                              "type": "string"
-                            },
-                            "requestIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "engineerIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "state": {
-                              "type": "string"
-                            },
-                            "startSeq": {
-                              "type": "number"
-                            },
-                            "endSeq": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "createdAt": {
-                              "type": "number"
-                            },
-                            "firstReplyAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "closedAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "conversationId",
-                            "requestedByAccountId",
-                            "actorRole",
-                            "initiatedBy",
-                            "requestIds",
-                            "engineerIds",
-                            "state",
-                            "startSeq",
-                            "endSeq",
-                            "createdAt",
-                            "firstReplyAt",
-                            "closedAt"
-                          ]
-                        },
-                        "conversation": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "role": {
-                              "type": "string"
-                            },
-                            "mode": {
-                              "type": "string"
-                            },
-                            "assistMode": {
-                              "type": "string"
-                            },
-                            "roleProfile": {
-                              "type": "string"
-                            },
-                            "contextRef": {},
-                            "title": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "createdAt": {
-                              "type": "number"
-                            },
-                            "updatedAt": {
-                              "type": "number"
-                            },
-                            "lastMessageAt": {
-                              "type": "number"
-                            },
-                            "closedAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "version": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "role",
-                            "mode",
-                            "assistMode",
-                            "roleProfile",
-                            "contextRef",
-                            "title",
-                            "createdAt",
-                            "updatedAt",
-                            "lastMessageAt",
-                            "closedAt",
-                            "version"
-                          ]
-                        },
-                        "messages": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "string"
-                              },
-                              "conversationId": {
-                                "type": "string"
-                              },
-                              "seq": {
-                                "type": "number"
-                              },
-                              "author": {
-                                "type": "string"
-                              },
-                              "kind": {
-                                "type": "string"
-                              },
-                              "text": {
-                                "type": "string"
-                              },
-                              "actions": {
-                                "type": "array",
-                                "items": {}
-                              },
-                              "runId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "operationId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "authorAccountId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "createdAt": {
-                                "type": "number"
-                              }
-                            },
-                            "required": [
-                              "id",
-                              "conversationId",
-                              "seq",
-                              "author",
-                              "kind",
-                              "text",
-                              "actions",
-                              "runId",
-                              "operationId",
-                              "authorAccountId",
-                              "createdAt"
-                            ]
-                          }
-                        },
-                        "unreadCount": {
-                          "type": "number"
+                        "chat": {
+                          "type": "null"
                         }
                       },
                       "required": [
-                        "handoff",
-                        "conversation",
-                        "messages",
-                        "unreadCount"
+                        "chat"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "chat": {
+                          "type": "object",
+                          "properties": {
+                            "handoff": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "conversationId": {
+                                  "type": "string"
+                                },
+                                "requestedByAccountId": {
+                                  "type": "string"
+                                },
+                                "actorRole": {
+                                  "type": "string"
+                                },
+                                "initiatedBy": {
+                                  "type": "string"
+                                },
+                                "requestIds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "engineerIds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "startSeq": {
+                                  "type": "number"
+                                },
+                                "endSeq": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": "number"
+                                },
+                                "firstReplyAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "closedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "conversationId",
+                                "requestedByAccountId",
+                                "actorRole",
+                                "initiatedBy",
+                                "requestIds",
+                                "engineerIds",
+                                "state",
+                                "startSeq",
+                                "endSeq",
+                                "createdAt",
+                                "firstReplyAt",
+                                "closedAt"
+                              ]
+                            },
+                            "conversation": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "role": {
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "type": "string"
+                                },
+                                "assistMode": {
+                                  "type": "string"
+                                },
+                                "roleProfile": {
+                                  "type": "string"
+                                },
+                                "contextRef": {},
+                                "title": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": "number"
+                                },
+                                "updatedAt": {
+                                  "type": "number"
+                                },
+                                "lastMessageAt": {
+                                  "type": "number"
+                                },
+                                "closedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "version": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "role",
+                                "mode",
+                                "assistMode",
+                                "roleProfile",
+                                "contextRef",
+                                "title",
+                                "createdAt",
+                                "updatedAt",
+                                "lastMessageAt",
+                                "closedAt",
+                                "version"
+                              ]
+                            },
+                            "messages": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "conversationId": {
+                                    "type": "string"
+                                  },
+                                  "seq": {
+                                    "type": "number"
+                                  },
+                                  "author": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {}
+                                  },
+                                  "runId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "operationId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "authorAccountId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "createdAt": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "conversationId",
+                                  "seq",
+                                  "author",
+                                  "kind",
+                                  "text",
+                                  "actions",
+                                  "runId",
+                                  "operationId",
+                                  "authorAccountId",
+                                  "createdAt"
+                                ]
+                              }
+                            },
+                            "unreadCount": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "handoff",
+                            "conversation",
+                            "messages",
+                            "unreadCount"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "chat"
                       ]
                     }
-                  },
-                  "required": [
-                    "chat"
                   ]
                 }
               }

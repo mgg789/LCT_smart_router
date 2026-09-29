@@ -153,6 +153,7 @@ export function MainDashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
   const [focusedChatId, setFocusedChatId] = useState<string | null>(null);
+  const [focusedEngineerChatId, setFocusedEngineerChatId] = useState<string | null>(null);
   const [chatsUnread, setChatsUnread] = useState(false);
   useEffect(() => {
     const token = dash.token;
@@ -1125,6 +1126,7 @@ export function MainDashboardPage() {
                     <DashboardChats
                       token={dash.token}
                       focusChatId={focusedChatId}
+                      focusEngineerId={focusedEngineerChatId}
                       snapshot={visibleSnapshot}
                       onOpenEngineer={async (engineerId, text) => {
                         if (!dash.token) {
@@ -1240,12 +1242,7 @@ export function MainDashboardPage() {
                         void dash.updateEngineerAvailability(engineerId, availability);
                       }}
                       onOpenChat={async (engineerId) => {
-                        if (!dash.token) return;
-                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
-                          kind: 'engineer',
-                          engineerId,
-                        });
-                        setFocusedChatId(chat.handoff.id);
+                        setFocusedEngineerChatId(engineerId);
                         setStackDir(stackSlideDir(stackNav, 'chats'));
                         setStackNav('chats');
                         setActiveNav('chats');

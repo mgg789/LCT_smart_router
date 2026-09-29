@@ -30,6 +30,8 @@ const HANDOFF_NOISE = [
 export interface ChatsViewProps {
   readonly token: string | null;
   readonly focusChatId?: string | null;
+  /** Engineer chosen from the roster. Opens their existing chat, or a draft until a message is sent. */
+  readonly focusEngineerId?: string | null;
   readonly chats: DispatchChatView[] | null;
   readonly loading: boolean;
   readonly error: string | null;
@@ -129,6 +131,7 @@ function portraitForChat(chat: DispatchChatView): string {
 export function ChatsView({
   token,
   focusChatId,
+  focusEngineerId,
   chats,
   loading,
   error,
@@ -151,9 +154,27 @@ export function ChatsView({
   const [openError, setOpenError] = useState<string | null>(null);
   useEffect(() => {
     if (!focusChatId) return;
+    setPendingEngineer(null);
     setSelectedId(focusChatId);
     setSide('engineer');
   }, [focusChatId]);
+  useEffect(() => {
+    if (!focusEngineerId) return;
+    const existing = (chats ?? []).find((chat) =>
+      chat.handoff.engineerIds.includes(focusEngineerId),
+    );
+    if (existing) {
+      setPendingEngineer(null);
+      setSelectedId(existing.handoff.id);
+      setSide('engineer');
+      return;
+    }
+    const engineer = engineers.find((item) => item.id === focusEngineerId);
+    if (!engineer) return;
+    setSelectedId(null);
+    setPendingEngineer({ id: engineer.id, displayName: engineer.displayName });
+    setSide('engineer');
+  }, [focusEngineerId, chats, engineers]);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);

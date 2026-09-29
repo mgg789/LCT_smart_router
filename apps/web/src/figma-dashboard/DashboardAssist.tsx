@@ -19,11 +19,13 @@ export { DashboardAi };
 export function DashboardChats({
   token,
   focusChatId,
+  focusEngineerId,
   snapshot,
   onOpenEngineer,
 }: {
   token: string | null;
   focusChatId?: string | null;
+  focusEngineerId?: string | null;
   snapshot: DashboardSnapshot | null;
   onOpenEngineer: (engineerId: string, text: string) => Promise<DispatchChatView>;
 }) {
@@ -67,6 +69,7 @@ export function DashboardChats({
       <ChatsView
         token={token}
         focusChatId={focusChatId}
+        focusEngineerId={focusEngineerId}
         chats={chats}
         loading={loading}
         error={error}
