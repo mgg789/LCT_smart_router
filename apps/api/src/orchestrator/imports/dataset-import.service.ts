@@ -67,7 +67,8 @@ export interface PreparedOfficialRegion {
   readonly engineerLimit: number | null;
 }
 
-const geocodePackageSchema = z
+/** Contract of the versioned offline coordinate catalogue in `data/dataset/geocoded`. */
+export const geocodePackageSchema = z
   .object({
     schema_version: z.string().min(1).optional(),
     /** Compatibility name used by the prepared Core scenario resources. */
