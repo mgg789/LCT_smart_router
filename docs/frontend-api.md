@@ -51,7 +51,7 @@ Authorization: Bearer <token>
 `sessionStorage` (`SESSION_TTL_SEC`, по умолчанию сутки). Приложение инженера на
 `/engineer/` хранит сессию в `localStorage` на устройстве (`ENGINEER_SESSION_TTL_SEC`,
 по умолчанию 30 суток). Интеграционные ключи (`POST /auth/tokens`, категории
-`client/eng/master`) фронтенду не нужны — это машинный доступ.
+`client/eng/client_eng/master`) фронтенду не нужны — это машинный доступ.
 
 ## 3. Ошибки: один конверт
 
@@ -104,12 +104,12 @@ Authorization: Bearer <token>
 | `assignmentState` | `pending` (ждёт актуального расчёта — **не** отказ) / `assigned` / `unassigned` |
 | `priority` | `normal` / `urgent` |
 | Навык `requiredSkill` / `skills` | `local` / `connection` / `emergency` |
-| Транспорт `transportType` | `car` / `walk` / `bike` / `transit` |
+| Транспорт `transportType` | `car` / `walk` / `bike`; legacy-вход `transit` нормализуется в `walk` |
 | Оборудование `requiredEquipment` | `router` / `set_top_box` / `smart_speaker` / null |
 | `availability` | `online` / `offline` |
-| `origin` плана | `auto` / `manual` |
+| `origin` плана | `auto` / `manual` / `restore` |
 | Серьёзность alert | `info` / `warning` / `error` |
-| Политики `policyId` | `fast`, `compact` (**дефолт**), `sla`, `balanced`, `eco` |
+| Готовые политики `policyId` | `fast`, `compact` (**дефолт**), `sla`, `balanced`, `eco`, `covering`; личный профиль настраивается отдельным `/dispatch/policy/personal` |
 
 ## 6. Диспетчерский контур `/api/v1/dispatch/...` (роль `dispatcher`)
 
@@ -194,7 +194,7 @@ updatedAt,stale}`. `stale` становится `true` только когда �
 {
   "id": "eng-…", "version": 2, "displayName": "Бригада Иванов",
   "inputOrder": 0, "skills": ["connection", "emergency"],
-  "transportType": "car", "region": "east",
+  "transportType": "car", "region": "east", "shiftPattern": "two_two",
   "homeLat": 55.77, "homeLon": 37.65, "hasAccount": false,
   "email": null,
   "day": {
@@ -213,7 +213,7 @@ updatedAt,stale}`. `stale` становится `true` только когда �
 и прогресс работы — три разных вещи, не смешивать в один статус. `email` — адрес
 входа, когда он привязан (`hasAccount: true`); у импортированных бригад `null`.
 
-**POST `/dispatch/engineers`** — `{operationId, email?, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`. Без `email` создаётся только профиль маршрутизации (`hasAccount: false`); логин можно выдать позже через `link-account`.
+**POST `/dispatch/engineers`** — `{operationId, email?, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?, shiftPattern?}` → `{engineer}`. Без `email` создаётся только профиль маршрутизации (`hasAccount: false`); логин можно выдать позже через `link-account`. График `two_two` (default) или `five_two` выбирает часовой интервал нового дня; он не реализует календарное чередование 2/2 или 5/2.
 
 **DELETE `/dispatch/engineers/:id`** — `{operationId, expectedVersion?}` → `{engineer}`. Мягко архивирует профиль, снимает роль инженера и отзывает его живые сессии. Исторические планы и факты сохраняют ссылку на профиль. Инженера на LIVE-линии или с незавершённой работой сначала нужно снять с линии и освободить.
 
@@ -223,7 +223,7 @@ updatedAt,stale}`. `stale` становится `true` только когда �
 
 **POST `/dispatch/engineers/unlink-account`** — `{operationId, engineerId}` → `{engineer}`. Снимает логин: `hasAccount: false`, `email: null`, роль инженера удаляется, живые сессии инженера отзываются. Профиль и план не меняются. Новый `verify` с `role: "engineer"` на этот адрес — `401`.
 
-**PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?}` → `{engineer}`.
+**PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?, shiftPattern?}` → `{engineer, scheduleDeferred}`. При смене графика и уже существующем дне на сегодня `scheduleDeferred=true`: профиль обновлён, часы текущего дня сохранены. Для немедленной правки дня используется `/dispatch/engineers/:id/workday`; часы шаблонов — в `/dispatch/settings`.
 
 **POST `/dispatch/engineers/:id/workday`** — `{operationId, workDate: "YYYY-MM-DD", shiftStartAt, shiftEndAt, lunch?: {enabled, durationSec?, windowStartAt?, windowEndAt?}, lunchRequired?}` → `{day}`. Включённый обед требует длительность и полное окно, обед помещается в окно целиком.
 
@@ -255,7 +255,7 @@ updatedAt,stale}`. `stale` становится `true` только когда �
 `rows` — семь строк: пять политик (`fast`, `compact`, `sla`, `balanced`, `eco`),
 `baseline` (FIFO по ТЗ, `kind: "baseline"`) и `covering` с явным
 `additionalEngineers`. Persisted `covering-*` исключаются из исходного состава.
-`searchBudgetMs` — номинальный бюджет поиска из настроек Runtime, максимум 8000;
+`searchBudgetMs` — номинальный бюджет поиска из настроек Runtime, диапазон 1…120 000 мс;
 он не равен реальному времени всего каталога. Первый ответ после публикации может
 идти до 90 с (таймаут HTTP-клиента API). Пока rebuild ещё считает, возвращается
 409 `VERSION_CONFLICT` — повторить после готовности плана.
@@ -353,7 +353,9 @@ alert-таймеры / ключи карт — в `/dispatch/settings`.
 
 ```json
 {
-  "dayStartMin": 540, "dayEndMin": 1260,
+  "dayStartMin": 600, "dayEndMin": 1320,
+  "twoTwoStartMin": 600, "twoTwoEndMin": 1320,
+  "fiveTwoStartMin": 540, "fiveTwoEndMin": 1080,
   "noShowSec": 1800, "overdueSec": 300, "timeRiskSec": 300, "repeatAfterSec": 900,
   "twogisApiKeySet": true, "twogisApiKeyLast4": "ab12",
   "yandexApiKeySet": false, "yandexApiKeyLast4": null
@@ -363,11 +365,16 @@ alert-таймеры / ключи карт — в `/dispatch/settings`.
 Минуты — от полуночи Москвы. Секреты карт никогда не возвращаются, только наличие
 и последние 4 символа.
 
-**PUT `/dispatch/settings`** — `{operationId, dayStartMin?, dayEndMin?, noShowSec?,
+**PUT `/dispatch/settings`** — `{operationId, dayStartMin?, dayEndMin?, twoTwoStartMin?,
+twoTwoEndMin?, fiveTwoStartMin?, fiveTwoEndMin?, noShowSec?,
 overdueSec?, timeRiskSec?, repeatAfterSec?, twogisApiKey?, yandexApiKey?}` → тот же
 вид, что GET. Опущенное поле не меняется; `null` или пустая строка на ключе карты
-снимает его. Смена `dayStartMin`/`dayEndMin` переписывает смену сегодняшних
-`EngineerDay`, у которых ещё нет линии.
+снимает его. Изменение любого часового поля запускает обновление сегодняшних
+`EngineerDay` по `shiftPattern` их профиля, включая уже открытые дни, и публикует
+снимок. Времена берутся из соответствующей пары `twoTwo*` / `fiveTwo*`;
+legacy-пара `dayStartMin` / `dayEndMin` остаётся в контракте. Это отличается от
+смены графика одного профиля через `PATCH /dispatch/engineers/:id`, где действует
+`scheduleDeferred`.
 
 **GET `/dispatch/settings/maps/status`** → `{active: "twogis"|"yandex"|"none",
 twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идёт параллельно;
@@ -417,7 +424,8 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
   со своим моментом, пометка «Перестраивается».
 - `lastResult.accepted: false` + `rejectionCode` — почему последний расчёт не стал
   планом (`SNAPSHOT_STALE`, `RESULT_NOT_APPLICABLE`, …).
-- Ожидание обновлений: **SSE нет** — опрашивайте `GET /plan` (текущий дашборд
+- Ожидание обновлений плана: отдельного SSE-потока нет — опрашивайте
+  `GET /api/v1/dispatch/plan` (текущий дашборд
   перечитывает после действий и по таймеру; интервал 2–5 с достаточен). `modeVersion`
   меняется при переключении режима.
 
@@ -597,7 +605,10 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 ## 9. Health (вне `/api/v1`, без авторизации)
 
 `GET /health/live` → процесс жив. `GET /health/ready` → 503, если недоступна БД.
-`GET /health/services` → `{services: {postgres, router, ai, smtp: {status: "up"|"not_configured"|"down"}}}` — используйте, чтобы честно показать состояние контура.
+`GET /health/services` → `{services: {database, router, ai, smtp}}`. Каждое значение —
+`{status: "ok"|"degraded"|"down"|"not_configured", detail?: string}`.
+Ключ базы — `database`, успешный статус — `ok`; отсутствие SMTP/LLM не делает readiness
+красным. `/health/ready` возвращает `{status, checks}` только для обязательных зависимостей.
 
 ## 10. Объяснения: причины назначений
 
@@ -630,7 +641,9 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
    с причинами из §10.
 5. Действия: выбор политики, технастройки, перенос/перестановка (MANUAL), создание/
    правка заявок, отключение инженера — каждый вызов с новым `operationId`.
-6. Обновление: polling `GET /dispatch/plan` (+ `requests`, `alerts`) — SSE пока нет.
+6. План и LIVE обновляются polling через `GET /dispatch/plan` / `GET /dispatch/live`
+   (+ `requests`, `alerts`). SSE доступны для AI-диалогов, AI-run и диспетчерских чатов;
+   отдельного SSE-потока рабочего плана сейчас нет.
 7. Сравнение политик: `GET /dispatch/policy-comparison` по кнопке (тяжёлый, до 90 с
    на холодном снимке), 409 — перечитать; 503 во время rebuild — повторить.
 

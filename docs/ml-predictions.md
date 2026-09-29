@@ -171,7 +171,7 @@ COMPLETED_NOT_A_PREFIX`, `422 PREDICT_PLAN_TOO_LARGE`, `503 ACTIVE_PUBLICATION_U
 
 ## 3. API System Layer (`apps/api`)
 
-### `POST /api/dispatch/predictions/situation` — `@Roles('dispatcher')`
+### `POST /api/v1/dispatch/predictions/situation` — `@Roles('dispatcher')`
 
 Прозрачный прокс: camelCase-вход (`inputHash`, `routerContextVersion`, `routes`,
 `simulations`, `asOf`, `completed`, `cancelRate`) → гейтвей `RouterClient.predictSituation()`
