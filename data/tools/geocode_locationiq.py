@@ -61,8 +61,8 @@ ALLOWED_URL_PREFIX = "https://us1.locationiq.com/v1/search.php?"
 # Every dataset address sits in Moscow or the Moscow Oblast south; bounding the
 # search to this box rejects far homonyms (e.g. село Каширское, Voronezh Oblast).
 VIEWBOX = "35.8,56.3,39.8,54.2"
-# 60 req/min is the stated plan limit; 1.05 s spacing keeps a small safety margin.
-MIN_INTERVAL_SEC = 60.0 / 60 + 0.05
+# Budget from LOCATIONIQ_RPM (requests per minute; default 60, raised plan allows 110).
+MIN_INTERVAL_SEC = 60.0 / float(os.environ.get("LOCATIONIQ_RPM", "60")) + 0.02
 HTTP_TIMEOUT_SEC = 20
 
 PACKAGE_VERSION_DATE = "2026-09-29"
@@ -152,6 +152,35 @@ MANUAL_QUERIES: dict[str, list[str]] = {
     ],
     "Кашира, ул.Юбилейная, д. 9": [
         "Московская область, Кашира, Юбилейная улица, 9",
+    ],
+    # ---- extra days (28–29.09.2026) ------------------------------------------------
+    # OSM has no building at Самаркандский 7; street point is the honest fallback.
+    "Москва, б-р.Самаркандский, д. к7": [
+        "Москва, Самаркандский бульвар, 7",
+    ],
+    "Москва, ул.11-я Текстильщиков, д. 9": [
+        "Москва, 11-я улица Текстильщиков, 9",
+    ],
+    # OSM maps no 6Б on Болотниковская; street point stands in, flagged.
+    "Москва, ул.Болотниковская, д. 6 к Б": [
+        "Москва, Болотниковская улица, 6Б",
+    ],
+    "Домодедово, ул.Каширское шоссе, д. 91 к 1": [
+        "Домодедово, Каширское шоссе, 91к1",
+    ],
+    "Москва Шипиловский пр-зд. д. 63к1": [
+        "Москва, Шипиловский проезд, 63к1",
+    ],
+    # Ленина exists in both Ожерелье and Кашира-3; the dataset row means the city proper.
+    "Московская область, г. Кашира Ленина ул. д. 9": [
+        "Кашира-3, улица Ленина, 9",
+    ],
+    # мкр. Западный is implied by Талалихина in Домодедово; the double dot breaks parsing.
+    "Московская область, г.Домодедово, мкр..Западный, ул.Талалихина, д. 10": [
+        "Домодедово, Талалихина, 10",
+    ],
+    "Москва Радиальная 6-я ул. д. 5к2": [
+        "Москва, 6-я Радиальная улица, 5к2",
     ],
 }
 

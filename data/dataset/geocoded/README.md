@@ -4,7 +4,10 @@
 по записи на каждый адрес заявки плюс депо региона, схема `geocodePackageSchema`
 (`schema_version`, `version`, `source`, `entries[address, node_id, location, match_level, source]`).
 Пакеты покрывают адреса **`<регион>_synthetic_data.csv`**; контрольные распределения
-адресов не добавляют.
+адресов не добавляют. Рядом лежат пакеты **`<region>-extra-days.json`** — адреса
+дополнительных дней организатора (28–29.09.2026, см. `data/dataset/extra-days/`);
+табличная загрузка мерджит все `*.json` каталога, импорт «Из ТЗ» читает только
+базовые `<region>.json`.
 
 ## Текущая разметка — LocationIQ, 2026-09-29
 
