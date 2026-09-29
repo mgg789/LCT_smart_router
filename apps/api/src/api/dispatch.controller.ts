@@ -72,14 +72,14 @@ import {
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
   type RouteCacheSwitchDto,
-  type UpdateRouterTechnicalSettingsDto,
   routeCacheSwitchSchema,
+  type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
   type GeocodeDatasetDto,
-  type UpdateDispatcherSettingsDto,
   geocodeDatasetSchema,
+  type UpdateDispatcherSettingsDto,
   updateDispatcherSettingsSchema,
 } from './dto/settings.dto';
 import { type SimulationPatchDto, simulationPatchSchema } from './dto/simulation.dto';
@@ -687,6 +687,13 @@ export class DispatchController {
   @ApiOperation({ summary: 'The applied working plan and the control mode' })
   async plan() {
     const plan = await this.plans.current(this.prisma);
+    const roster = plan
+      ? await this.prisma.engineer.findMany({
+          where: { id: { in: plan.routes.map((route) => route.engineerId) } },
+          select: { id: true, transportType: true },
+        })
+      : [];
+    const transports = new Map(roster.map((engineer) => [engineer.id, engineer.transportType]));
     const control = await this.control.current(this.prisma);
     const lastPackage = await this.acceptance.lastPackage();
     const published = await this.prisma.routingCurrent.findUnique({
@@ -706,7 +713,7 @@ export class DispatchController {
       routerMessage: phase.message,
       geometryDone: phase.geometryDone,
       geometryTotal: phase.geometryTotal,
-      plan: plan ? this.mapRouting.projectPlan(toPlanView(plan)) : null,
+      plan: plan ? await this.mapRouting.projectPlan(toPlanView(plan), transports) : null,
       appliedResult: plan?.routerResult
         ? {
             resultId: plan.routerResult.resultId,

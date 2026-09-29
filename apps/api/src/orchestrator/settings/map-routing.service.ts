@@ -51,6 +51,9 @@ export interface MapProviderStatus {
 export class MapRoutingService {
   private readonly straightRoutes = process.env.NAVIX_STRAIGHT_ROUTES === 'true';
   private readonly cache = new Map<string, MapRoute>();
+  private readonly mapFlights = new Map<string, Promise<MapRoute | null>>();
+  private providerProjection: { key: string; plan: PlanView; expiresAt: number } | null = null;
+  private providerProjectionTask: Promise<void> | null = null;
   private readonly roadShapeCache = new Map<
     string,
     { expiresAt: number; points: Array<{ lat: number; lon: number }> | null }
@@ -82,7 +85,7 @@ export class MapRoutingService {
     const configured = await this.settings.read();
     if (!configured.twogisApiKey && !configured.yandexApiKey) {
       // No paid map provider. Exact lines are queued, never awaited on this call.
-      return this.projectPlan(plan);
+      return this.projectRoadPlan(plan);
     }
     const routes = await Promise.all(
       plan.routes.map(async (route) => {
@@ -105,6 +108,7 @@ export class MapRoutingService {
                       ),
                 ),
               );
+              if (segments.every((segment, index) => segment === leg.segments?.[index])) return leg;
               return {
                 ...leg,
                 segments,
@@ -168,8 +172,8 @@ export class MapRoutingService {
           to: roundPoint(to),
           traffic,
           transport,
-          twogis: Boolean(settings.twogisApiKey),
-          yandex: Boolean(settings.yandexApiKey),
+          twogis: settings.twogisApiKey,
+          yandex: settings.yandexApiKey,
         }),
       )
       .digest('hex');
@@ -178,18 +182,32 @@ export class MapRoutingService {
       return cached;
     }
 
-    const fetched = await this.resolve(
-      from,
-      to,
-      traffic,
-      settings.twogisApiKey,
-      settings.yandexApiKey,
-      transport,
-    );
-    if (fetched) {
-      this.remember(cacheKey, fetched);
+    const pending = this.mapFlights.get(cacheKey);
+    if (pending) return pending;
+    const flight = new Promise<MapRoute | null>((resolve) => {
+      this.enqueueGeometry(cacheKey, async () => {
+        let fetched: MapRoute | null = null;
+        try {
+          fetched = await this.resolve(
+            from,
+            to,
+            traffic,
+            settings.twogisApiKey,
+            settings.yandexApiKey,
+            transport,
+          );
+          if (fetched) this.remember(cacheKey, fetched);
+        } finally {
+          resolve(fetched);
+        }
+      });
+    });
+    this.mapFlights.set(cacheKey, flight);
+    try {
+      return await flight;
+    } finally {
+      this.mapFlights.delete(cacheKey);
     }
-    return fetched;
   }
 
   /**
@@ -199,7 +217,56 @@ export class MapRoutingService {
    * a few edges at a time, and only once the router is not building. The caller
    * must not await the road API.
    */
-  projectPlan(plan: PlanView): PlanView {
+  async projectPlan(
+    plan: PlanView,
+    transports: ReadonlyMap<string, string> = new Map(),
+  ): Promise<PlanView> {
+    const projected = this.projectRoadPlan(plan);
+    if (this.straightRoutes || transports.size === 0) return projected;
+    const configured = await this.settings.read();
+    if (!configured.twogisApiKey && !configured.yandexApiKey) return projected;
+    // The whole input prevents a reset/reused revision or a transport/key change
+    // from borrowing a different day's decorated plan. Only one result is retained.
+    const key = createHash('sha256')
+      .update(
+        JSON.stringify({
+          plan,
+          transports: [...transports].sort(([left], [right]) => left.localeCompare(right)),
+          twogis: configured.twogisApiKey,
+          yandex: configured.yandexApiKey,
+        }),
+      )
+      .digest('hex');
+    const cached = this.providerProjection?.key === key ? this.providerProjection : null;
+    if (cached && cached.expiresAt > Date.now()) return cached.plan;
+    if (!this.providerProjectionTask && readRouterPhase().phase !== 'building') {
+      // Follow traffic already represented in the accepted plan. Display reads
+      // must not contact Router to discover its current settings.
+      const traffic = plan.routes.some(
+        (route) =>
+          transports.get(route.engineerId) === 'car' &&
+          route.legs.some((leg) => leg.trafficFactor > 1),
+      );
+      this.providerProjectionTask = this.enrichPlan(projected, traffic, transports)
+        .then((enriched) => {
+          // Retry missing provider edges; successful edge shapes use their normal cache.
+          this.providerProjection = {
+            key,
+            plan: enriched,
+            expiresAt: Date.now() + ROAD_MISS_TTL_MS,
+          };
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          this.providerProjectionTask = null;
+        });
+    }
+    // Keep the same plan's known geometry while refreshing. Dashboard polling
+    // can be slower than the retry interval; an expired cache must not flash grey.
+    return cached?.plan ?? projected;
+  }
+
+  private projectRoadPlan(plan: PlanView): PlanView {
     if (this.straightRoutes) return collapsePlanGeometry(plan);
     const base = roadApiBase();
     const building = readRouterPhase().phase === 'building';
@@ -223,8 +290,9 @@ export class MapRoutingService {
   }
 
   /** Resolves when every queued road call has settled. Tests use this. */
-  whenIdle(): Promise<void> {
-    return this.idleWait;
+  async whenIdle(): Promise<void> {
+    await this.providerProjectionTask;
+    await this.idleWait;
   }
 
   /** Borrow cached car polylines for read-only comparisons; never alter plan costs or facts. */
@@ -271,6 +339,13 @@ export class MapRoutingService {
     base: string,
     job: { key: string; from: { lat: number; lon: number }; to: { lat: number; lon: number } },
   ): void {
+    this.enqueueGeometry(job.key, () =>
+      this.fetchRoadPolylineBounded(base, job.key, job.from, job.to),
+    );
+  }
+
+  /** Share one bounded queue across the local road service and configured map providers. */
+  private enqueueGeometry(key: string, fetch: () => Promise<unknown>): void {
     this.pendingShapes += 1;
     if (!this.idleRelease) {
       this.idleWait = new Promise((resolve) => {
@@ -279,10 +354,10 @@ export class MapRoutingService {
     }
     const run = () => {
       this.shapeActive += 1;
-      void this.fetchRoadPolylineBounded(base, job.key, job.from, job.to)
+      void fetch()
         .catch(() => undefined)
         .finally(() => {
-          this.shapeQueued.delete(job.key);
+          this.shapeQueued.delete(key);
           this.publishGeometry();
           this.shapeActive -= 1;
           this.pendingShapes -= 1;

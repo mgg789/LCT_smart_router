@@ -66,6 +66,193 @@ function plan(segments: PlanRouteSegmentView[]): PlanView {
 }
 
 describe('map routing transport and composite geometry', () => {
+  it('projects configured provider geometry in the background without changing the accepted plan', async () => {
+    let release = () => {};
+    const delayed = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const modes: string[] = [];
+    globalThis.fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body));
+      modes.push(body.transport);
+      await delayed;
+      const [from, to] = body.points;
+      return Response.json({
+        result: [
+          {
+            total_distance: 99999,
+            total_duration: 99999,
+            geometry: { selection: `LINESTRING(${from.lon} ${from.lat},${to.lon} ${to.lat})` },
+          },
+        ],
+      });
+    };
+    const segments: PlanRouteSegmentView[] = [
+      {
+        geometry: { points: [a, b] },
+        travelSource: 'approximate',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+      { geometry: { points: [b, c] }, travelSource: 'metro', travelTimeSec: 800, distanceKm: 5 },
+      {
+        geometry: { points: [c, d] },
+        travelSource: 'road_matrix',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+    ];
+    const source = plan(segments);
+    const original = JSON.stringify(source);
+    const routing = service();
+    const modesByEngineer = new Map([['walker', 'walk']]);
+    const immediate = await routing.projectPlan(source, modesByEngineer);
+    assert.equal(immediate.routes[0]?.legs[0]?.segments?.[0]?.geometryProvider, undefined);
+    release();
+    await routing.whenIdle();
+    const ready = await routing.projectPlan(source, modesByEngineer);
+    const leg = ready.routes[0]?.legs[0];
+    assert.equal(leg?.segments?.[0]?.geometryProvider, 'twogis');
+    assert.equal(leg?.segments?.[2]?.geometryProvider, 'twogis');
+    assert.deepEqual(leg?.segments?.[1], segments[1]);
+    assert.equal(leg?.travelTimeSec, 1400);
+    assert.equal(leg?.distanceKm, 7);
+    assert.equal(leg?.arrivalAt, 1500);
+    assert.equal(JSON.stringify(source), original);
+    assert.deepEqual(modes, ['walking', 'walking']);
+    await routing.projectPlan(source, modesByEngineer);
+    await routing.whenIdle();
+    assert.equal(modes.length, 2);
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 9_000;
+    try {
+      const refreshing = await routing.projectPlan(source, modesByEngineer);
+      assert.equal(refreshing.routes[0]?.legs[0]?.segments?.[0]?.geometryProvider, 'twogis');
+      await routing.whenIdle();
+      assert.equal(modes.length, 2);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+
+  it('bounds provider requests and coalesces the same in-flight edge', async () => {
+    let active = 0;
+    let peak = 0;
+    let calls = 0;
+    globalThis.fetch = async (_input, init) => {
+      calls += 1;
+      active += 1;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      const {
+        points: [from, to],
+      } = JSON.parse(String(init?.body));
+      return Response.json({
+        result: [
+          {
+            total_distance: 1000,
+            total_duration: 300,
+            geometry: { selection: `LINESTRING(${from.lon} ${from.lat},${to.lon} ${to.lat})` },
+          },
+        ],
+      });
+    };
+    const routing = service();
+    const edges = Array.from({ length: 8 }, (_, index) => ({ ...a, lon: a.lon + index * 0.01 }));
+    const results = await Promise.all([
+      ...edges.map((from) => routing.route(from, b, false, 'car')),
+      routing.route(a, b, false, 'car'),
+    ]);
+    assert.equal(calls, 8);
+    assert.equal(peak, 4);
+    assert.ok(results.every((result) => result?.provider === 'twogis'));
+  });
+
+  it('refreshes projection after key or transport changes and stops using it when keys are cleared', async () => {
+    let key: string | null = 'first-key';
+    const requests: Array<{ key: string | null; transport: string }> = [];
+    globalThis.fetch = async (input, init) => {
+      const {
+        points: [from, to],
+        transport,
+      } = JSON.parse(String(init?.body));
+      requests.push({ key: new URL(String(input)).searchParams.get('key'), transport });
+      return Response.json({
+        result: [
+          {
+            geometry: { selection: `LINESTRING(${from.lon} ${from.lat},${to.lon} ${to.lat})` },
+          },
+        ],
+      });
+    };
+    const routing = new MapRoutingService({
+      read: async () => ({
+        ...DEFAULT_DISPATCHER_SETTINGS,
+        twogisApiKey: key,
+      }),
+    });
+    const source = plan([
+      {
+        geometry: { points: [a, b] },
+        travelSource: 'road_matrix',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+    ]);
+    const walking = new Map([['walker', 'walk']]);
+    await routing.projectPlan(source, walking);
+    await routing.whenIdle();
+    assert.equal(
+      (await routing.projectPlan(source, walking)).routes[0]?.legs[0]?.segments?.[0]
+        ?.geometryProvider,
+      'twogis',
+    );
+    key = 'rotated-key';
+    assert.equal(
+      (await routing.projectPlan(source, walking)).routes[0]?.legs[0]?.segments?.[0]
+        ?.geometryProvider,
+      undefined,
+    );
+    await routing.whenIdle();
+    await routing.projectPlan(source, new Map([['walker', 'bike']]));
+    await routing.whenIdle();
+    key = null;
+    assert.equal(
+      (await routing.projectPlan(source, walking)).routes[0]?.legs[0]?.segments?.[0]
+        ?.geometryProvider,
+      undefined,
+    );
+    assert.deepEqual(requests, [
+      { key: 'first-key', transport: 'walking' },
+      { key: 'rotated-key', transport: 'walking' },
+      { key: 'rotated-key', transport: 'bicycle' },
+    ]);
+  });
+
+  it('keeps the accepted plan readable and backs off after provider failure', async () => {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('provider unavailable');
+    };
+    const routing = service();
+    const source = plan([
+      {
+        geometry: { points: [a, b] },
+        travelSource: 'road_matrix',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+    ]);
+    const modes = new Map([['walker', 'walk']]);
+    assert.deepEqual(await routing.projectPlan(source, modes), source);
+    await routing.whenIdle();
+    assert.deepEqual(await routing.projectPlan(source, modes), source);
+    await routing.whenIdle();
+    assert.equal(calls, 1);
+  });
+
   it('uses direct non-metro endpoints and never calls a provider when straight routes are enabled', async () => {
     const previous = process.env.NAVIX_STRAIGHT_ROUTES;
     process.env.NAVIX_STRAIGHT_ROUTES = 'true';
@@ -95,6 +282,8 @@ describe('map routing transport and composite geometry', () => {
       const result = await routing.enrichPlan(nonMetro, true, new Map([['walker', 'car']]));
       assert.deepEqual(result.routes[0]?.legs[0]?.geometry?.points, [a, d]);
       assert.deepEqual(result.routes[0]?.legs[0]?.segments?.[0]?.geometry.points, [a, d]);
+      const projected = await routing.projectPlan(nonMetro, new Map([['walker', 'car']]));
+      assert.deepEqual(projected.routes[0]?.legs[0]?.geometry?.points, [a, d]);
       assert.equal(await routing.route(a, d, true), null);
       assert.equal(calls, 0);
     } finally {
@@ -299,10 +488,10 @@ describe('map routing transport and composite geometry', () => {
       const routing = new MapRoutingService({
         read: async () => DEFAULT_DISPATCHER_SETTINGS,
       });
-      const immediate = routing.projectPlan(plan(segments));
+      const immediate = await routing.projectPlan(plan(segments));
       assert.equal(immediate.routes[0]?.legs[0]?.segments?.[0]?.travelSource, 'approximate');
       await routing.whenIdle();
-      const result = routing.projectPlan(plan(segments));
+      const result = await routing.projectPlan(plan(segments));
       const leg = result.routes[0]?.legs[0];
       assert.ok(peak >= 1 && peak <= 4);
       assert.equal(leg?.segments?.[0]?.travelSource, 'traffic_api');
@@ -336,7 +525,7 @@ describe('map routing transport and composite geometry', () => {
     };
     try {
       const routing = new MapRoutingService({ read: async () => DEFAULT_DISPATCHER_SETTINGS });
-      routing.projectPlan(
+      await routing.projectPlan(
         plan([
           {
             geometry: { points: [a, b] },
