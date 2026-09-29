@@ -11,14 +11,16 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import heapq
 import json
 import math
 import re
 import tempfile
 import unicodedata
+from collections.abc import Iterable
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = Path("/tmp/navix-metro-data")
@@ -163,7 +165,7 @@ def mean_point(points: Iterable[tuple[float, float]]) -> tuple[float, float]:
 
 
 def estimate_ride(distance_m: float) -> int:
-    """Estimate a ride duration using the documented 41 km/h * 1.15 rule."""
+    """Estimate a ride duration using the 50 km/h * 1.15 chord rule."""
     return max(MIN_RIDE_SEC, math.ceil(distance_m * RIDE_STRETCH / RIDE_SPEED_MPS))
 
 
@@ -181,11 +183,11 @@ def _drop_group_outliers(points: list[tuple[float, float]], max_span_m: float = 
     """
     if len(points) <= 2:
         return points
-    best_anchor, best_cluster = None, None
+    best_cluster = None
     for anchor in points:
         cluster = [p for p in points if haversine_m(anchor, p) <= max_span_m]
         if best_cluster is None or len(cluster) > len(best_cluster):
-            best_anchor, best_cluster = anchor, cluster
+            best_cluster = cluster
     return best_cluster
 
 
@@ -202,7 +204,7 @@ def _chain_line_ways(ways: list[list[tuple[float, float]]]) -> list[list[tuple[f
     actually covers both stations, so nothing here blocks the build.
     """
     segments: list[list[tuple[float, float]]] = []
-    remaining = list(ways)
+    remaining = [list(way) for way in ways]
     while remaining:
         chain = remaining.pop(0)
         extended = True
@@ -290,64 +292,66 @@ def _track_spans(
 
 
 def _edge_geometry(
-    polylines: list[list[tuple[float, float]]],
+    polylines: Iterable[list[tuple[float, float]]],
     source_point: tuple[float, float],
     target_point: tuple[float, float],
 ) -> list[list[float]] | None:
-    """Ride geometry: the line's own track nodes inside the station corridor.
+    """Follow connected OSM track edges, never sort an unordered cloud of nodes.
 
-    OSM line tracks interleave the two directional ways with gaps and
-    out-of-order nodes, so slicing chains or routing way graphs kept producing
-    teleports and figure-eights. The corridor construction is monotone by
-    construction: every node of the line's own track within the station
-    corridor is projected onto the A→B axis and sorted by projection — the
-    polyline is continuous, follows the real bends, and can neither loop nor
-    jump. Nodes outside the corridor (parallel lines, depots) are excluded.
+    Virtual station endpoints attach to track nodes within 100 metres. A small
+    access penalty prefers the nearest platform while allowing either track of
+    a bidirectional line. Dijkstra preserves topology and cannot create cycles.
+    Disconnected or implausibly long paths return None (an explicit chord), not
+    an incomplete line patched with a kilometre-long connector at runtime.
     """
-    track_nodes = [node for way in polylines for node in way]
-    return _corridor_geometry(track_nodes, source_point, target_point)
-
-
-def _corridor_geometry(
-    track_nodes: list[tuple[float, float]],
-    source_point: tuple[float, float],
-    target_point: tuple[float, float],
-) -> list[list[float]] | None:
-    """Ride geometry fallback: track nodes inside the station corridor.
-
-    The line's own track nodes projected onto the A→B axis and sorted by
-    projection give a monotone, continuous polyline that follows the real
-    bends; nodes outside the corridor (parallel lines, depots, far deviations
-    of the opposite track) are excluded, so loops, figure-eights and
-    teleports are impossible by construction.
-    """
-    chord = haversine_m(source_point, target_point)
-    axis_lat, axis_lon = target_point[0] - source_point[0], target_point[1] - source_point[1]
-    denominator = axis_lat * axis_lat + axis_lon * axis_lon
-    if denominator == 0:
+    adjacency: dict[tuple[float, float], dict[tuple[float, float], float]] = {}
+    for way in polylines:
+        for start, end in pairwise(way):
+            if start == end:
+                continue
+            distance = haversine_m(start, end)
+            adjacency.setdefault(start, {})[end] = distance
+            adjacency.setdefault(end, {})[start] = distance
+    sources = {p: haversine_m(source_point, p) for p in adjacency}
+    targets = {p: haversine_m(target_point, p) for p in adjacency}
+    sources = {p: d for p, d in sources.items() if d <= 100}
+    targets = {p: d for p, d in targets.items() if d <= 100}
+    if not sources or not targets:
         return None
-    corridor_tolerance = 350.0
-    projected = []
-    for node in track_nodes:
-        t = ((node[0] - source_point[0]) * axis_lat + (node[1] - source_point[1]) * axis_lon) / denominator
-        if not 0.0 <= t <= 1.0:
+    distances = {p: d * 4 for p, d in sources.items()}
+    previous: dict[tuple[float, float], tuple[float, float]] = {}
+    queue = [(d, p) for p, d in distances.items()]
+    heapq.heapify(queue)
+    best_cost, best_end = math.inf, None
+    max_cost = haversine_m(source_point, target_point) * 2.5 + 800
+    while queue:
+        cost, point = heapq.heappop(queue)
+        if cost != distances[point]:
             continue
-        foot = (source_point[0] + t * axis_lat, source_point[1] + t * axis_lon)
-        if haversine_m(node, foot) <= corridor_tolerance:
-            projected.append((t, node))
-    if len(projected) < 4:
+        if cost >= min(best_cost, max_cost):
+            break
+        if point in targets and cost + 4 * targets[point] < best_cost:
+            best_cost, best_end = cost + 4 * targets[point], point
+        for nxt, length in adjacency[point].items():
+            candidate = cost + length
+            if candidate < distances.get(nxt, math.inf):
+                distances[nxt] = candidate
+                previous[nxt] = point
+                heapq.heappush(queue, (candidate, nxt))
+    if best_end is None:
         return None
-    projected.sort(key=lambda item: item[0])
-    # Incremental 400 m cap on kept steps: sorting by projection alone cannot
-    # create a teleport, but a node from a nearby foreign line could.
-    kept = [projected[0][1]]
-    for _, node in projected[1:]:
-        if haversine_m(kept[-1], node) < 400.0:
-            kept.append(node)
-    simplified = _simplify(kept)
-    if len(simplified) < 3:
-        return None
-    return [[round(point[0], 7), round(point[1], 7)] for point in simplified]
+    path = [best_end]
+    while path[-1] in previous:
+        path.append(previous[path[-1]])
+    path.reverse()
+    # Exact station endpoints make independently built directed edges meet.
+    points = [source_point, *_simplify(path), target_point]
+    result: list[list[float]] = []
+    for point in points:
+        rounded = [round(point[0], 7), round(point[1], 7)]
+        if not result or rounded != result[-1]:
+            result.append(rounded)
+    return result if len(result) >= 3 else None
 
 
 def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str, Any]:
@@ -498,7 +502,10 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
                 # Track-following geometry; the chord between stations stays
                 # the runtime fallback when the line chain cannot resolve it.
                 "geometry": _edge_geometry(
-                    line_ways.get(source_station["line_id"], {}).values(),
+                    {
+                        **line_ways.get(source_station["line_id"], {}),
+                        **line_ways.get(target_station["line_id"], {}),
+                    }.values(),
                     source_point,
                     target_point,
                 ),
@@ -550,7 +557,7 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         raise ValueError("Nominatim boundary must contain a MultiPolygon geometry")
     return {
         "schema_version": "1.0",
-        "version": "moscow-osm-2026-09-22",
+        "version": "moscow-osm-2026-09-22-topology-v2",
         "source": "OpenStreetMap Overpass 2026-09-22T08:15:26Z; Nominatim boundary admin 102269",
         "boundary_geojson": {"type": "MultiPolygon", "coordinates": geometry["coordinates"]},
         "stations": stations,
@@ -612,8 +619,8 @@ def main() -> None:
             "line_ids": sorted({station["line_id"] for station in resource["stations"]}),
         },
         "method": {
-            "ride_duration": "ceil(distance_m * 1.15 / 41 km/h), minimum 60 sec",
-            "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 240 sec",
+            "ride_duration": "ceil(distance_m * 1.15 / 50 km/h), minimum 60 sec",
+            "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 60 sec and timetable waiting",
             "station_grouping": "normalized line/name across platform directions; shared line 4А stops canonicalized to line 4",
             "boundary": "Nominatim geometry for OSM relation 102269, includes New Moscow",
         },

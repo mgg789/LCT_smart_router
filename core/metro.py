@@ -10,6 +10,7 @@ from __future__ import annotations
 import heapq
 import json
 import os
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -26,6 +27,7 @@ from core.geo import (
     joined_segments,
     quote_at,
 )
+from core.metro_timetable import TIMETABLE_VERSION, next_departure
 
 
 class MetroStation(Record):
@@ -169,12 +171,14 @@ class MetroTravel:
         for edges in self.adjacency.values():
             edges.sort(key=lambda edge: (edge.target, edge.duration_sec, edge.distance_m, edge.kind))
         self._trees: dict[str, tuple[dict[str, tuple[int, int]], dict[str, MetroEdge]]] = {}
+        self._timed_trees: OrderedDict = OrderedDict()
         self.shelter = shelter
         self.version = content_hash(
             json.dumps(
                 {
                     "base_version": travel.version,
                     "metro_content": network.content_version,
+                    "timetable": TIMETABLE_VERSION,
                     "shelter": shelter,
                 },
                 sort_keys=True,
@@ -182,7 +186,9 @@ class MetroTravel:
             ).encode("utf-8")
         )
 
-    def _verified(self, origin: GeoPoint, destination: GeoPoint) -> TravelQuote | None:
+    def _verified(
+        self, origin: GeoPoint, destination: GeoPoint, departure_at: int | None = None,
+    ) -> tuple[bool, TravelQuote | None]:
         """A transit pair already answered by /route3 verification, if any.
 
         The verified route (walk or walk+metro+walk on real foot access) is the
@@ -192,16 +198,18 @@ class MetroTravel:
         while layer is not None:
             corrections = getattr(layer, "corrections", None)
             if isinstance(corrections, dict):
-                return corrections.get((origin.lat, origin.lon, destination.lat, destination.lon, "transit"))
+                key = (origin.lat, origin.lon, destination.lat, destination.lon, "transit", departure_at)
+                if key in corrections:
+                    return True, corrections[key]
             layer = getattr(layer, "travel", None)
-        return None
+        return False, None
 
     def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
         """Compare the explicit transit profile with the metro composite."""
         if profile != "transit":
             return self.travel.quote(origin, destination, profile)
-        verified = self._verified(origin, destination)
-        if verified is not None:
+        found, verified = self._verified(origin, destination)
+        if found:
             return verified
         walking = self.travel.quote(origin, destination, "walk")
         if not self._inside_moscow(origin) or not self._inside_moscow(destination):
@@ -218,8 +226,8 @@ class MetroTravel:
     ) -> TravelQuote | None:
         """Build access, metro and egress segments only for supported city points."""
         if profile == "transit":
-            verified = self._verified(origin, destination)
-            if verified is not None:
+            found, verified = self._verified(origin, destination, departure_at)
+            if found:
                 return verified
         # Transit uses pedestrian access and egress around the optional graph.
         base_profile = "walk" if profile in ("walk", "transit") else profile
@@ -288,9 +296,66 @@ class MetroTravel:
             tuple(reversed(path_edges)),
         )
 
+    def _shortest_at(self, source: str, target: str, departure_at: int) -> _Path | None:
+        """Earliest arrival with headway waits on boarding and after interchanges.
+
+        The state distinguishes being aboard from needing to board: an earlier
+        arrival on foot cannot dominate an already boarded passenger. Remaining
+        on a train needs no extra wait at intermediate stations.
+        """
+        initial: tuple[str, bool] = (source, True)
+        cache_key = (source, departure_at)
+        cached = self._timed_trees.get(cache_key)
+        if cached is None:
+            costs: dict[tuple[str, bool], tuple[int, int]] = {initial: (departure_at, 0)}
+            previous: dict[tuple[str, bool], tuple[tuple[str, bool], MetroEdge]] = {}
+            queue = [(departure_at, 0, source, True)]
+            while queue:
+                epoch, metres, station, boarding = heapq.heappop(queue)
+                state = (station, boarding)
+                if costs[state] != (epoch, metres):
+                    continue
+                for edge in self.adjacency[station]:
+                    start = epoch
+                    if edge.kind == "ride" and boarding:
+                        start = next_departure(epoch)
+                        if start is None:
+                            continue
+                    transfer = edge.kind == "transfer"
+                    arrival = start + edge.duration_sec + (60 if transfer else 0)
+                    nxt = (edge.target, transfer)
+                    candidate = (arrival, metres + edge.distance_m)
+                    if nxt not in costs or candidate < costs[nxt]:
+                        costs[nxt] = candidate
+                        previous[nxt] = (state, edge)
+                        heapq.heappush(queue, (*candidate, *nxt))
+            self._timed_trees[cache_key] = (costs, previous)
+            if len(self._timed_trees) > 64:
+                self._timed_trees.popitem(last=False)
+        else:
+            costs, previous = cached
+            self._timed_trees.move_to_end(cache_key)
+        choices = [state for state in ((target, False), (target, True)) if state in costs]
+        if not choices:
+            return None
+        final = min(choices, key=lambda state: costs[state])
+        path_edges = []
+        cursor = final
+        while cursor != initial:
+            cursor, edge = previous[cursor]
+            path_edges.append(edge)
+        path_edges.reverse()
+        arrival, metres = costs[final]
+        return _Path(
+            arrival - departure_at, metres,
+            (source, *(edge.target for edge in path_edges)),
+            any(edge.kind == "ride" for edge in path_edges), tuple(path_edges),
+        )
+
     def _metro_quote(
         self, origin: GeoPoint, destination: GeoPoint, departure_at: int | None
     ) -> TravelQuote | None:
+        wait_sec = self.network.wait_sec if departure_at is None else 0
         sources, targets = self._nearby(origin), self._nearby(destination)
         if not sources or not targets:
             return None
@@ -304,7 +369,14 @@ class MetroTravel:
             if access is None:
                 continue
             for target_station, initial_egress in egresses:
-                path = self._shortest(source_station.station_id, target_station.station_id)
+                path = (
+                    self._shortest(source_station.station_id, target_station.station_id)
+                    if departure_at is None
+                    else self._shortest_at(
+                        source_station.station_id, target_station.station_id,
+                        departure_at + access.duration_sec + self.network.enter_sec,
+                    )
+                )
                 if path is None or not path.has_ride:
                     continue
                 egress_at = (
@@ -313,7 +385,7 @@ class MetroTravel:
                     else departure_at
                     + access.duration_sec
                     + self.network.enter_sec
-                    + self.network.wait_sec
+                    + wait_sec
                     + path.duration_sec
                     + self.network.exit_sec
                 )
@@ -331,7 +403,7 @@ class MetroTravel:
                         TravelSegment(
                             metro_points,
                             "metro",
-                            self.network.enter_sec + self.network.wait_sec + path.duration_sec + self.network.exit_sec,
+                            self.network.enter_sec + wait_sec + path.duration_sec + self.network.exit_sec,
                             path.distance_m,
                         ),
                         TravelSegment(egress.points, egress.provenance, egress.duration_sec, egress.distance_m),

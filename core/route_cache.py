@@ -58,6 +58,8 @@ class RouteCacheStore(Protocol):
 
     def incrby(self, name: str, amount: int) -> int: ...
 
+    def expire(self, name: str, seconds: int) -> object: ...
+
     def lpush(self, name: str, value: str) -> int: ...
 
     def ltrim(self, name: str, start: int, end: int) -> object: ...
@@ -157,6 +159,57 @@ class RouteResponseCache:
     def _signature(self, key: str, payload: bytes) -> bytes:
         return hmac.new(self.secret, key.encode() + b"\0" + payload, hashlib.sha256).hexdigest().encode()
 
+    def _expire(self, name: str) -> None:
+        """Refresh metadata TTL when the backing store supports expiry."""
+        expire = getattr(self.store, "expire", None)
+        if callable(expire):
+            expire(name, self.ttl_sec)
+
+    def _prune_index(self, limit: int | None = None) -> tuple[int, int]:
+        """Remove expired members; optionally bound work for write-time pruning."""
+        index = self._prefix("index")
+        try:
+            members = list(self.store.smembers(index))
+        except Exception:  # noqa: BLE001
+            return 0, 0
+        live = 0
+        total = 0
+        stale = []
+        if limit is not None and len(members) > limit:
+            # Rotate the bounded window so a long-lived index is eventually
+            # inspected in full even when traffic never reaches status().
+            cursor = getattr(self, "_prune_cursor", 0) % len(members)
+            members = (members + members)[cursor : cursor + limit]
+            self._prune_cursor = cursor + limit
+        for member in members:
+            key = member.decode() if isinstance(member, bytes) else member
+            try:
+                raw = self.store.get(key)
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(raw, (bytes, str)):
+                stale.append(member)
+                continue
+            payload = raw.encode() if isinstance(raw, str) else raw
+            _signature, separator, body = payload.partition(b"\n")
+            if not separator:
+                stale.append(member)
+                continue
+            live += 1
+            total += len(body)
+        if stale:
+            try:
+                self.store.srem(index, *stale)
+            except Exception:  # noqa: BLE001
+                pass
+        if limit is None:
+            try:
+                self.store.set(self._prefix("payload-bytes"), str(total).encode(), ex=self.ttl_sec)
+                self._expire(index)
+            except Exception:  # noqa: BLE001
+                pass
+        return live, total
+
     def lookup(self, kind: str, identity: str) -> dict | None:
         """Return a verified body, or None on a miss, a disabled cache or any Redis error."""
         if not self.refresh_enabled():
@@ -193,9 +246,13 @@ class RouteResponseCache:
             return
         value = self._signature(key, payload) + b"\n" + payload
         try:
+            self._prune_index(limit=32)
+            previous = self.store.get(key)
             self.store.set(key, value, ex=self.ttl_sec)
             self.store.sadd(self._prefix("index"), key)
-            self.store.incrby(self._prefix("payload-bytes"), len(payload))
+            previous_payload = previous.partition(b"\n")[2] if isinstance(previous, bytes) else b""
+            self.store.incrby(self._prefix("payload-bytes"), len(payload) - len(previous_payload))
+            self._expire(self._prefix("index"))
             self._sample(len(payload))
         except Exception:  # noqa: BLE001
             LOGGER.warning("ROUTE_CACHE_WRITE_FAILED; continuing without this entry")
@@ -206,6 +263,7 @@ class RouteResponseCache:
             return
         self._last_sample = now
         try:
+            self._prune_index(limit=64)
             memory = self.store.memory()
             used = int(memory.get("used_memory") or 0)
             if used <= 0:
@@ -229,7 +287,7 @@ class RouteResponseCache:
             used = int(memory.get("used_memory") or 0)
             payload = self.store.get(self._prefix("payload-bytes"))
             payload_bytes = int(payload or 0)
-            keys = int(self.store.scard(self._prefix("index")))
+            keys, payload_bytes = self._prune_index()
             raw_samples = self.store.lrange(self._prefix("samples"), 0, SAMPLE_LIMIT - 1)
         except Exception:  # noqa: BLE001
             return _status(enabled, "redis", 0, 0, 0, assess_growth([], []), unavailable=True)
@@ -292,7 +350,7 @@ def disk_cache_bytes() -> int:
     root = Path(os.environ.get("ROUTE3_CACHE", ".route3-cache"))
     if not root.is_dir():
         return 0
-    return sum(item.stat().st_size for item in root.glob("matrix3-*.json") if item.is_file())
+    return sum(item.stat().st_size for item in root.rglob("*.json") if item.is_file())
 
 
 def install_route_cache(cache: RouteResponseCache | None) -> None:
@@ -356,7 +414,7 @@ def configured_route_cache() -> RouteResponseCache | None:
             raise ValueError("ROUTE_CACHE_URL_INVALID")
         secret = unquote(parsed.password or "").encode()
         namespace = os.environ.get("ROUTER_REDIS_NAMESPACE", "")
-        ttl_sec = int(os.environ.get("ROUTER_REDIS_TTL_SEC", "600"))
+        ttl_sec = int(os.environ.get("ROUTER_REDIS_TTL_SEC", "900"))
         client = Redis.from_url(
             url,
             decode_responses=False,
@@ -404,6 +462,9 @@ class RedisRouteStore:
 
     def incrby(self, name: str, amount: int) -> int:
         return int(self.client.incrby(name, amount))
+
+    def expire(self, name: str, seconds: int):
+        return self.client.expire(name, seconds)
 
     def lpush(self, name: str, value: str) -> int:
         return int(self.client.lpush(name, value))

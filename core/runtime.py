@@ -36,7 +36,7 @@ from core.engine import (
 )
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
-from core.hybrid import hybrid_enabled, hybrid_plan
+from core.hybrid import HybridVerificationError, hybrid_enabled, hybrid_plan
 from core.osrm import OSRMTravel
 from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
@@ -274,9 +274,8 @@ def calculate(
         )
         verification = None
         if hybrid_enabled():
-            # Fast solve → /route3 verification of the chosen legs → one
-            # re-solve on those pairs, so the published route is the engine's
-            # geometry (docs/route3.md). The engine degrades to the fast plan.
+            # Publication requires verified geometry and costs at each chosen
+            # departure. A failed or exhausted verification rejects the result.
             run = hybrid_plan(
                 snapshot,
                 provider,
@@ -304,7 +303,13 @@ def calculate(
             router_context_version=context_version,
             policy_id=snapshot.policy.policy_id,
             technical_settings=settings.technical(),
-            errors=[Diagnostic(code="CALCULATION_FAILED", message=type(exc).__name__)],
+            errors=[Diagnostic(
+                code=exc.code if isinstance(exc, HybridVerificationError) else "CALCULATION_FAILED",
+                message=(
+                    "Route verification did not complete; no new plan was produced."
+                    if isinstance(exc, HybridVerificationError) else type(exc).__name__
+                ),
+            )],
         ), None
     result = RouterResult(
         status="ready",

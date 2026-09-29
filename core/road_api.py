@@ -30,7 +30,7 @@ class RoadApiTravel:
         """Bind one road-api origin and a durable cache of its responses."""
         self.base_url = base_url.rstrip("/")
         self.version = content_hash(
-            json.dumps(["road-api-v2", map_version, self.base_url], sort_keys=True).encode()
+            json.dumps(["road-api-v3", map_version, self.base_url], sort_keys=True).encode()
         )
         self.cache = cache / self.version
         self._unavailable: str | None = None
@@ -154,9 +154,10 @@ def decode_road_api(data: dict) -> TravelQuote:
         duration_sec=math.ceil(duration),
         distance_m=math.ceil(distance),
         points=points,
-        provenance="traffic_api",
+        provenance="traffic_api" if mode == "road" else "approximate",
         traffic_factor=round(traffic_factor, 2),
         geometry_exact=mode == "road",
+        traffic_prepriced=True,
     )
 
 

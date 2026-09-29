@@ -357,6 +357,12 @@ def _prepared_travel(
     if isinstance(base, ImportedRoadOverlay):
         prepared = _prepared_travel(base.base, settings, snapshot, offline)
         return ImportedRoadOverlay(prepared, base.graph.graph)
+    route3 = route3_from_env_for_planning()
+    if route3 is not None:
+        # Route3 owns all prepared profiles when configured. Do not warm an
+        # older OSRM/road-api matrix first and silently fall back to it after
+        # a route3 version or cache failure.
+        return _with_route3(base, points, settings, snapshot, offline, route3)
     osrm = base if isinstance(base, OSRMTravel) else (None if offline else live_osrm_from_env())
     if isinstance(base, OSRMTravel):
         # With no regional graph, an offline miss is an honest provider failure.
@@ -381,24 +387,51 @@ def _prepared_travel(
         )
         if road is not None:
             base = MixedTravel(base, road)
-        base = _with_route3_foot(base, points)
     return base
 
 
-def _with_route3_foot(base: TravelSource, points: list[GeoPoint]) -> TravelSource:
-    """Give walk and bike search costs from the route3 foot graph when it is configured."""
-    from core.route3 import Route3PedestrianTravel, prepare_route3, route3_from_env
+def route3_from_env_for_planning():
+    """Return route3 even for an explicit offline planning pass when configured."""
+    from core.route3 import route3_from_env
 
-    client = route3_from_env()
-    if client is None:
+    return route3_from_env()
+
+
+def _with_route3(
+    base: TravelSource,
+    points: list[GeoPoint],
+    settings: SearchSettings,
+    snapshot: RouterTaskSnapshot,
+    offline: bool,
+    client,
+) -> TravelSource:
+    """Use route-engine3 as the authoritative car, walk and bike provider."""
+    from core.route3 import Route3PedestrianTravel, prepare_route3
+
+    if offline:
+        client.offline = True
+    try:
+        # Resolve the graph/model snapshot before the process memo key is built;
+        # otherwise a graph replacement behind the same URL could reuse an old
+        # prepared foot matrix from this worker.
+        client.ensure_versions()
+    except (httpx.HTTPError, OSError, ValueError, TypeError, KeyError, AttributeError):
         return base
     prepared = _cached_prepared(
-        f"route3-foot:{client.version}:{client.offline}:{points}",
-        lambda: prepare_route3(client, points, departure=0, profiles=("walk", "bike")),
+        f"route3-all:{client.version}:{client.offline}:{points}:{snapshot.planning_as_of}:{settings.traffic_enabled}",
+        lambda: prepare_route3(
+            client,
+            points,
+            departure=snapshot.planning_as_of,
+            traffic=settings.traffic_enabled,
+            planning=settings.traffic_enabled,
+            fallback=base,
+            profiles=("car", "walk", "bike"),
+        ),
     )
     if prepared is None:
         return base
-    return Route3PedestrianTravel(base, prepared)
+    return Route3PedestrianTravel(MixedTravel(base, prepared), prepared)
 
 
 def planning_travel(

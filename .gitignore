@@ -28,6 +28,7 @@ apps/*/dist-test/
 apps/*/generated/
 apps/api/src/generated/
 coverage/
+.coverage
 artifacts/
 test-results/
 playwright-report/

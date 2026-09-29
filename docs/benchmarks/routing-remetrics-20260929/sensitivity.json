@@ -1,0 +1,131 @@
+{
+  "all": {
+    "fifo_verified": [
+      {
+        "travel_factor": 1.0,
+        "service_factor": 1.0,
+        "late_jobs": 0,
+        "max_lateness_sec": 0,
+        "total_lateness_sec": 0,
+        "shift_overrun_crews": 0,
+        "affected_request_ids": []
+      },
+      {
+        "travel_factor": 1.1,
+        "service_factor": 1.0,
+        "late_jobs": 0,
+        "max_lateness_sec": 0,
+        "total_lateness_sec": 0,
+        "shift_overrun_crews": 0,
+        "affected_request_ids": []
+      },
+      {
+        "travel_factor": 1.0,
+        "service_factor": 1.1,
+        "late_jobs": 9,
+        "max_lateness_sec": 471,
+        "total_lateness_sec": 2034,
+        "shift_overrun_crews": 6,
+        "affected_request_ids": [
+          "east:41962",
+          "east:98815",
+          "east:22634",
+          "east:47330",
+          "east:97886",
+          "southeast:51603",
+          "southeast:19216",
+          "southeast:64168",
+          "south_central:85188"
+        ]
+      },
+      {
+        "travel_factor": 1.1,
+        "service_factor": 1.1,
+        "late_jobs": 10,
+        "max_lateness_sec": 534,
+        "total_lateness_sec": 3037,
+        "shift_overrun_crews": 6,
+        "affected_request_ids": [
+          "east:41962",
+          "east:98815",
+          "east:22634",
+          "east:47330",
+          "east:97886",
+          "southeast:51603",
+          "southeast:79450",
+          "southeast:19216",
+          "southeast:64168",
+          "south_central:85188"
+        ]
+      }
+    ],
+    "router_hybrid_verified": [
+      {
+        "travel_factor": 1.0,
+        "service_factor": 1.0,
+        "late_jobs": 0,
+        "max_lateness_sec": 0,
+        "total_lateness_sec": 0,
+        "shift_overrun_crews": 0,
+        "affected_request_ids": []
+      },
+      {
+        "travel_factor": 1.1,
+        "service_factor": 1.0,
+        "late_jobs": 3,
+        "max_lateness_sec": 243,
+        "total_lateness_sec": 323,
+        "shift_overrun_crews": 1,
+        "affected_request_ids": [
+          "east:82388",
+          "southeast:36961",
+          "southeast:93798"
+        ]
+      },
+      {
+        "travel_factor": 1.0,
+        "service_factor": 1.1,
+        "late_jobs": 11,
+        "max_lateness_sec": 1523,
+        "total_lateness_sec": 5585,
+        "shift_overrun_crews": 3,
+        "affected_request_ids": [
+          "east:98182",
+          "east:4893",
+          "east:82388",
+          "east:35675",
+          "east:41962",
+          "east:48174",
+          "south_central:66315",
+          "south_central:26845",
+          "southeast:36961",
+          "southeast:75282",
+          "southeast:78920"
+        ]
+      },
+      {
+        "travel_factor": 1.1,
+        "service_factor": 1.1,
+        "late_jobs": 13,
+        "max_lateness_sec": 1984,
+        "total_lateness_sec": 9105,
+        "shift_overrun_crews": 3,
+        "affected_request_ids": [
+          "east:98182",
+          "east:4893",
+          "east:82388",
+          "east:35675",
+          "east:41962",
+          "east:48174",
+          "south_central:66315",
+          "south_central:26845",
+          "southeast:36961",
+          "southeast:75282",
+          "southeast:93798",
+          "southeast:40698",
+          "southeast:78920"
+        ]
+      }
+    ]
+  }
+}

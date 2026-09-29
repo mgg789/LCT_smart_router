@@ -121,6 +121,7 @@ class ForecastTrafficTravel:
             or quote.distance_m == 0
             or profile != "car"
             or quote.provenance == "traffic_api"
+            or quote.traffic_prepriced
         ):
             return quote
         factor = forecast_traffic_factor(departure_at, origin, destination)

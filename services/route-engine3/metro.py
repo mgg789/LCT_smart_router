@@ -13,6 +13,7 @@ not estimates).
 
 from __future__ import annotations
 
+import hashlib
 import heapq
 import json
 import math
@@ -47,11 +48,12 @@ def _edge_geometry(points) -> list[list[float]] | None:
 class MetroService:
     """Read-only metro network with cached shortest-path trees per source."""
 
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, *, content_hash: str | None = None):
         version = str(data.get("version") or "")
         if not version:
             raise ValueError("metro artifact lacks a version")
         self.version = version
+        self.content_hash = content_hash
         self.enter_sec = int(data.get("enter_sec", 180))
         self.exit_sec = int(data.get("exit_sec", 120))
         self.wait_sec = int(data.get("wait_sec", 120))
@@ -78,9 +80,9 @@ class MetroService:
                 "kind": row.get("kind", "ride"),
                 "geometry": _edge_geometry(row.get("geometry")),
             }
-            # Rides and transfers are bidirectional on the network artifact.
+            # The artifact is a directed graph.  A reverse edge may have a
+            # different geometry and is present explicitly when it exists.
             self.adjacency.setdefault(source, []).append({**edge, "target": target})
-            self.adjacency.setdefault(target, []).append({**edge, "target": source})
         self._trees: dict[str, dict[str, tuple[int, list[str]]]] = {}
 
     @classmethod
@@ -88,11 +90,13 @@ class MetroService:
         """Load from METRO_DATA_PATH; None when unset or missing (no metro)."""
         path = os.environ.get("METRO_DATA_PATH", DEFAULT_DATA_PATH)
         try:
-            payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            file_path = Path(path)
+            raw = file_path.read_bytes()
+            payload = json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             return None
         try:
-            return cls(payload)
+            return cls(payload, content_hash=hashlib.sha256(raw).hexdigest())
         except (KeyError, TypeError, ValueError):
             return None
 
@@ -151,16 +155,8 @@ class MetroService:
         self._trees[source] = distances
         return distances
 
-    def _oriented(self, edge: dict, source: str, target: str) -> list[list[float]]:
-        """Return one edge's line geometry running from its source to its target.
-
-        The artifact keeps a single reviewed polyline per physical track and reuses
-        it for both directed edges of the pair, so half of them are stored back to
-        front. Used as-is the ride starts at the wrong end of the line, kilometres
-        from the station it claims to leave. Orientation is decided by which way
-        round puts the ends nearest their own stations, so a corrected artifact is
-        left untouched.
-        """
+    def _geometry(self, edge: dict, source: str, target: str) -> list[list[float]]:
+        """Return the directed artifact geometry without changing its points."""
         chord = [
             [self.stations[source]["lat"], self.stations[source]["lon"]],
             [self.stations[target]["lat"], self.stations[target]["lon"]],
@@ -168,18 +164,56 @@ class MetroService:
         line = edge["geometry"]
         if not line:
             return chord
-        head, tail = (line[0][0], line[0][1]), (line[-1][0], line[-1][1])
-        origin, destination = (chord[0][0], chord[0][1]), (chord[1][0], chord[1][1])
-        forward = haversine_m(head, origin) + haversine_m(tail, destination)
-        backward = haversine_m(tail, origin) + haversine_m(head, destination)
-        return list(reversed(line)) if backward < forward else line
+        return [point[:] for point in line]
 
-    def ride_path(self, source: str, target: str) -> dict | None:
+    def _timed_tree(self, source: str, departure_at: float) -> dict:
+        """Run time-dependent Dijkstra with boarding waits at ride starts."""
+        from metro_timetable import next_departure
+
+        start = int(departure_at)
+        # The boolean tracks whether the next ride requires boarding.  A ride
+        # continues through same-line stations without another timetable wait;
+        # transfers set it back to true.
+        distances: dict[tuple[str, bool], tuple[int, list[str]]] = {
+            (source, True): (start, [source])
+        }
+        queue: list[tuple[int, str, bool, list[str]]] = [
+            (start, source, True, [source])
+        ]
+        while queue:
+            arrival, node, needs_boarding, path = heapq.heappop(queue)
+            state = (node, needs_boarding)
+            if arrival != distances.get(state, (math.inf, ()))[0]:
+                continue
+            for edge in self.adjacency.get(node, []):
+                edge_ready = arrival
+                next_boarding = edge["kind"] == "transfer"
+                if edge["kind"] == "ride" and needs_boarding:
+                    departure = next_departure(arrival)
+                    if departure is None:
+                        continue
+                    edge_ready = departure
+                penalty = 60 if edge["kind"] == "transfer" else 0
+                candidate = edge_ready + edge["duration_sec"] + penalty
+                target = edge["target"]
+                next_state = (target, next_boarding)
+                if candidate < distances.get(next_state, (math.inf, ()))[0]:
+                    distances[next_state] = (candidate, [*path, target])
+                    heapq.heappush(
+                        queue,
+                        (candidate, target, next_boarding, distances[next_state][1]),
+                    )
+        return distances
+
+    def ride_path(
+        self, source: str, target: str, departure_at: float | None = None
+    ) -> dict | None:
         """Fastest ride between two stations with joined geometry.
 
         Prefer per-edge line geometry when the artifact carries it, else join
-        the station coordinates. duration_sec includes transfer penalties but
-        never enter/wait/exit — those are service constants, not path costs.
+        the station coordinates. With ``departure_at`` the duration includes
+        timetable waits at initial boarding and after transfers; static calls
+        retain the old ride-plus-transfer duration contract.
         """
         if (
             source == target
@@ -187,10 +221,19 @@ class MetroService:
             or target not in self.stations
         ):
             return None
-        tree = self._tree(source)
-        if target not in tree:
+        if departure_at is None:
+            tree = self._tree(source)
+            result = tree.get(target)
+        else:
+            timed = self._timed_tree(source, departure_at)
+            result = min(
+                (value for (station, _boarding), value in timed.items() if station == target),
+                default=None,
+                key=lambda value: value[0],
+            )
+        if result is None:
             return None
-        duration, path = tree[target]
+        duration, path = result
         geometry: list[list[float]] = []
         distance = 0
         for current, nxt in pairwise(path):
@@ -200,7 +243,7 @@ class MetroService:
             if edge is None:
                 continue
             distance += edge["distance_m"]
-            leg = self._oriented(edge, current, nxt)
+            leg = self._geometry(edge, current, nxt)
             if not geometry:
                 geometry = [point[:] for point in leg]
                 continue
@@ -211,7 +254,7 @@ class MetroService:
         return {
             "from_station": source,
             "to_station": target,
-            "duration_sec": duration,
+            "duration_sec": duration if departure_at is None else duration - int(departure_at),
             "distance_m": distance,
             "stations": [
                 {
