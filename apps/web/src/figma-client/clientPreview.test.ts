@@ -22,8 +22,11 @@ it('features the en-route card and keeps the two Figma archive rows', () => {
 
 it('blocks send until name, address, map point and email are filled', () => {
   expect(canSubmitClientForm(EMPTY_CLIENT_DRAFT)).toBe(false);
+  // Nothing is chosen for the customer, so the type is part of being ready.
+  expect(clientSubmitHint(EMPTY_CLIENT_DRAFT)).toBe('Выберите, что случилось.');
   const ready = {
     ...EMPTY_CLIENT_DRAFT,
+    problem: 'Интернет не работает',
     contactName: 'Иван Иванов',
     address: 'ул. Лесная, 7',
     email: 'ivanfromgorizont@gmail.com',

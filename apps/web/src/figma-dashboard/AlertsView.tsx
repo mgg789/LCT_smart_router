@@ -354,7 +354,10 @@ export function AlertsView({
                     dismissAllToasts();
                     void Promise.all(
                       cards
-                        .flatMap((card) => card.repeatedNoticeIds ?? [card.sourceNoticeId])
+                        .flatMap<string | null>((card) => [
+                          ...(card.repeatedNoticeIds ?? []),
+                          card.sourceNoticeId,
+                        ])
                         .filter((id): id is string => id != null)
                         .map((id) => onMarkNoticeSeen(id)),
                     );
