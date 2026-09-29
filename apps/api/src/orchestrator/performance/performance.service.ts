@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { SysError } from '../../common/errors';
 import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
+import { zonedWallUnix } from '../../common/time/zone';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService, type Tx } from '../../persistence';
 import { businessNow } from '../live/business-clock';
@@ -542,7 +543,7 @@ export class PerformanceService {
       })),
     );
     const nextDate = nextWorkDate(workday.workDate);
-    const nextStart = Date.parse(`${nextDate}T00:00:00+03:00`) / 1000;
+    const nextStart = zonedWallUnix(`${nextDate}T00:00:00`);
     const openWhere: Prisma.RequestWhereInput = {
       lifecycle: { in: ['submitted', 'in_progress'] },
       windowStartAt: { gte: BigInt(nextStart), lt: BigInt(nextStart + 86_400) },
@@ -620,9 +621,7 @@ export class PerformanceService {
 }
 
 function nextWorkDate(workDate: string): string {
-  const next = new Date(`${workDate}T12:00:00+03:00`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
+  return new Date(Date.parse(`${workDate}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
 }
 
 /** Uses only a revision accepted before execution; later replans cannot rewrite history. */

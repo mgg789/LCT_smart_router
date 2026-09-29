@@ -321,6 +321,20 @@ export class RequestsService {
       typeof lat === 'number' && typeof lon === 'number'
         ? await resolveRegion(context.tx, { lat, lon }, current.id)
         : current.region;
+    const catalog = findWorkType(current.workTypeHd ?? '');
+    const catalogUrgent =
+      current.workCategory === 'emergency' ||
+      catalog?.category === 'emergency' ||
+      catalog?.priority === 'urgent';
+    const nextPriority = resolvePriority(
+      catalogUrgent ? 'urgent' : 'normal',
+      input.urgent === undefined ? current.priority === 'urgent' : input.urgent,
+    );
+    const windowChanged =
+      windowStartAt !== Number(current.windowStartAt) ||
+      windowEndAt !== Number(current.windowEndAt);
+    const releaseHold =
+      windowChanged || (current.priority !== 'urgent' && nextPriority === 'urgent');
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
@@ -332,21 +346,13 @@ export class RequestsService {
         lat,
         lon,
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
-        priority:
-          current.workCategory === 'emergency' ||
-          findWorkType(current.workTypeHd ?? '')?.category === 'emergency'
-            ? 'urgent'
-            : input.urgent === undefined
-              ? current.priority
-              : input.urgent
-                ? 'urgent'
-                : 'normal',
+        priority: nextPriority,
         requiredEquipment:
           input.requiredEquipment === undefined
             ? current.requiredEquipment
             : input.requiredEquipment,
         assignmentState: 'pending',
-        routingDeferredUntil: null,
+        routingDeferredUntil: releaseHold ? null : current.routingDeferredUntil,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },

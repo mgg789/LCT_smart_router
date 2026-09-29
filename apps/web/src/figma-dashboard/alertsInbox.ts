@@ -71,8 +71,8 @@ export function formatAlertReason(body: string): string {
 }
 
 /**
- * Builds the ALERTS inbox: unresolved snapshot alerts, then leftover alert toasts,
- * then dismissible notices. Alert toasts that already mirror a snapshot row are skipped.
+ * Builds the ALERTS inbox. A live snapshot supplies the alert rows. Demo toasts
+ * fill that list only when there is no snapshot. Notices stay separate.
  */
 export function inboxFromSources(
   snapshot: DashboardSnapshot | null,
@@ -107,9 +107,7 @@ export function inboxFromSources(
   const alerts = [
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts
-      .filter(
-        (toast) => snapshot === null && isInboxAlertKind(toast.kind) && !covered.has(toast.id),
-      )
+      .filter((toast) => snapshot === null && isInboxAlertKind(toast.kind))
       .map(alertCardFromToast),
   ].sort(
     (a, b) => arrivalSeconds(a.createdAt) - arrivalSeconds(b.createdAt) || a.id.localeCompare(b.id),

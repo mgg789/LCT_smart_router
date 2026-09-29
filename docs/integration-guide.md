@@ -200,9 +200,9 @@ curl -s -X POST "https://<host>/api/v1/client/requests/$ID/reschedule" \
   оборудование — система выводит сама; `urgent` может поднять приоритет и никогда не
   опускает.
 - После старта работ заявка закрывается для переносов и отмен: `WORK_ALREADY_STARTED`.
-- Отмена до старта: `POST /api/v1/client/requests/:id/reschedule` для переноса,
-  отмена — через диспетчерский контур (`POST /api/v1/dispatch/requests/:id/cancel`,
-  нужен `master`).
+- Отмена до старта: клиент вызывает `POST /api/v1/client/requests/:id/cancel`
+  (роль `client`). Перенос — `POST /api/v1/client/requests/:id/reschedule`.
+  Диспетчер отменяет через `POST /api/v1/dispatch/requests/:id/cancel`.
 - Координаты (`lat`/`lon`) можно не передавать: заявка сохранится с пометкой «ждёт
   геокодирования» и попадёт в планирование после того, как система получит точку.
   Координаты никогда не выдумываются.

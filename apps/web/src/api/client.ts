@@ -814,10 +814,22 @@ const engineerProfileSchema = engineerSchema.omit({ day: true });
 const dispatcherSettingsSchema = z.object({
   dayStartMin: z.number().int(),
   dayEndMin: z.number().int(),
-  fiveTwoStartMin: z.number().int().default(9 * 60),
-  fiveTwoEndMin: z.number().int().default(18 * 60),
-  twoTwoStartMin: z.number().int().default(10 * 60),
-  twoTwoEndMin: z.number().int().default(22 * 60),
+  fiveTwoStartMin: z
+    .number()
+    .int()
+    .default(9 * 60),
+  fiveTwoEndMin: z
+    .number()
+    .int()
+    .default(18 * 60),
+  twoTwoStartMin: z
+    .number()
+    .int()
+    .default(10 * 60),
+  twoTwoEndMin: z
+    .number()
+    .int()
+    .default(22 * 60),
   noShowSec: z.number().int(),
   overdueSec: z.number().int(),
   timeRiskSec: z.number().int(),

@@ -4,14 +4,13 @@ import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import {
   addressQueryLadder,
-  approximateAddress,
   autocompleteQuery,
   type GeocodeHit,
   type GeocodeQuery,
   hitFromReverse,
   hitsFromAutocomplete,
-  matchLevelOf,
   MOSCOW_OBLAST_VIEWBOX,
+  matchLevelOf,
   type PlacedAddress,
 } from './geocoding-policy';
 
@@ -113,7 +112,9 @@ export class GeocodingService {
     points: PlacedAddress[];
   }> {
     const unique = [
-      ...new Set(addresses.map((address) => address.trim()).filter((address) => address.length >= 3)),
+      ...new Set(
+        addresses.map((address) => address.trim()).filter((address) => address.length >= 3),
+      ),
     ].slice(0, 400);
     const token = this.config.get('LOCATION_IQ_TOKEN');
     if (!token) {
@@ -145,8 +146,6 @@ export class GeocodingService {
       }
       if (!best) {
         approximate += 1;
-        const point = approximateAddress(address);
-        points.push({ address, ...point, level: 'approximate' });
         continue;
       }
       if (best.level === 'house') house += 1;
@@ -159,7 +158,9 @@ export class GeocodingService {
   private async searchBounded(
     token: string,
     query: string,
-  ): Promise<Array<{ lat?: unknown; lon?: unknown; class?: unknown; type?: unknown; importance?: unknown }>> {
+  ): Promise<
+    Array<{ lat?: unknown; lon?: unknown; class?: unknown; type?: unknown; importance?: unknown }>
+  > {
     const wait = DATASET_INTERVAL_MS - (Date.now() - this.datasetAt);
     if (wait > 0) {
       await new Promise((resolve) => setTimeout(resolve, wait));

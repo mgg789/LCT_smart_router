@@ -115,6 +115,7 @@ export function TabularImportDialog({
   const [headerRow, setHeaderRow] = useState<number | undefined>(source.headerRow);
   const [columns, setColumns] = useState<Partial<Record<TabularField, number>>>({});
   const [placedPoints, setPlacedPoints] = useState<Record<string, PlacedPoint> | null>(null);
+  const [geocodeDismissed, setGeocodeDismissed] = useState(false);
   const [defaults, setDefaults] = useState<Record<TabularField, string>>(DEFAULT_VALUES);
   const [mode, setMode] = useState<TabularCompletionOptions['mode']>('new_region');
   const [region, setRegion] = useState(() => suggestRegion(source.fileName, existingRegions));
@@ -371,7 +372,8 @@ export function TabularImportDialog({
       {analysisReady &&
       analysis.columns.addressText !== undefined &&
       analysis.columns.lat === undefined &&
-      placedPoints === null ? (
+      placedPoints === null &&
+      !geocodeDismissed ? (
         <AddressGeocodeDialog
           token={token}
           addresses={analysis.rows.flatMap((row) => {
@@ -380,6 +382,7 @@ export function TabularImportDialog({
             return value.trim() ? [value.trim()] : [];
           })}
           onDone={setPlacedPoints}
+          onCancel={() => setGeocodeDismissed(true)}
         />
       ) : null}
       <motion.div

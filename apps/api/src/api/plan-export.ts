@@ -1,5 +1,6 @@
 import type { PlanView, RequestView } from '@lct/shared';
 import ExcelJS from 'exceljs';
+import { configuredTimeZone } from '../common/time/zone';
 
 export interface ExportRequest {
   readonly view: RequestView;
@@ -20,7 +21,7 @@ export interface PlanExportData {
 }
 
 const time = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: 'Europe/Moscow',
+  timeZone: configuredTimeZone(),
   day: '2-digit',
   month: '2-digit',
   year: 'numeric',

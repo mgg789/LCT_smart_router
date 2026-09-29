@@ -4,6 +4,7 @@ import { toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { toRequestView } from '../../api/request-view';
 import { SysError } from '../../common/errors';
+import { configuredTimeZone } from '../../common/time/zone';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
@@ -317,7 +318,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       let views = engineers.map((engineer) => ({
         ...toEngineerView(engineer),
         day: engineer.days[0]
-          ? toAgentDayView(engineer.days[0], deps.timeZone ?? 'Europe/Moscow')
+          ? toAgentDayView(engineer.days[0], deps.timeZone ?? configuredTimeZone())
           : null,
         attendance: agentEngineerAttendance(
           live.engineers.find((state) => state.id === engineer.id),

@@ -313,7 +313,6 @@ function ChatThread({
     }
   }
 
-
   return (
     <div className="flex min-h-[24rem] flex-col overflow-hidden rounded-2xl border border-line">
       <div className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-4 py-2.5">
@@ -350,15 +349,13 @@ function ChatThread({
         {chat.messages.length === 0 ? (
           <p className="text-sm text-muted">{t('components.ChatsPage.91e2c2161e')}</p>
         ) : (
-          <>
-            {chat.messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                roleProfile={chat.conversation.roleProfile}
-              />
-            ))}
-          </>
+          chat.messages.map((message) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              roleProfile={chat.conversation.roleProfile}
+            />
+          ))
         )}
         <ChatBottomSpacer />
       </div>

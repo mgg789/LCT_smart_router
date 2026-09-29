@@ -5,6 +5,7 @@ import type { DispatchLiveView, EngineerLiveView } from '../../api/live-view.typ
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
+import { zonedWallUnix } from '../../common/time/zone';
 import type { Availability, LiveEngineerState, LiveWorkday } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { APP_STATE_KEYS, PrismaService, type Tx, UnitOfWork } from '../../persistence';
@@ -855,7 +856,7 @@ export class LiveService {
 /** Standard product lunch window for the Moscow field-work contour. */
 function standardLunchWindow(workDate: string): { startAt: number; endAt: number } {
   return {
-    startAt: Math.floor(Date.parse(`${workDate}T11:20:00+03:00`) / 1000),
-    endAt: Math.floor(Date.parse(`${workDate}T15:00:00+03:00`) / 1000),
+    startAt: zonedWallUnix(`${workDate}T11:20:00`),
+    endAt: zonedWallUnix(`${workDate}T15:00:00`),
   };
 }

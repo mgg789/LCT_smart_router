@@ -3,15 +3,15 @@ import { Copy, KeyRound, Plus, Wand2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   type AiView,
+  clearRouteCache,
   createApiToken,
   getAiSettings,
-  type RouteCacheStatus,
-  clearRouteCache,
   getDispatcherSettings,
   getMapProvidersStatus,
   getMcpSettings,
   getRouteCache,
   listApiTokens,
+  type RouteCacheStatus,
   revokeApiToken,
   saveAiSettings,
   saveMcpSettings,
@@ -429,9 +429,13 @@ function TabSwitch({
 }
 
 function formatCacheBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  if (bytes < 1024) return t('figma-dashboard.SettingsModal.cacheBytes', { value0: bytes });
+  if (bytes < 1024 * 1024) {
+    return t('figma-dashboard.SettingsModal.cacheKilobytes', { value0: (bytes / 1024).toFixed(1) });
+  }
+  return t('figma-dashboard.SettingsModal.cacheMegabytes', {
+    value0: (bytes / (1024 * 1024)).toFixed(1),
+  });
 }
 
 function formatCacheRate(bytesPerSec: number | null): string {
@@ -502,7 +506,7 @@ function RouteCacheBlock({ token }: { token: string | null }) {
           {t('figma-dashboard.SettingsModal.routeCacheTitle')}
         </p>
         <span className="rounded-full bg-figma-ink/10 px-[8px] py-[2px] font-semibold text-[12px] text-figma-muted">
-          Beta
+          {t('figma-dashboard.SettingsModal.routeCacheBeta')}
         </span>
       </div>
       <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
@@ -1696,10 +1700,7 @@ function AiForm({ token }: { token: string | null }) {
               className={FIELD}
             />
           </Field>
-          <Field
-            label={t('figma-dashboard.SettingsModal.reasoning')}
-            htmlFor="ai-llm-reasoning"
-          >
+          <Field label={t('figma-dashboard.SettingsModal.reasoning')} htmlFor="ai-llm-reasoning">
             <select
               id="ai-llm-reasoning"
               value={llmReasoning}
@@ -1709,9 +1710,9 @@ function AiForm({ token }: { token: string | null }) {
               className={FIELD}
             >
               <option value="none">{t('figma-dashboard.SettingsModal.reasoningNone')}</option>
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
+              <option value="low">{t('figma-dashboard.SettingsModal.reasoningLow')}</option>
+              <option value="medium">{t('figma-dashboard.SettingsModal.reasoningMedium')}</option>
+              <option value="high">{t('figma-dashboard.SettingsModal.reasoningHigh')}</option>
             </select>
             <p className="mt-[6px] font-medium text-[13px] text-figma-muted">
               {t('figma-dashboard.SettingsModal.reasoningHint')}

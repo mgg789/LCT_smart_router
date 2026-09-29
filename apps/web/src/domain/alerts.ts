@@ -201,6 +201,7 @@ export function alertTitle(code: string): string {
     engineer_overdue: t('domain.alerts.be6f95101c'),
     shift_no_show: t('domain.alerts.f01a62c9af'),
     plan_rebuilt: t('domain.alerts.b02a3bb901'),
+    engineer_problem_cancel: t('domain.alerts.engineerProblemCancel'),
     LIVE_TECHNICAL_BREAK_OVERRUN: t('domain.alerts.669360fbf6'),
     LIVE_WINDOW_COMPLETION_RISK: t('domain.alerts.669360fbf6'),
   };

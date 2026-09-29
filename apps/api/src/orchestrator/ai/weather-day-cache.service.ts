@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
+import { configuredTimeZone } from '../../common/time/zone';
 import { APP_STATE_KEYS, lockWorkingSetGeneration, PrismaService } from '../../persistence';
 
 const ARCHIVE_ENDPOINT = 'https://archive-api.open-meteo.com/v1/archive';
@@ -63,7 +64,7 @@ export class WeatherDayCacheService {
       start_date: missing[0] ?? '',
       end_date: missing.at(-1) ?? '',
       daily: 'weather_code',
-      timezone: 'Europe/Moscow',
+      timezone: configuredTimeZone(),
     });
     const url = new URL(`${ARCHIVE_ENDPOINT}?${query.toString()}`);
     if (url.protocol !== 'https:' || url.hostname !== 'archive-api.open-meteo.com') return;

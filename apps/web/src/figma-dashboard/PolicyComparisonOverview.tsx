@@ -1,8 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { PolicyComparisonRow } from '../api/types';
 import { locale, t } from '../i18n';
-import { formatClock } from '../lib/time';
-import { STRATEGY_COLORS } from './PolicyStrategyMap';
 import {
   type ComparisonMeasure,
   comparisonValue,
@@ -11,6 +9,8 @@ import {
   strategyLabel,
   usesReserve,
 } from '../lib/policyComparison';
+import { formatClock } from '../lib/time';
+import { STRATEGY_COLORS } from './PolicyStrategyMap';
 
 const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
 const COST_MEASURES = {
@@ -288,9 +288,7 @@ function erf(value: number): number {
   const abs = Math.abs(value);
   const t = 1 / (1 + 0.3275911 * abs);
   const polynomial =
-    (((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t +
-      0.254829592) *
-      t);
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
   return sign * (1 - polynomial * Math.exp(-abs * abs));
 }
 
@@ -304,6 +302,7 @@ function CompletionChart({ rows }: { rows: readonly PolicyComparisonRow[] }) {
   const halfHour = 30 * 60;
   const ends = rows.flatMap((row) => row.jobEnds ?? []);
   useLayoutEffect(() => {
+    if (ends.length === 0) return;
     const node = host.current;
     if (!node) return;
     const apply = () => setPlotWidth(Math.max(480, Math.floor(node.clientWidth)));
@@ -313,7 +312,9 @@ function CompletionChart({ rows }: { rows: readonly PolicyComparisonRow[] }) {
     return () => observer.disconnect();
   }, [ends.length]);
   const origin = ends.length ? Math.floor(Math.min(...ends) / halfHour) * halfHour : 0;
-  const finish = ends.length ? Math.ceil(Math.max(...ends) / halfHour) * halfHour : origin + halfHour;
+  const finish = ends.length
+    ? Math.ceil(Math.max(...ends) / halfHour) * halfHour
+    : origin + halfHour;
   const span = Math.max(halfHour, finish - origin);
   const ticks: number[] = [];
   for (let at = origin; at <= finish; at += halfHour) ticks.push(at);
@@ -328,25 +329,40 @@ function CompletionChart({ rows }: { rows: readonly PolicyComparisonRow[] }) {
   const plotH = height - padTop - padBottom;
   const xOf = (at: number) => padLeft + ((at - origin) / span) * plotW;
   const yOf = (count: number) => padTop + plotH - (count / maxCount) * plotH;
+  const legend = rows.filter((row) => (row.jobEnds ?? []).length > 0);
   return (
     <section className="w-full rounded-[20px] bg-figma-soft p-[24px] lg:col-span-2">
-      <p className="text-[16px] font-semibold text-figma-ink">
-        {t('figma-dashboard.PolicyComparisonOverview.completionChart')}
-      </p>
-      <p className="mt-[4px] mb-[12px] text-[14px] text-figma-muted">
-        {t('figma-dashboard.PolicyComparisonOverview.completionChartNote')}
-      </p>
+      <div className="mb-[12px] flex flex-wrap items-start justify-between gap-x-[24px] gap-y-[10px]">
+        <div className="min-w-[240px]">
+          <p className="text-[16px] font-semibold text-figma-ink">
+            {t('figma-dashboard.PolicyComparisonOverview.completionChart')}
+          </p>
+          <p className="mt-[4px] text-[14px] text-figma-muted">
+            {t('figma-dashboard.PolicyComparisonOverview.completionChartNote')}
+          </p>
+        </div>
+        {legend.length > 0 ? (
+          <ul className="grid w-full grid-cols-2 gap-x-[16px] gap-y-[6px] min-[1100px]:flex min-[1100px]:w-auto min-[1100px]:flex-wrap min-[1100px]:items-center min-[1100px]:justify-end">
+            {legend.map((row) => (
+              <li
+                key={row.strategyId}
+                className="text-[13px] leading-[18px] font-semibold"
+                style={{ color: STRATEGY_COLORS[row.strategyId] ?? '#272930' }}
+              >
+                {strategyLabel(row.strategyId)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       {ends.length === 0 ? (
         <p className="text-[14px] text-figma-muted">
           {t('figma-dashboard.PolicyComparisonOverview.completionChartEmpty')}
         </p>
       ) : (
         <div ref={host} className="w-full">
-          <svg
-            viewBox={`0 0 ${width} ${height}`}
-            className="block h-[450px] w-full"
-            role="img"
-          >
+          <svg viewBox={`0 0 ${width} ${height}`} className="block h-[450px] w-full" role="img">
+            <title>{t('figma-dashboard.PolicyComparisonOverview.completionChart')}</title>
             {ticks.map((at) => (
               <g key={at}>
                 <line

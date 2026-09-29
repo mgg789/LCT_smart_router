@@ -1115,7 +1115,12 @@ export function useDashboard() {
       performEntityMutation(async (session) => {
         const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
         if (!engineer) throw new Error(t('hooks.useDashboard.3d944f689c'));
-        const updated = await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+        const updated = await updateDispatchEngineerProfile(
+          session,
+          engineerId,
+          engineer.version,
+          patch,
+        );
         if (updated.scheduleDeferred) {
           pushToast({
             id: `schedule:${engineerId}`,

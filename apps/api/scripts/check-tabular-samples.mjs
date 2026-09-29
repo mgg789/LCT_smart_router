@@ -6,14 +6,19 @@ const root = '/Users/mike/Projects/LCT/LCT_smart_router';
 
 // local dev creds from .env (never printed)
 const envText = readFileSync(resolve(root, '.env'), 'utf8');
-const env = Object.fromEntries(envText.split(/\r?\n/).filter(l => l.includes('=') && !l.startsWith('#'))
-  .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
+const env = Object.fromEntries(
+  envText
+    .split(/\r?\n/)
+    .filter((l) => l.includes('=') && !l.startsWith('#'))
+    .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]),
+);
 const email = env.DISPATCHER_EMAIL;
 const password = env.DISPATCHER_PASSWORD;
 
 const signIn = async () => {
   const r = await fetch(`${base}/api/v1/auth/dispatcher/password`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
   if (r.status !== 201) throw new Error(`sign-in failed: ${r.status}`);
@@ -47,11 +52,16 @@ for (const [name, encoding, delimiter] of files) {
   const t = body.table ?? body;
   const headers = (t.headers ?? []).join(' | ');
   const rowCount = (t.rows ?? []).length;
-  console.log(`${name}: HTTP 201, format=${t.format}, encoding=${t.encoding}, delimiter=${JSON.stringify(t.delimiter)}, rows=${rowCount}`);
+  console.log(
+    `${name}: HTTP 201, format=${t.format}, encoding=${t.encoding}, delimiter=${JSON.stringify(t.delimiter)}, rows=${rowCount}`,
+  );
   console.log(`   headers: ${headers}`);
   const mapped = body.detectedColumns ?? body.columns ?? null;
   if (mapped) console.log(`   detected columns: ${JSON.stringify(mapped)}`);
-  if (rowCount < 8) { failures++; console.log(`   FAIL: too few rows`); }
+  if (rowCount < 8) {
+    failures++;
+    console.log(`   FAIL: too few rows`);
+  }
 }
 console.log(failures ? `FAILURES: ${failures}` : 'LIVE ANALYZE OK FOR ALL SAMPLES');
 process.exit(failures ? 1 : 0);

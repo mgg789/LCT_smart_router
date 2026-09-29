@@ -21,7 +21,6 @@ import { assertLunchConditions } from '../../orchestrator/engineers/workday';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { findPolicy, PolicyService } from '../../orchestrator/policy';
 import { personalPolicyUpdateSchema } from '../../orchestrator/policy/personal-policy';
-import { applyPersonalPolicyRouterPreset } from '../../orchestrator/policy/personal-policy-preset';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 // Catalog file only, not the `requests` barrel: the barrel also loads Nest modules and
 // can leave `findWorkType` undefined under CJS circular imports in unit tests
@@ -602,7 +601,6 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
         });
         const { profile } = await deps.policy.personal(deps.prisma, args.actor.accountId);
         if (!profile) throw SysError.validationFailed('Личная политика не создана');
-        await applyPersonalPolicyRouterPreset(deps.router, deps.live, profile.preset);
       }
       return async ({ context }) => {
         const selected = await deps.policy.select(context, input.policyId);

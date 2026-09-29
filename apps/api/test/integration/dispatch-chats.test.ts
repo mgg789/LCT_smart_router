@@ -448,7 +448,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.equal(rejoined.mode, 'dispatcher', 'a sent message is what rejoins the chat');
   });
 
-  it('refuses a reply to a conversation that was never handed to a dispatcher', async () => {
+  it('opens a handover when a dispatcher writes into a conversation that was never handed over', async () => {
     const email = `${unique('dispatch-chat-never')}@example.test`;
     emails.push(email);
     const clientToken = await signInClient(email);
@@ -465,16 +465,18 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
       dispatcherToken,
       { operationId: randomUUID(), text: 'Здравствуйте' },
     );
-    assert.equal(reply.status, 409, await reply.clone().text());
-    const replyBody = (await reply.json()) as ErrorBody;
-    assert.equal(replyBody.error.code, 'AI_HANDOFF_NOT_ACTIVE');
+    assert.equal(reply.status, 201, await reply.clone().text());
+    const joined = await prisma.aiConversation.findUniqueOrThrow({
+      where: { id: conversation.id },
+    });
+    assert.equal(joined.mode, 'dispatcher');
 
     const chats = await call('GET', '/api/v1/dispatch/chats', dispatcherToken);
     const chatsBody = ((await chats.json()) as { chats: DispatchChatBody[] }).chats;
     assert.equal(
       chatsBody.some((chat) => chat.conversation.id === conversation.id),
-      false,
-      'an ordinary ai-mode conversation must never appear in the dispatcher queue',
+      true,
+      'sending is what puts the dialogue in the dispatcher queue',
     );
   });
 
@@ -496,7 +498,11 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
 
     assert.equal(chat.handoff.initiatedBy, 'dispatcher');
     assert.equal(chat.conversation.mode, 'dispatcher');
-    assert.equal(chat.messages.length, 1, 'only the opening text — looking does not write a system line');
+    assert.equal(
+      chat.messages.length,
+      1,
+      'only the opening text — looking does not write a system line',
+    );
     assert.equal(chat.messages[0]?.author, 'dispatcher');
     assert.equal(chat.messages[0]?.text, 'Добрый день, уточняю по заявке');
 
@@ -533,10 +539,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const lookedBody = (await looked.json()) as { chat: DispatchChatBody | null };
     assert.equal(lookedBody.chat, null, 'opening the row without a message does not join the chat');
 
-    const opened = await openChat(
-      { kind: 'engineer', engineerId: engineer.id },
-      'Добрый день',
-    );
+    const opened = await openChat({ kind: 'engineer', engineerId: engineer.id }, 'Добрый день');
     assert.equal(opened.status, 201, await opened.clone().text());
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);

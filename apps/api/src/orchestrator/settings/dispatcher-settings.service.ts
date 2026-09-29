@@ -109,8 +109,6 @@ export class DispatcherSettingsService {
     });
 
     const dayChanged =
-      current.dayStartMin !== next.dayStartMin ||
-      current.dayEndMin !== next.dayEndMin ||
       current.fiveTwoStartMin !== next.fiveTwoStartMin ||
       current.fiveTwoEndMin !== next.fiveTwoEndMin ||
       current.twoTwoStartMin !== next.twoTwoStartMin ||
@@ -135,10 +133,16 @@ export class DispatcherSettingsService {
     const workDate = workDateOf(context.now, timeZone);
     const days = await context.tx.engineerDay.findMany({
       where: { workDate },
-      include: { engineer: { select: { shiftPattern: true } } },
+      include: { engineer: { select: { shiftPattern: true, origin: true } } },
     });
+    let rewritten = 0;
     for (const day of days) {
+      // Official and imported crews keep the clocks that came with the package.
+      if (day.engineer.origin === 'import' || day.engineer.origin === 'synthesized') {
+        continue;
+      }
       const window = shiftWindowMinutes(settings, day.engineer.shiftPattern);
+      rewritten += 1;
       await context.tx.engineerDay.update({
         where: { id: day.id },
         data: {
@@ -149,7 +153,7 @@ export class DispatcherSettingsService {
         },
       });
     }
-    if (days.length === 0) {
+    if (rewritten === 0) {
       return;
     }
     await this.publisher.publishIfChanged(

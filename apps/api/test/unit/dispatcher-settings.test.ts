@@ -21,6 +21,8 @@ describe('dispatcher settings', () => {
     const parsed = parseDispatcherSettings({ dayStartMin: 8 * 60 });
     assert.equal(parsed.dayStartMin, 8 * 60);
     assert.equal(parsed.dayEndMin, DEFAULT_DISPATCHER_SETTINGS.dayEndMin);
+    assert.equal(parsed.twoTwoStartMin, 8 * 60);
+    assert.equal(parsed.twoTwoEndMin, DEFAULT_DISPATCHER_SETTINGS.dayEndMin);
     assert.equal(parsed.noShowSec, 30 * 60);
     assert.equal(parsed.twogisApiKey, null);
   });
@@ -90,6 +92,8 @@ describe('LocationIQ autocomplete query', () => {
     const ladder = addressQueryLadder('Москва, ул. Ленина, д. 10');
     assert.ok(ladder.length >= 2);
     assert.equal(ladder[0], 'Москва, ул. Ленина, д. 10');
+    assert.ok(ladder.some((item) => item.includes('улица Ленина')));
+    assert.ok(ladder.some((item) => item.includes('10') && !item.includes('д.')));
     assert.equal(matchLevelOf({ class: 'building', type: 'yes' }), 'house');
     assert.equal(matchLevelOf({ class: 'highway', type: 'residential' }), 'street');
     assert.equal(matchLevelOf({ class: 'place', type: 'city' }), null);

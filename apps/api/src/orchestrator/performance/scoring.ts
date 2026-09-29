@@ -1,3 +1,4 @@
+import { configuredTimeZone } from '../../common/time/zone';
 import type {
   AlertAttribution,
   DispatcherPerformanceScore,
@@ -19,7 +20,7 @@ export const END_OF_DAY_HOUR_MOSCOW = 17;
 export function isMoscowEndOfDay(timestampSec: number): boolean {
   const hour = Number(
     new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Moscow',
+      timeZone: configuredTimeZone(),
       hour: '2-digit',
       hourCycle: 'h23',
     }).format(new Date(timestampSec * 1000)),
@@ -44,11 +45,11 @@ export function interventionQuality(attribution: AlertAttribution): {
   // an artificially slow one.
   const actionAt = attribution.firstAction.at;
   const delaySec = Math.max(0, actionAt - attribution.createdAt);
+  if (attribution.firstAction.actorKind === 'system') {
+    return { score: 0, label: 'system-unattributed' };
+  }
   if (delaySec > TIMELY_THRESHOLD_SEC && isMoscowEndOfDay(actionAt)) {
     return { score: 10, label: 'end-day' };
-  }
-  if (attribution.firstAction?.actorKind === 'system') {
-    return { score: 0, label: 'system-unattributed' };
   }
   const ai = attribution.firstAction.actorSource === 'ai_run';
   if (delaySec <= FASTEST_THRESHOLD_SEC) {

@@ -298,7 +298,10 @@ def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: Tra
                     if observed != original:
                         continue
                     next_plan = assemble_plan(snapshot, [candidate if item.engineer_id == engineer.engineer_id else item for item in current.routes])
-                    validate_plan(snapshot, next_plan, travel)
+                    try:
+                        validate_plan(snapshot, next_plan, travel)
+                    except ValueError:
+                        continue
                     current, found = next_plan, True
                     break
                 if found:

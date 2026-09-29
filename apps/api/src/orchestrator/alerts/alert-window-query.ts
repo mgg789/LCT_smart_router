@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
+import { zonedDayEnd } from '../../common/time/zone';
 import { UnitOfWork } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
@@ -58,14 +59,13 @@ export class AlertWindowQuery {
             ),
           ]),
       );
-      const date = new Date((now + 10800) * 1000).toISOString().slice(0, 10);
       return {
         requestVersion: request.version,
         input: {
           snapshot: built.snapshot,
           request_id: request.id,
           routes,
-          day_end_at: Date.parse(`${date}T00:00:00+03:00`) / 1000 + 86400,
+          day_end_at: zonedDayEnd(now),
         },
         identity: canonicalHash({
           task: built.taskFingerprint,

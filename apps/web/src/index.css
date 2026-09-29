@@ -90,7 +90,7 @@ body {
    this ring inside a search pill or a dark composer is a second frame. */
 a:focus-visible,
 button:focus-visible,
-[role='button']:focus-visible,
+[role="button"]:focus-visible,
 select:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--color-figma-ink);

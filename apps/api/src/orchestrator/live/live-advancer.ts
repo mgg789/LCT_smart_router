@@ -1,3 +1,4 @@
+import { zonedWallUnix } from '../../common/time/zone';
 import type { LiveEngineerState, LiveWorkday } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
@@ -498,7 +499,7 @@ export class LiveAdvancer {
         Number(item.lunchStartedAt) <= liveNow &&
         liveNow < Number(item.lunchStartedAt) + item.lunchDurationSec,
     );
-    const dayStart = Date.parse(`${day.workDate}T00:00:00+03:00`) / 1000;
+    const dayStart = zonedWallUnix(`${day.workDate}T00:00:00`);
     const pendingToday = await tx.request.count({
       where: {
         lifecycle: 'submitted',

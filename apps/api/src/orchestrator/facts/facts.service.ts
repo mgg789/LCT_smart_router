@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import { configuredTimeZone, zonedDayEnd } from '../../common/time/zone';
 import type { FactKind, Request } from '../../generated/prisma/client';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
@@ -12,7 +13,6 @@ import { assertNoPendingHandoff } from '../equipment/handoffs';
 import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
-const CALIBRATION_TIME_ZONE = 'Europe/Moscow';
 const WEATHER_QUOTE_BUCKET_SEC = 600;
 
 export type ReportableFact = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';
@@ -214,7 +214,7 @@ export class FactsService {
           assignmentState: 'unassigned',
           windowEndAt: { gte: BigInt(occurredAt) },
           windowStartAt: {
-            lt: BigInt(Math.floor((occurredAt + 10800) / 86400) * 86400 - 10800 + 86400),
+            lt: BigInt(zonedDayEnd(occurredAt)),
           },
         },
       })) > 0;
@@ -360,7 +360,7 @@ export class FactsService {
     return {
       weatherCalibration: {
         planId: plan.id,
-        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+        workDate: workDateOf(occurredAt, configuredTimeZone()),
       },
     };
   }
@@ -380,7 +380,7 @@ export class FactsService {
     const baseMetadata = {
       weatherCalibration: {
         planId: plan.id,
-        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+        workDate: workDateOf(occurredAt, configuredTimeZone()),
       },
     };
     if (!engineer?.region) return baseMetadata;
@@ -435,7 +435,7 @@ export class FactsService {
     return {
       weatherCalibration: {
         planId: plan.id,
-        workDate: workDateOf(occurredAt, CALIBRATION_TIME_ZONE),
+        workDate: workDateOf(occurredAt, configuredTimeZone()),
         nextRequestId: nextStop.requestId,
         region: engineer.region,
         transport: engineer.transportType,

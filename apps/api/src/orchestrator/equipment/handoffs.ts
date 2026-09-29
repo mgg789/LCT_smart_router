@@ -241,9 +241,17 @@ export async function confirmHandoff(
     );
     const facts = await tx.requestFact.findMany({
       where: {
-        engineerId: { in: ids },
         kind: 'started',
-        occurredAt: { gte: from.shiftStartAt, lte: from.shiftEndAt },
+        OR: [
+          {
+            engineerId: from.engineerId,
+            occurredAt: { gte: from.shiftStartAt, lte: from.shiftEndAt },
+          },
+          {
+            engineerId: to.engineerId,
+            occurredAt: { gte: to.shiftStartAt, lte: to.shiftEndAt },
+          },
+        ],
       },
       include: { request: true },
     });

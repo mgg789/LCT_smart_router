@@ -68,7 +68,8 @@ function stopBlock(
       start: stop.startAt,
       end: stop.endAt,
       kind: jobTone(request?.lifecycle, request?.assignmentState),
-      label: (stop.requestId && titles.get(stop.requestId)) || t('figma-dashboard.EngineerCompare.job'),
+      label:
+        (stop.requestId && titles.get(stop.requestId)) || t('figma-dashboard.EngineerCompare.job'),
     };
   }
   if (stop.kind === 'lunch') {
@@ -84,10 +85,15 @@ function stopBlock(
       start: stop.startAt,
       end: stop.endAt,
       kind: 'handoff',
-      label: 'Передача',
+      label: t('figma-dashboard.EngineerCompare.handoff'),
     };
   }
-  return { start: stop.startAt, end: stop.endAt, kind: 'other', label: 'Склад' };
+  return {
+    start: stop.startAt,
+    end: stop.endAt,
+    kind: 'other',
+    label: t('figma-dashboard.EngineerCompare.depot'),
+  };
 }
 
 function roadBlock(leg: PlanLegView, occupied: readonly GanttBlock[]): GanttBlock | null {

@@ -239,6 +239,8 @@ export class LiveActionHandler {
       }
       return;
     }
+    // Product decision: trust the engineer. `other` and `impossible` cancel the
+    // visit without a client letter. The journal and a dispatcher notice record it.
     await context.tx.request.update({
       where: { id: input.requestId },
       data: {
@@ -249,6 +251,47 @@ export class LiveActionHandler {
         version: { increment: 1 },
       },
     });
+    await context.tx.auditLog.create({
+      data: {
+        at: BigInt(context.now),
+        actorKind: context.actor.kind,
+        actorId: context.actor.id,
+        source: context.actor.source,
+        action: 'live.problem.trusted_cancel',
+        targetRef: input.requestId,
+        operationId: context.operationId,
+        details: {
+          engineerId,
+          problemKind: input.problemKind,
+          note,
+        },
+      },
+    });
+    const noticeId = `engineer-problem-cancel-${input.requestId}`;
+    const noticeExists = await context.tx.alert.findUnique({ where: { id: noticeId } });
+    if (!noticeExists) {
+      await context.tx.alert.create({
+        data: {
+          id: noticeId,
+          dedupKey: noticeId,
+          kind: 'notice',
+          code: 'engineer_problem_cancel',
+          severity: 'warning',
+          isBlocking: false,
+          engineerIds: [engineerId],
+          requestIds: [input.requestId],
+          workDate: day.workDate,
+          reasons: [
+            {
+              code: 'engineer_problem_cancel',
+              text: 'Инженер сообщил, что заявку выполнить нельзя. Визит отменён — диспетчер доверяет решению инженера.',
+              facts: { problemKind: input.problemKind },
+            },
+          ],
+          createdAt: BigInt(context.now),
+        },
+      });
+    }
     await this.departAnchor(context.tx, state, input.requestId, context.now, context.now);
     const sequence = current.stop?.sequence;
     const next =

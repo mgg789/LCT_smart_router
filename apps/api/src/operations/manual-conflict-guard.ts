@@ -31,6 +31,14 @@ export async function assertManualConflictResolved(
     action === 'manual.delete' ||
     action === 'manual.decision.remove' ||
     action === 'control.auto' ||
+    action === 'alert.mark_seen' ||
+    action === 'alert.resolve' ||
+    action === 'request.cancel' ||
+    action === 'dispatcher.engineer.set_availability' ||
+    action === 'engineer.set_availability' ||
+    action === 'shift.close' ||
+    action === 'data.restart_demo' ||
+    action.startsWith('data.reset.') ||
     action.startsWith('live.') ||
     action.startsWith('request.fact.')
   )

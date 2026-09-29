@@ -23,8 +23,7 @@ Router Core. Он собирается без сетевого доступа и
 Из исходных файлов, если они доступны в `/tmp/navix-metro-data`:
 
 ```bash
-/Users/mike/Projects/LCT/LCT_smart_router/core/.venv/bin/python \
-  data/metro/build_moscow.py
+core/.venv/bin/python data/metro/build_moscow.py
 ```
 
 Если исходный каталог недоступен, конвертер использует уже сохранённые gzip из

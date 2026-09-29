@@ -348,45 +348,45 @@ export function PhoneAiPane({
                       <TurnDivider key={kind} kind={kind} />
                     ))}
                     {message.kind !== 'text' || message.author === 'system' ? (
-                    <ChatMessage
-                      key={message.id}
-                      message={message}
-                      operations={chat.operations}
-                      disabled={chat.sending}
-                      onApplyOperation={(id) => void chat.applyOperation(id)}
-                      onCancelOperation={(id) => void chat.cancelOperation(id)}
-                      onOpenObject={onOpenObject}
-                    />
-                  ) : message.author === 'user' ? (
-                    <UserBubble
-                      key={message.id}
-                      text={message.text}
-                      copied={copied === message.id}
-                      onCopy={() => void copy(message.id, message.text)}
-                    />
-                  ) : message.author === 'dispatcher' ? (
-                    <DispatcherBubble
-                      key={message.id}
-                      text={message.text}
-                      copied={copied === message.id}
-                      onCopy={() => void copy(message.id, message.text)}
-                    />
-                  ) : (
-                    <AssistantBubble
-                      key={message.id}
-                      avatar={avatar}
-                      message={message}
-                      thoughtSeconds={thoughtFor[message.id] ?? null}
-                      copied={copied === message.id}
-                      onCopy={() => void copy(message.id, message.text)}
-                      onAgain={() => {
-                        const previous = [...spoken.slice(0, index)]
-                          .reverse()
-                          .find((item) => item.author === 'user');
-                        if (previous && canSend) void chat.sendMessage(previous.text);
-                      }}
-                      onFollowUp={canFollowUp ? fillFollowUp : undefined}
-                    />
+                      <ChatMessage
+                        key={message.id}
+                        message={message}
+                        operations={chat.operations}
+                        disabled={chat.sending}
+                        onApplyOperation={(id) => void chat.applyOperation(id)}
+                        onCancelOperation={(id) => void chat.cancelOperation(id)}
+                        onOpenObject={onOpenObject}
+                      />
+                    ) : message.author === 'user' ? (
+                      <UserBubble
+                        key={message.id}
+                        text={message.text}
+                        copied={copied === message.id}
+                        onCopy={() => void copy(message.id, message.text)}
+                      />
+                    ) : message.author === 'dispatcher' ? (
+                      <DispatcherBubble
+                        key={message.id}
+                        text={message.text}
+                        copied={copied === message.id}
+                        onCopy={() => void copy(message.id, message.text)}
+                      />
+                    ) : (
+                      <AssistantBubble
+                        key={message.id}
+                        avatar={avatar}
+                        message={message}
+                        thoughtSeconds={thoughtFor[message.id] ?? null}
+                        copied={copied === message.id}
+                        onCopy={() => void copy(message.id, message.text)}
+                        onAgain={() => {
+                          const previous = [...spoken.slice(0, index)]
+                            .reverse()
+                            .find((item) => item.author === 'user');
+                          if (previous && canSend) void chat.sendMessage(previous.text);
+                        }}
+                        onFollowUp={canFollowUp ? fillFollowUp : undefined}
+                      />
                     )}
                   </div>
                 ))}
@@ -619,7 +619,10 @@ function AssistantBubble({
   );
 }
 
-const HANDOFF_NOISE = ['Диспетчер подключился к чату.', 'Диспетчер завершил чат.'];
+const HANDOFF_NOISE = [
+  t('figma-dashboard.ChatsView.handoffJoined'),
+  t('figma-dashboard.ChatsView.handoffLeft'),
+];
 
 function isHandoffNoise(text: string): boolean {
   return HANDOFF_NOISE.some((noise) => text.startsWith(noise));
@@ -660,7 +663,8 @@ export function handoffDividersAt(
   const previousSeq = previous && Number.isFinite(previous.seq) ? previous.seq : null;
   if (!Number.isFinite(message.seq)) {
     const kinds: Array<'dispatcher' | 'assistant'> = [];
-    if (mark.open && (previousSeq === null || previousSeq <= mark.startSeq)) kinds.push('dispatcher');
+    if (mark.open && (previousSeq === null || previousSeq <= mark.startSeq))
+      kinds.push('dispatcher');
     if (
       mark.endSeq !== null &&
       !mark.open &&

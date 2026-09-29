@@ -11,7 +11,7 @@ import type {
 } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import { APP_STATE_KEYS, type Tx } from '../../persistence';
+import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
   capProvisionalEquipment,
@@ -19,11 +19,6 @@ import {
   equipmentTotal,
   readEquipmentSettings,
 } from '../equipment/equipment-policy';
-import {
-  moscowMinutesToUnix,
-  parseDispatcherSettings,
-  shiftWindowMinutes,
-} from '../settings/dispatcher-settings';
 import { assertLunchConditions, type LunchConditions, workDateOf } from './workday';
 
 export interface CreateEngineerInput {
@@ -756,9 +751,9 @@ export class EngineersService {
   /**
    * The working day the engineer is currently in.
    *
-   * Created on demand from the configured zone when it does not exist yet. The shift
-   * bounds are left at the day's edges until the dispatcher sets real ones, and the
-   * absence of a real shift is visible rather than papered over with a plausible default.
+   * Created on demand when the row does not exist yet. A missing shift stays
+   * zero-length (`start = end = now`) so the snapshot treats the engineer as off
+   * duty. A real window comes only from an import or an explicit dispatcher edit.
    */
   async currentDay(context: OperationContext, engineerId: string): Promise<EngineerDay> {
     const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
@@ -768,18 +763,14 @@ export class EngineersService {
     if (existing) {
       return existing;
     }
-    const engineer = await this.load(context.tx, engineerId);
-    const stored = await context.tx.appState.findUnique({
-      where: { key: APP_STATE_KEYS.DISPATCHER_SETTINGS },
-    });
-    const window = shiftWindowMinutes(parseDispatcherSettings(stored?.value), engineer.shiftPattern);
+    await this.load(context.tx, engineerId);
     const now = BigInt(context.now);
     return context.tx.engineerDay.create({
       data: {
         engineerId,
         workDate,
-        shiftStartAt: BigInt(moscowMinutesToUnix(workDate, window.startMin)),
-        shiftEndAt: BigInt(moscowMinutesToUnix(workDate, window.endMin)),
+        shiftStartAt: now,
+        shiftEndAt: now,
         createdAt: now,
         updatedAt: now,
       },
@@ -789,7 +780,11 @@ export class EngineersService {
   /** Explicit app heartbeat/check-in. Reading a screen never becomes an attendance fact. */
   async recordAttendance(context: OperationContext, engineerId: string): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
-    if (context.now < Number(day.shiftStartAt) || context.now > Number(day.shiftEndAt)) {
+    if (
+      day.shiftEndAt <= day.shiftStartAt ||
+      context.now < Number(day.shiftStartAt) ||
+      context.now > Number(day.shiftEndAt)
+    ) {
       throw new SysError('VALIDATION_FAILED', 'Attendance can only be recorded during the shift');
     }
     return context.tx.engineerDay.update({

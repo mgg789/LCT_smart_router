@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
+import { NotificationsService } from '../../notifications';
 import { type Tx, UnitOfWork } from '../../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -12,7 +13,6 @@ import {
   type LogisticsProposalInput,
   RouterClient,
 } from '../../routing/router-gateway/router-client.port';
-import { NotificationsService } from '../../notifications';
 import { LiveDayState } from '../live/live-day-state';
 import { logisticsParticipants } from './logistics';
 

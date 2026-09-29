@@ -54,7 +54,8 @@ export class TabularImportService {
     const notices = [...parsed.notices];
     const geocodes = new Map(loadTabularGeocodes(this.config.get('DATASET_ROOT')));
     for (const [address, point] of Object.entries(input.options.placedPoints ?? {})) {
-      geocodes.set(normalizeAddress(address), point);
+      const key = normalizeAddress(address);
+      if (!geocodes.has(key)) geocodes.set(key, point);
     }
     const rows = parsed.rows.filter((row) => !isBlankRow(row) && !isOfficeRow(row));
     if (parsed.rows.some(isOfficeRow)) {

@@ -123,7 +123,9 @@ export class NotificationsService {
     const roles = await tx.accountRole.findMany({
       where: { accountId, role: { in: ['client', 'engineer'] } },
     });
-    const role = roles.find((item) => item.role === 'engineer') ?? roles.find((item) => item.role === 'client');
+    const role =
+      roles.find((item) => item.role === 'engineer') ??
+      roles.find((item) => item.role === 'client');
     if (!role || (role.role !== 'client' && role.role !== 'engineer')) return;
     const rendered = renderMail(category, payload, {
       appBaseUrl: this.config.get('SMTP_APP_BASE_URL'),

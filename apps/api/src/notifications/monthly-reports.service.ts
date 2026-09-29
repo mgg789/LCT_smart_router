@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
+import { configuredTimeZone, zonedWallUnix } from '../common/time/zone';
 import type { NotificationCategory, Prisma } from '../generated/prisma/client';
 import { businessNow } from '../orchestrator/live/business-clock';
 import { moscowMonth, moscowMonthBounds } from '../orchestrator/passports/passport-policy';
@@ -126,7 +127,7 @@ export class MonthlyReportsService {
     generatedAt: number,
     provisional: boolean,
   ): Promise<MonthlyReportData> {
-    const [start, end] = moscowMonthBounds(Date.parse(`${month}-15T12:00:00+03:00`) / 1000);
+    const [start, end] = moscowMonthBounds(zonedWallUnix(`${month}-15T12:00:00`));
     // A running accelerated LIVE day must not make tomorrow's logical facts visible in a
     // provisional month. A frozen month always covers its complete civil interval.
     const factualEnd = provisional
@@ -406,7 +407,7 @@ export class MonthlyReportsService {
 
 function moscowDate(timestamp: number): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Moscow',
+    timeZone: configuredTimeZone(),
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

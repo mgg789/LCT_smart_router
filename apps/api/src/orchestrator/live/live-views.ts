@@ -5,6 +5,7 @@ import type {
   LiveWorkdayView,
 } from '../../api/live-view.types';
 import { SysError } from '../../common/errors';
+import { zonedWallUnix } from '../../common/time/zone';
 import type { LiveEngineerState, LiveWorkday } from '../../generated/prisma/client';
 import type { Tx } from '../../persistence';
 import { AppliedPlanService } from '../../routing/router-gateway';
@@ -275,7 +276,7 @@ export class LiveViews {
       })
     )
       return false;
-    const dayStart = Date.parse(`${day.workDate}T00:00:00+03:00`) / 1000;
+    const dayStart = zonedWallUnix(`${day.workDate}T00:00:00`);
     if (
       liveNow < dayStart + 17 * 3600 ||
       state.lineStartedAt === null ||

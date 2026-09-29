@@ -89,6 +89,9 @@ MCP `POST /api/v1/mcp` принимает Bearer либо `X-MCP-Pin`; SSE от�
 `problem` принимает `problemKind` (`delay`, `missing_equipment`, `other`, `impossible`),
 обязательный `note`; задержка — `additionalDurationSec`, оборудование —
 `missingEquipment` (`router`, `set_top_box`, `smart_speaker`).
+`other` и `impossible` отменяют визит: диспетчер доверяет инженеру, письмо клиенту
+не уходит. В журнал пишется `live.problem.trusted_cancel`, диспетчеру — уведомление
+`engineer_problem_cancel`.
 Задержка до старта визита увеличивает `serviceDurationSec` и `technicalDurationSec`
 на одну и ту же величину (CHECK `service = technical + documentation` сохраняется)
 и при необходимости сдвигает конец окна. На уже начатой заявке обе колонки
@@ -1498,12 +1501,16 @@ OSRM JSON или его gzip-байты. Core также поддерживае�
 отвечает 404. Каждый `tools/call` обновляет маркер активности: `activeNow` в настройках
 живёт 30 секунд после последнего вызова — по нему в шапке дашборда мигает робот.
 
-**Инструменты** (23): `get_dispatcher_context`, `get_routing_principles`,
-`get_situation`, `get_plan` (опционально с геометрией), `get_plan_explanations`
+**Инструменты** (31): `get_dispatcher_context`, `get_routing_principles`,
+`get_situation`, `get_plan` (опционально с геометрией), `get_previous_plan`,
+`restore_previous_plan`, `get_plan_explanations`
 (факторы решателя и `whyNot` альтернатив — подробнее, чем видит человек),
-`list_requests`, `get_request` (с историей условий), `list_alerts`, `resolve_alert`,
+`list_requests`, `get_request` (с историей условий), `get_personal_policy`,
+`save_personal_policy`, `list_alerts`, `resolve_alert`,
 `ai_resolve_alert` (System one выбирает действие из допустимых), `list_engineers`,
 `set_engineer_availability`, `get_policies`, `select_policy`,
+`get_manual_state`, `edit_manual_decision`, `remove_manual_decision`,
+`reorder_manual_priorities`,
 `get_router_controls`, `set_router_controls` (обеды, метро, пробки, оборудование),
 `set_control_mode` (`auto` / `manual`),
 `simulate_plan_change` (тот же набор рычагов, что у `POST /dispatch/simulate`:

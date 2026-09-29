@@ -503,10 +503,7 @@ describe('official dataset import', () => {
       assert.equal(
         await prisma.appState.count({
           where: {
-            OR: [
-              { key: { startsWith: 'policy.request-priority:' } },
-              { key: 'manual.session' },
-            ],
+            OR: [{ key: { startsWith: 'policy.request-priority:' } }, { key: 'manual.session' }],
           },
         }),
         0,

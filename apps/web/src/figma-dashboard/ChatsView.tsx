@@ -25,8 +25,8 @@ const HAIRLINE = 'rgba(114,116,120,0.25)';
 
 /** Join and leave notes from before dividers replaced them. They are not part of the stream. */
 const HANDOFF_NOISE = [
-  'Диспетчер подключился к чату.',
-  'Диспетчер завершил чат.',
+  t('figma-dashboard.ChatsView.handoffJoined'),
+  t('figma-dashboard.ChatsView.handoffLeft'),
 ];
 
 export interface ChatsViewProps {
@@ -77,9 +77,7 @@ function handoffMessage(chat: DispatchChatView): AiMessage | undefined {
   const end = chat.handoff.endSeq;
   const inWindow = chat.messages.filter(
     (message) =>
-      message.seq > start &&
-      (end === null || message.seq <= end) &&
-      !isHandoffNoise(message.text),
+      message.seq > start && (end === null || message.seq <= end) && !isHandoffNoise(message.text),
   );
   return inWindow[inWindow.length - 1];
 }
@@ -300,9 +298,7 @@ export function ChatsView({
   }
 
   const handoffOpen =
-    selected !== null &&
-    selected.handoff.state !== 'closed' &&
-    selected.conversation.mode !== 'ai';
+    selected !== null && selected.handoff.state !== 'closed' && selected.conversation.mode !== 'ai';
   const threadName = selected ? chatName(selected) : (pendingEngineer?.displayName ?? '');
   const threadPortrait = selected
     ? portraitForChat(selected)
@@ -445,9 +441,7 @@ export function ChatsView({
                 className="figma-nowrap block font-semibold text-[18px] text-[#727478]"
                 style={{ marginTop: 5 }}
               >
-                {selected
-                  ? chatStatus(selected)
-                  : t('figma-dashboard.ChatsView.startEngineerChat')}
+                {selected ? chatStatus(selected) : t('figma-dashboard.ChatsView.startEngineerChat')}
               </FigmaText>
             </span>
             <span className="flex-1" />
@@ -743,41 +737,43 @@ function Bubble({
 }) {
   const mine = message.author === 'dispatcher';
   return (
-    <>
-      <motion.div
-        className={`flex w-full items-start ${mine ? 'justify-end' : 'justify-start'}`}
-        style={{ gap: 12 }}
-        initial={motionOn ? { opacity: 0, y: 12 } : false}
-        animate={{ opacity: 1, y: 0 }}
-        transition={motionOn ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+    <motion.div
+      className={`flex w-full items-start ${mine ? 'justify-end' : 'justify-start'}`}
+      style={{ gap: 12 }}
+      initial={motionOn ? { opacity: 0, y: 12 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={motionOn ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+    >
+      {mascot ? (
+        <img
+          alt=""
+          src={mascot}
+          className="shrink-0 rounded-full object-cover"
+          style={{ width: 48, height: 48 }}
+        />
+      ) : null}
+      <div
+        className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
+        style={{
+          maxWidth: mascot ? BUBBLE_MAX - 60 : BUBBLE_MAX,
+          borderRadius: 20,
+          padding: '18px 24px',
+        }}
       >
-        {mascot ? (
-          <img
-            alt=""
-            src={mascot}
-            className="shrink-0 rounded-full object-cover"
-            style={{ width: 48, height: 48 }}
-          />
-        ) : null}
-        <div
-          className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
-          style={{ maxWidth: mascot ? BUBBLE_MAX - 60 : BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
-        >
-          {mine ? (
-            <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>
-          ) : (
-            /*
-             * Only this side. The assistant answers in Markdown — lists, bold, code — and
-             * a dispatcher typing into the box below writes plain text, which Markdown
-             * would only find stray asterisks in. `AiMarkdown` takes its size from here,
-             * so the bubble states the frame's 20/medium itself.
-             */
-            <span className="block text-[20px]">
-              <AiMarkdown text={message.text} />
-            </span>
-          )}
-        </div>
-      </motion.div>
-    </>
+        {mine ? (
+          <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>
+        ) : (
+          /*
+           * Only this side. The assistant answers in Markdown — lists, bold, code — and
+           * a dispatcher typing into the box below writes plain text, which Markdown
+           * would only find stray asterisks in. `AiMarkdown` takes its size from here,
+           * so the bubble states the frame's 20/medium itself.
+           */
+          <span className="block text-[20px]">
+            <AiMarkdown text={message.text} />
+          </span>
+        )}
+      </div>
+    </motion.div>
   );
 }

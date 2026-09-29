@@ -3,6 +3,7 @@ import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
 import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
 import { reserveNameFor } from '../../common/reserve-name';
+import { configuredTimeZone } from '../../common/time/zone';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
@@ -73,11 +74,16 @@ export class AppliedPlanService {
     } else {
       await this.archiveCoveringEngineers(tx, now);
     }
-    await persistHandoffs(tx, main, workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'), now);
+    await persistHandoffs(
+      tx,
+      main,
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
+      now,
+    );
     await persistLogistics(
       tx,
       main,
-      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
       now,
     );
     await this.materialise(tx, plan.id, main);
@@ -89,7 +95,7 @@ export class AppliedPlanService {
       now,
       main,
       result.result_id,
-      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
     );
     await this.alerts.invalidateOtherRouterConditions(tx, now, result.result_id);
     await this.alerts.recordPlanRebuilt(tx, now, result.result_id);
@@ -458,7 +464,7 @@ export class AppliedPlanService {
         },
         alerts: [],
       },
-      workDateOf(Number(source.planAsOf), 'Europe/Moscow'),
+      workDateOf(Number(source.planAsOf), configuredTimeZone()),
       now,
     );
   }
@@ -856,6 +862,13 @@ export class AppliedPlanService {
     });
     const known = new Set(existing.map((row) => row.id));
     const missing = coveringIds.filter((engineerId) => !known.has(engineerId));
+    const restored = await tx.engineer.updateMany({
+      where: { id: { in: coveringIds }, archivedAt: { not: null } },
+      data: { archivedAt: null, updatedAt: BigInt(now) },
+    });
+    if (restored.count > 0) {
+      await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED);
+    }
     if (missing.length === 0) {
       return;
     }

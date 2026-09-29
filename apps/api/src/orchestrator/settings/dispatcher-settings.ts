@@ -124,14 +124,25 @@ export function parseDispatcherSettings(value: unknown): DispatcherSettings {
     return { ...DEFAULT_DISPATCHER_SETTINGS };
   }
   const next = parsed.data;
-  if (next.dayEndMin <= next.dayStartMin) {
+  const raw =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  // The single day clock predates the two patterns. A stored document that never
+  // set 2/2 keeps that clock as the 2/2 window instead of jumping to 10:00–22:00.
+  const inherited = {
+    ...next,
+    twoTwoStartMin: 'twoTwoStartMin' in raw ? next.twoTwoStartMin : next.dayStartMin,
+    twoTwoEndMin: 'twoTwoEndMin' in raw ? next.twoTwoEndMin : next.dayEndMin,
+  };
+  if (inherited.dayEndMin <= inherited.dayStartMin) {
     return {
       ...DEFAULT_DISPATCHER_SETTINGS,
-      ...next,
+      ...inherited,
       dayEndMin: DEFAULT_DISPATCHER_SETTINGS.dayEndMin,
     };
   }
-  return next;
+  return inherited;
 }
 
 /** Merges a patch. `null` on a key clears it; omitted keys stay. */

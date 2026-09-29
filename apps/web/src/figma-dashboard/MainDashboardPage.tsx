@@ -1411,7 +1411,7 @@ export function MainDashboardPage() {
                               setActiveNav('engineers');
                             }}
                             onWriteToEngineer={
-                              !dash.token || !dash.selectedEngineer
+                              dash.writesDisabled || !dash.selectedEngineer
                                 ? undefined
                                 : () =>
                                     openChatWith({

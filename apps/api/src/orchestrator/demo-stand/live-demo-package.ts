@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { zonedWallUnix } from '../../common/time/zone';
 import type { Skill } from '../../generated/prisma/client';
 import type { UploadDataPackageInput } from '../imports/upload-import.service';
 
@@ -51,7 +52,7 @@ export function liveDemoGeocodePath(datasetRoot: string): string {
 /** Builds a deterministic 09:00–20:00 Moscow day using cached real map nodes. */
 export function buildLiveDemo(workDate: string, datasetRoot: string): UploadDataPackageInput {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new Error('Expected YYYY-MM-DD');
-  const start = Date.parse(`${workDate}T09:00:00+03:00`) / 1000;
+  const start = zonedWallUnix(`${workDate}T09:00:00`);
   if (
     !Number.isSafeInteger(start) ||
     new Date(start * 1000).toISOString().slice(0, 10) !== workDate

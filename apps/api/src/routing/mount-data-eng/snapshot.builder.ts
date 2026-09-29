@@ -51,15 +51,13 @@ export class SnapshotBuilder {
   constructor(private readonly config: AppConfigService) {}
 
   async build(tx: Tx, planningAsOf: number): Promise<BuiltSnapshot> {
-    const workDate = workDateOf(planningAsOf, this.config.get('APP_TIME_ZONE'));
+    let workDate = workDateOf(planningAsOf, this.config.get('APP_TIME_ZONE'));
     const previousDate = previousCalendarDate(workDate);
     const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     const policyId = active?.policyId ?? DEFAULT_POLICY_ID;
     const equipmentSettings = await readEquipmentSettings(tx);
     const manual = await readManualState(tx);
     const control = await tx.controlState.findUnique({ where: { id: 'singleton' } });
-    const decisions =
-      control?.mode === 'manual' && manual.workDate === workDate ? manual.decisions : [];
 
     const rawDays = await tx.engineerDay.findMany({
       where: {
@@ -78,7 +76,24 @@ export class SnapshotBuilder {
     // midnight the calendar key rolls, but the Unix bounds do not — dropping those
     // rows emptied the published task (0 engineers) while the dashboard still listed
     // every imported crew.
-    const days = pickCurrentDays(rawDays, workDate);
+    let days = pickCurrentDays(rawDays, workDate);
+    // An evening «Из ТЗ» import rebases the package onto the next whole day while
+    // the clock is still today. Publishing today's empty roster drops the crew.
+    // Fall forward one calendar day when today has no real shift and tomorrow does.
+    if (!days.some(hasShift)) {
+      const nextDate = nextCalendarDate(workDate);
+      const nextDays = await tx.engineerDay.findMany({
+        where: { workDate: nextDate },
+        include: { engineer: true },
+        orderBy: { engineer: { inputOrder: 'asc' } },
+      });
+      if (nextDays.some(hasShift)) {
+        workDate = nextDate;
+        days = nextDays;
+      }
+    }
+    const decisions =
+      control?.mode === 'manual' && manual.workDate === workDate ? manual.decisions : [];
 
     const horizon = horizonOf(days, planningAsOf);
     const executionByEngineer = await this.executionAnchors(
@@ -737,6 +752,11 @@ function hasShift(day: EngineerDay): boolean {
 /** Calendar day before `workDate` (`YYYY-MM-DD`), independent of the host timezone. */
 export function previousCalendarDate(workDate: string): string {
   return new Date(Date.parse(`${workDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Calendar day after `workDate` (`YYYY-MM-DD`), independent of the host timezone. */
+export function nextCalendarDate(workDate: string): string {
+  return new Date(Date.parse(`${workDate}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10);
 }
 
 /**

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
+import {
+  normalizeAddress,
+  parseSyntheticFile,
+} from '../../src/orchestrator/imports/dataset.parser';
 import { geocodePackageSchema } from '../../src/orchestrator/imports/dataset-import.service';
-import { normalizeAddress, parseSyntheticFile } from '../../src/orchestrator/imports/dataset.parser';
 
 /** Repo root, resolved from the compiled test location under `apps/api/dist-test/test/unit`. */
 const repoRoot = resolve(__dirname, '../../../../..');

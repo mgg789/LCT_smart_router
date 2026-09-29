@@ -52,7 +52,15 @@ const STREET_TYPES: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const HOUSE_KINDS = new Set(['house', 'building', 'office', 'apartments', 'construction']);
-const STREET_KINDS = new Set(['road', 'pedestrian', 'living_street', 'footway', 'service', 'path', 'highway']);
+const STREET_KINDS = new Set([
+  'road',
+  'pedestrian',
+  'living_street',
+  'footway',
+  'service',
+  'path',
+  'highway',
+]);
 
 /** Moscow and Moscow Oblast box used by the dataset geocoder: west,north,east,south. */
 export const MOSCOW_OBLAST_VIEWBOX = '35.8,56.3,39.8,54.2';
@@ -62,19 +70,31 @@ export function addressQueryLadder(address: string): string[] {
   const base = address.replace(/\s+/g, ' ').trim();
   let expanded = base;
   for (const [abbrev, full] of STREET_TYPES) {
-    expanded = expanded.replace(new RegExp(`\\b${abbrev}\\.\\s*`, 'gi'), `${full} `);
+    expanded = expanded.replace(
+      new RegExp(`(?<![\\p{L}\\p{N}])${abbrev}\\.\\s*`, 'giu'),
+      `${full} `,
+    );
   }
   expanded = expanded.replace(/\s+/g, ' ').trim();
   const compacted = expanded
-    .replace(/\bд\.\s*(\d+[А-Яа-я]?)\s*к\s*(\d+)/gi, '$1к$2')
-    .replace(/\bд\.\s*(\d+[А-Яа-я]?)\s*стр\.\s*(\d+)/gi, '$1с$2')
-    .replace(/\bд\.\s*(\d+[А-Яа-я]?)/gi, '$1');
-  const withoutHousing = compacted.replace(/[,\s]+к\s*\d+\s*$/i, '').replace(/[,\s]+стр\.\s*\d+\s*$/i, '').trim();
+    .replace(/(?<![\p{L}\p{N}])д\.\s*(\d+[А-Яа-я]?)\s*к\s*(\d+)/giu, '$1к$2')
+    .replace(/(?<![\p{L}\p{N}])д\.\s*(\d+[А-Яа-я]?)\s*стр\.\s*(\d+)/giu, '$1с$2')
+    .replace(/(?<![\p{L}\p{N}])д\.\s*(\d+[А-Яа-я]?)/giu, '$1');
+  const withoutHousing = compacted
+    .replace(/[,\s]+к\s*\d+\s*$/i, '')
+    .replace(/[,\s]+стр\.\s*\d+\s*$/i, '')
+    .trim();
   const withoutType = withoutHousing
-    .replace(/\b(бульвар|проспект|проезд|улица|шоссе|набережная|переулок|площадь)\s+/gi, '')
+    .replace(
+      /(?<![\p{L}\p{N}])(бульвар|проспект|проезд|улица|шоссе|набережная|переулок|площадь)\s+/giu,
+      '',
+    )
     .replace(/\s+/g, ' ')
     .trim();
-  const streetOnly = withoutHousing.replace(/,\s*\d+\S*\s*$/u, '').replace(/,\s*д\.\s*\S+\s*$/i, '').trim();
+  const streetOnly = withoutHousing
+    .replace(/,\s*\d+\S*\s*$/u, '')
+    .replace(/,\s*д\.\s*\S+\s*$/i, '')
+    .trim();
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const variant of [base, expanded, compacted, withoutHousing, withoutType, streetOnly]) {
@@ -87,7 +107,10 @@ export function addressQueryLadder(address: string): string[] {
 }
 
 /** House beats street. Anything coarser is not a located address. */
-export function matchLevelOf(candidate: { class?: unknown; type?: unknown }): AddressMatchLevel | null {
+export function matchLevelOf(candidate: {
+  class?: unknown;
+  type?: unknown;
+}): AddressMatchLevel | null {
   const kinds = new Set(
     [candidate.class, candidate.type]
       .filter((value): value is string => typeof value === 'string')
@@ -100,7 +123,7 @@ export function matchLevelOf(candidate: { class?: unknown; type?: unknown }): Ad
 
 /**
  * Deterministic point inside the Moscow and Moscow Oblast box.
- * Used only when the dispatcher asks to approximate, or a search returns nothing usable.
+ * Kept for tests. Live geocoding does not invent a point for a miss.
  */
 export function approximateAddress(address: string): { lat: number; lon: number } {
   let hash = 2166136261;

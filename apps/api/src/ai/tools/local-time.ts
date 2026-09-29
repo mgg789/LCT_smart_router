@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
+import { timeZoneOffsetSeconds } from '../../common/time/zone';
 
 /**
  * The one place a tool argument's local date or time is turned into a Unix second.
@@ -44,21 +45,4 @@ export function localToUnixSeconds(date: string, time: string, timeZone: string)
   const utcGuessSeconds = Date.UTC(year, month - 1, day, hour, minute, 0) / 1000;
   const offsetSeconds = timeZoneOffsetSeconds(utcGuessSeconds, timeZone);
   return utcGuessSeconds - offsetSeconds;
-}
-
-/** UTC offset of `timeZone` at `atSeconds`, in seconds east of UTC. */
-function timeZoneOffsetSeconds(atSeconds: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    timeZoneName: 'shortOffset',
-  }).formatToParts(new Date(atSeconds * 1000));
-  const tzName = parts.find((part) => part.type === 'timeZoneName')?.value ?? 'GMT+0';
-  const match = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(tzName);
-  if (!match) {
-    return 0;
-  }
-  const sign = match[1] === '-' ? -1 : 1;
-  const hours = Number(match[2]);
-  const minutes = match[3] ? Number(match[3]) : 0;
-  return sign * (hours * 3600 + minutes * 60);
 }

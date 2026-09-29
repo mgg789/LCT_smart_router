@@ -8,36 +8,28 @@ export interface PlacedPoint {
   readonly lon: number;
 }
 
-/** Same box and hash as the API approximator, so an offline click stays deterministic. */
-function approximateAddress(address: string): PlacedPoint {
-  let hash = 2166136261;
-  for (const char of address) {
-    hash ^= char.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  const unit = (shift: number) => ((hash >>> shift) & 0xffff) / 0xffff;
-  return {
-    lon: 35.8 + unit(0) * (39.8 - 35.8),
-    lat: 54.2 + unit(16) * (56.3 - 54.2),
-  };
-}
-
 /**
- * Asks whether address-only rows should be geocoded or approximated.
- * Geocoding stays on LocationIQ; a miss is marked approximate and is not sent to another provider.
+ * Asks whether address-only rows should be geocoded.
+ * A miss stays without coordinates. Built-in geocodes are never replaced by a guess.
  */
 export function AddressGeocodeDialog({
   token,
   addresses,
   onDone,
+  onCancel,
 }: {
   token: string;
   addresses: readonly string[];
   onDone: (points: Record<string, PlacedPoint>) => void;
+  onCancel: () => void;
 }) {
   const offline = isNavixOffline();
   const unique = useMemo(
-    () => [...new Set(addresses.map((address) => address.trim()).filter((address) => address.length >= 3))],
+    () => [
+      ...new Set(
+        addresses.map((address) => address.trim()).filter((address) => address.length >= 3),
+      ),
+    ],
     [addresses],
   );
   const minutes = Math.max(1, Math.ceil((unique.length * 6) / 60 / 60));
@@ -55,10 +47,8 @@ export function AddressGeocodeDialog({
     return () => window.clearInterval(timer);
   }, [running]);
 
-  const approximate = () => {
-    const next: Record<string, PlacedPoint> = {};
-    for (const address of unique) next[address] = approximateAddress(address);
-    setPoints(next);
+  const leaveUnplaced = () => {
+    setPoints({});
     setSummary(
       t('figma-dashboard.AddressGeocodeDialog.summary', {
         value0: 0,
@@ -135,10 +125,18 @@ export function AddressGeocodeDialog({
               <button
                 type="button"
                 disabled={running}
-                className="h-[48px] flex-1 rounded-[16px] bg-figma-cancel font-semibold text-white disabled:opacity-50"
-                onClick={approximate}
+                className="h-[48px] flex-1 rounded-[16px] bg-figma-soft font-semibold disabled:opacity-50"
+                onClick={leaveUnplaced}
               >
                 {t('figma-dashboard.AddressGeocodeDialog.approximate')}
+              </button>
+              <button
+                type="button"
+                disabled={running}
+                className="h-[48px] flex-1 rounded-[16px] font-semibold text-figma-muted disabled:opacity-50"
+                onClick={onCancel}
+              >
+                {t('figma-dashboard.AddressGeocodeDialog.cancel')}
               </button>
             </>
           )}
