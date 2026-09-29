@@ -5,6 +5,7 @@ import type { DashboardSnapshot, EngineerView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import { RequestPassport } from '../components/passports/PassportDetails';
 import { t } from '../i18n';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
 import { ManualRequestControls } from './ManualPlanning';
@@ -51,6 +52,7 @@ export function RequestDetailView({
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
+  const { dx, dy } = useArtboardStretch();
   const model =
     (snapshot ? requestDetailFromSnapshot(snapshot, requestId) : null) ?? demoDetail(requestId);
   if (!model) return null;
@@ -59,7 +61,7 @@ export function RequestDetailView({
     <>
       <div
         className="absolute left-[180px] z-30 flex items-center gap-[17px]"
-        style={{ top: DATE_TOP, height: TITLE_ROW_HEIGHT, width: 1194 }}
+        style={{ top: DATE_TOP, height: TITLE_ROW_HEIGHT, width: 1194 + dx }}
       >
         <motion.button
           type="button"
@@ -82,7 +84,11 @@ export function RequestDetailView({
 
       <motion.section
         className="absolute overflow-hidden rounded-[20px] bg-white"
-        style={{ left: 180, top: PANEL_TOP, width: 1194, height: MAP_HEIGHT }}
+        // Spare board width and height go to the map and the panel beside it, the
+        // way the requests table already takes them. Pinned at the drawn size they
+        // left a band of empty canvas under and beside the screen on anything that
+        // is not exactly 16:9.
+        style={{ left: 180, top: PANEL_TOP, width: 1194 + dx, height: MAP_HEIGHT + dy }}
         initial={animate ? { opacity: 0, y: 12 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={animate ? fadeSoft : { duration: 0 }}
@@ -105,8 +111,8 @@ export function RequestDetailView({
       </motion.section>
 
       <motion.aside
-        className="absolute left-[1406px] w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
-        style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+        className="absolute w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
+        style={{ left: 1406 + dx, top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
         initial={animate ? { opacity: 0, x: 28 } : false}
         animate={{ opacity: 1, x: 0 }}
         transition={animate ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
@@ -160,7 +166,7 @@ function RequestDetailPanel({
   ];
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto px-[27px] pt-[24px] pb-[24px]">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto overflow-x-hidden px-[27px] pt-[24px] pb-[24px]">
       <Copyable
         value={shortRequestId(model.id)}
         label={t('figma-dashboard.RequestDetailView.fd3834086e')}
