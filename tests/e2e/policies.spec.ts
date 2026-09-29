@@ -58,7 +58,9 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   await calculate.click();
   const coverage = page.getByRole('region', { name: 'Сколько заявок удаётся назначить' });
   await expect(coverage).toBeVisible({ timeout: 30_000 });
-  await expect(coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовое' })).toBeVisible();
+  await expect(
+    coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовая из ТЗ' }),
+  ).toBeVisible();
   await expect(page.getByRole('region', { name: 'Дорога на назначение' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Доля опозданий' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Задействованные инженеры' })).toBeVisible();
