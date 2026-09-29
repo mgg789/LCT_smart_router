@@ -441,6 +441,16 @@ body {
 }
 
 /*
+ * A phone column inside a desk sheet takes the sheet's width, not its own 430: the
+ * sign-in otherwise sat a third narrower than the customer's gate and than the app it
+ * opens into, which is what made it read as cropped at the sides on a desktop.
+ */
+.phone-desk-sheet .engineer-phone,
+.phone-desk-sheet .client-phone {
+  --phone-width: inherit;
+}
+
+/*
  * The open request is shown whole, without a scrollbar: it is one screen about
  * one visit, and hiding half of it below the fold is the thing a desk is
  * supposed to fix. `zoom` rather than a transform, so the content still lays

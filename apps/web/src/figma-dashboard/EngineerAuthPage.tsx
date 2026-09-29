@@ -5,6 +5,7 @@ import type { EngineerAuthSession } from '../api/types';
 import { isEngineerDesignPreview } from '../figma-engineer/designPreview';
 import { EngineerApp } from '../figma-engineer/EngineerApp';
 import { EngineerLogin } from '../figma-engineer/EngineerLogin';
+import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import {
   clearEngineerSession,
   readEngineerSession,
@@ -15,6 +16,7 @@ import {
  */
 export function EngineerAuthPage() {
   const motionOn = !useReducedMotion();
+  const desk = usePhoneDesk();
   const [session, setSession] = useState(() => readEngineerSession(window.localStorage));
 
   const accept = (next: EngineerAuthSession, email: string) => {
@@ -59,7 +61,12 @@ export function EngineerAuthPage() {
 
   return (
     <main className="min-h-full bg-figma-canvas">
-      <EngineerLogin motionOn={motionOn} onSession={accept} />
+      {/* On a desk the sign-in takes the same column width as the customer's gate and
+          as the app it opens into. Left at the phone's own 430 it sat as a thin strip
+          in the middle of a desktop window, narrower than everything that follows. */}
+      <div className={desk ? 'phone-desk-sheet min-h-full' : 'min-h-full'}>
+        <EngineerLogin motionOn={motionOn} onSession={accept} />
+      </div>
     </main>
   );
 }
