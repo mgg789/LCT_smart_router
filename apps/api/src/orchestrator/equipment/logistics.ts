@@ -76,6 +76,14 @@ export async function persistLogistics(
         job.start_at < stop.end_at
       )
         throw new SysError('RESULT_NOT_APPLICABLE', 'Invalid office pickup witness');
+      const reserved = await tx.equipmentLogistics.findUnique({
+        where: { workDate_requestId: { workDate, requestId: metadata.request_id } },
+      });
+      if (reserved)
+        throw new SysError(
+          'RESULT_NOT_APPLICABLE',
+          'Equipment action duplicates a reservation for this request',
+        );
       await tx.equipmentLogistics.create({
         data: {
           id: metadata.logistics_id,

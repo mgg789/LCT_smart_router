@@ -167,8 +167,25 @@ def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: Tra
             continue
         # The preceding handoff pass already tried available donors. Stock on an
         # unavailable donor cannot block a feasible office trip by the recipient.
+        # A frozen pickup already owns this request. A second office stop for the
+        # same request_id violates the System Layer's one-reservation key and
+        # leaves the previous receiver holding equipment for work they no longer have.
+        owner = next(
+            (
+                route.engineer_id
+                for route in current.routes
+                for stop in route.stops
+                if stop.logistics is not None and stop.logistics.request_id == request.request_id
+            ),
+            None,
+        )
         found = False
-        for engineer in snapshot.engineers:
+        engineers = (
+            [engineer for engineer in snapshot.engineers if engineer.engineer_id == owner]
+            if owner is not None
+            else snapshot.engineers
+        )
+        for engineer in engineers:
             release = release_at(snapshot, engineer)
             if (request.region is not None and engineer.region is not None and request.region != engineer.region) or request.required_skill not in engineer.skills or not transport_matches(request.required_transport, engineer) or release is None:
                 continue
@@ -176,6 +193,36 @@ def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: Tra
             old = _route_steps(route)
             occupied = [stop for stop in route.stops if stop.kind in ("job", "lunch", "handoff", "delivery", "office_pickup")]
             original = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff) for stop in occupied]
+            if owner is not None:
+                for index in range(len(old) + 1):
+                    evaluations += 1
+                    if evaluations > EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                        return current
+                    candidate = schedule_steps(
+                        snapshot, engineer, old[:index] + [request.request_id] + old[index:], travel,
+                    )
+                    if candidate is None:
+                        continue
+                    observed = [
+                        (stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff)
+                        for stop in candidate.stops
+                        if stop.kind != "wait" and stop.request_id != request.request_id
+                    ]
+                    if observed != original:
+                        continue
+                    next_plan = assemble_plan(
+                        snapshot,
+                        [candidate if item.engineer_id == engineer.engineer_id else item for item in current.routes],
+                    )
+                    try:
+                        validate_plan(snapshot, next_plan, travel)
+                    except ValueError:
+                        continue
+                    current, found = next_plan, True
+                    break
+                if found:
+                    break
+                continue
             for depot in snapshot.depots:
                 if depot.region is not None and engineer.region is not None and depot.region != engineer.region:
                     continue

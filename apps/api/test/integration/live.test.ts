@@ -2021,6 +2021,27 @@ describe('LIVE workday', () => {
         } else if (outcome === 'none') {
           assert.equal(row.status, 'none');
           assert.equal(updated.lifecycle, 'cancelled');
+          assert.equal(
+            await prisma.notificationIntent.count({
+              where: { businessEventKey: `request_cancelled:${request.id}` },
+            }),
+            1,
+          );
+          assert.equal(
+            (
+              await prisma.requestConditionHistory.findFirst({
+                where: { requestId: request.id },
+                orderBy: { changedAt: 'desc' },
+              })
+            )?.reason,
+            'не найдено оборудование',
+          );
+          assert.equal(
+            await prisma.alert.count({
+              where: { code: 'EQUIPMENT_LOGISTICS_NONE', requestIds: { has: request.id } },
+            }),
+            1,
+          );
         } else {
           assert.equal(row.status, 'assigned');
           assert.equal(updated.lifecycle, 'in_progress');

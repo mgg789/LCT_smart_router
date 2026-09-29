@@ -28,6 +28,8 @@ export async function assertManualConflictResolved(
     return;
   if (
     action === 'manual.priorities' ||
+    action === 'manual.delete' ||
+    action === 'manual.decision.remove' ||
     action === 'control.auto' ||
     action.startsWith('live.') ||
     action.startsWith('request.fact.')

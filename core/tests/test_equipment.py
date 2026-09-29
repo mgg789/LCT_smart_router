@@ -4,6 +4,7 @@ import pytest
 from core.contracts import (
     Depot,
     Engineer,
+    EquipmentLogistics,
     EquipmentStock,
     PendingEquipmentHandoff,
     PendingEquipmentLogistics,
@@ -215,6 +216,41 @@ def test_enabled_office_pickup_assigns_stockless_job_without_moving_existing_job
     assert replayed_pickups[0].logistics == pickup.logistics
     assert replayed_pickups[0].start_at == pickup.start_at
     assert replayed.summary.assigned_count == 2
+
+
+def test_pending_office_pickup_is_not_duplicated_onto_another_engineer(snapshot, graph):
+    """A frozen office pickup stays the only reservation when another engineer is tried first."""
+    request = snapshot.requests[0].model_copy(update={"required_equipment": "router"})
+    holder = snapshot.engineers[0].model_copy(update={"equipment_stock": EquipmentStock(), "input_order": 1})
+    other = holder.model_copy(update={"engineer_id": "eng-2", "input_order": 0})
+    depot = Depot(depot_id="office", location=holder.start_location)
+    logistics = EquipmentLogistics(
+        logistics_id=f"office-pickup:{request.request_id}:{holder.engineer_id}:{depot.depot_id}",
+        kind="office_pickup",
+        request_id=request.request_id,
+        equipment_type="router",
+        receiver_engineer_id=holder.engineer_id,
+        depot_id=depot.depot_id,
+    )
+    task = snapshot.model_copy(update={
+        "requests": [request],
+        "engineers": [other, holder],
+        "depots": [depot],
+        "pending_equipment_logistics": [PendingEquipmentLogistics(
+            logistics=logistics, location=depot.location, at=snapshot.planning_as_of,
+        )],
+    })
+    plan = solve(task, GraphTravel(graph), SearchSettings(
+        time_limit_ms=200, solution_limit=4, access_buffer_sec=0, equipment_transfers_enabled=True,
+    )).main
+    pickups = [
+        stop for route in plan.routes for stop in route.stops
+        if stop.kind == "office_pickup" and stop.logistics is not None and stop.logistics.request_id == request.request_id
+    ]
+    assert len(pickups) == 1
+    assert pickups[0].logistics == logistics
+    assignment = next(item for item in plan.assignments if item.request_id == request.request_id)
+    assert assignment.engineer_id == holder.engineer_id
 
 
 def test_office_pickup_does_not_depend_on_unavailable_donor_stock(snapshot, graph):

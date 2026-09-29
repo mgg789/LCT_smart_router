@@ -468,6 +468,28 @@ describe('official dataset import', () => {
       const beforePointer = await prisma.routingCurrent.findUniqueOrThrow({
         where: { id: 'singleton' },
       });
+      const now = BigInt(Math.floor(Date.now() / 1000));
+      await prisma.appState.create({
+        data: {
+          key: 'policy.request-priority:2026-09-29',
+          value: { requestId: 'gone', version: '1' },
+          updatedAt: now,
+        },
+      });
+      await prisma.appState.create({
+        data: {
+          key: 'manual.session',
+          value: {
+            version: 2,
+            workDate: '2026-09-29',
+            reason: 'old',
+            decisions: [],
+            acknowledgedConflicts: [],
+            resolution: null,
+          },
+          updatedAt: now,
+        },
+      });
       const response = await call('POST', '/api/v1/dispatch/data/reset', dispatcherToken, {
         operationId: randomUUID(),
         kind: 'empty',
@@ -478,6 +500,17 @@ describe('official dataset import', () => {
       assert.equal(await prisma.request.count({}), 0);
       assert.equal(await prisma.engineer.count({}), 0);
       assert.equal(await prisma.importPackage.count({}), 0);
+      assert.equal(
+        await prisma.appState.count({
+          where: {
+            OR: [
+              { key: { startsWith: 'policy.request-priority:' } },
+              { key: 'manual.session' },
+            ],
+          },
+        }),
+        0,
+      );
       const afterPointer = await prisma.routingCurrent.findUniqueOrThrow({
         where: { id: 'singleton' },
       });
