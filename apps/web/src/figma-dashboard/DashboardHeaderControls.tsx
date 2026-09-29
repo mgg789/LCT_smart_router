@@ -766,8 +766,10 @@ function PolicySwitch({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
+        // The hint hides itself, but Escape keeps travelling: the dispatcher's mouse
+        // usually rests on a toggle while the panel is open, and swallowing the key here
+        // left Escape doing nothing visible to the panel they meant to close.
         if (event.key === 'Escape' && shown) {
-          event.stopPropagation();
           setShown(false);
           setHovering(false);
           setFocused(false);
