@@ -304,7 +304,11 @@ export function LiveControls({
                     onChange={(event) => setNote(event.target.value)}
                   />
                 </label>
-                <button type="submit" className={button} disabled={busy}>
+                <button
+                  type="submit"
+                  className="min-h-12 w-full rounded-[20px] bg-figma-bee px-4 py-3 font-semibold text-figma-ink disabled:opacity-50"
+                  disabled={busy}
+                >
                   {problem === 'eta'
                     ? t('figma-engineer.LiveControls.b5bf3f1e67')
                     : problem === 'delay'

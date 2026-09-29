@@ -13,6 +13,7 @@ import {
   equipmentWithSpares,
   readEquipmentSettings,
 } from '../equipment/equipment-policy';
+import { workDateAnchor } from '../live/live-clock';
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   type DispatcherSettings,
@@ -128,12 +129,14 @@ export class DatasetImportService {
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
   ): Promise<ImportBatchSummary> {
+    const horizonNow = await this.liveHorizonNow(context, timeZoneOffsetSec);
     const prepared = this.prepareRegions(
       context,
       regions,
       datasetRoot,
       timeZoneOffsetSec,
       engineerCountPerRegion,
+      horizonNow,
     );
     return this.importPreparedRegions(context, prepared, timeZoneOffsetSec);
   }
@@ -145,18 +148,34 @@ export class DatasetImportService {
     datasetRoot: string,
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
+    horizonNow: number = context.now,
   ): PreparedOfficialRegion[] {
     return regions.map((region) =>
       serializePreparedRegion(
         this.prepareRegion(
-          context,
           region,
           datasetRoot,
           timeZoneOffsetSec,
           engineerCountPerRegion[region] ?? null,
+          horizonNow,
         ),
       ),
     );
+  }
+
+  /**
+   * Clock used to place official windows.
+   *
+   * A running LIVE day keeps the package on that calendar date, even when the
+   * wall clock is already evening. Without a running day the wall clock is used.
+   */
+  async liveHorizonNow(context: OperationContext, offsetSec: number): Promise<number> {
+    const day = await context.tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { workDate: true },
+    });
+    return day ? workDateAnchor(day.workDate, offsetSec) : context.now;
   }
 
   /** Applies only the immutable JSON-safe batch captured during prepare. */
@@ -409,11 +428,11 @@ export class DatasetImportService {
   }
 
   private prepareRegion(
-    context: OperationContext,
     region: DatasetRegion,
     datasetRoot: string,
     timeZoneOffsetSec: number,
     engineerLimit: number | null,
+    horizonNow: number,
   ): PreparedRegion {
     const syntheticPath = resolve(datasetRoot, `${region}_synthetic_data.csv`);
     const controlPath = resolve(datasetRoot, `${region}_control_distribution.csv`);
@@ -424,7 +443,7 @@ export class DatasetImportService {
     const syntheticBytes = readFileSync(syntheticPath);
     const controlBytes = readFileSync(controlPath);
     const parsedSource = parseSyntheticFile(region, syntheticBytes, timeZoneOffsetSec);
-    const parsed = rebaseToLiveHorizon(parsedSource, context.now);
+    const parsed = rebaseToLiveHorizon(parsedSource, horizonNow);
     const allBrigades = parseBrigades(region, controlBytes);
     if (engineerLimit !== null && engineerLimit > allBrigades.length) {
       throw new SysError('VALIDATION_FAILED', 'Engineer count exceeds crews in the dataset', {
@@ -516,6 +535,24 @@ export class DatasetImportService {
         },
       });
       let engineerId = mapped?.internalId ?? null;
+      if (!engineerId) {
+        const named = await context.tx.engineer.findFirst({
+          where: { region: brigade.region, displayName: brigade.name, archivedAt: null },
+          select: { id: true },
+        });
+        if (named) {
+          engineerId = named.id;
+          await context.tx.externalIdMap.create({
+            data: {
+              source,
+              entityType: 'engineer',
+              externalId: brigade.name,
+              internalId: named.id,
+              createdAt: now,
+            },
+          });
+        }
+      }
       if (!engineerId) {
         const synthesized = synthesizeCrew(brigade.inputOrder);
         const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`

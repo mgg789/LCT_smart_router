@@ -369,9 +369,7 @@ export class LiveReadProjection {
               at: afterLunch.startAt,
             }
           : next,
-        occurredAt:
-          lunch?.startedAt ??
-          Number(state.routeAnchorDepartedAt ?? state.activeLunchStartedAt ?? BigInt(liveNow)),
+        occurredAt: liveNow,
       };
     }
     if (activeRequestId) {
@@ -395,7 +393,7 @@ export class LiveReadProjection {
         anchor,
         lunch: null,
         next,
-        occurredAt: Number(state.routeAnchorDepartedAt),
+        occurredAt: liveNow,
       };
     }
     return {
@@ -408,9 +406,9 @@ export class LiveReadProjection {
       lunch: null,
       next,
       occurredAt:
-        nullableNumber(state.routeAnchorReachedAt) ??
-        nullableNumber(state.lineStartedAt) ??
-        liveNow,
+        state.lineStartedAt === null
+          ? (nullableNumber(state.routeAnchorReachedAt) ?? liveNow)
+          : liveNow,
     };
   }
 }

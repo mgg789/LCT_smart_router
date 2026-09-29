@@ -1499,9 +1499,51 @@ const officialImportSummarySchema = z
   })
   .passthrough();
 
-/**
- * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
- */
+const readyPackSchema = z.object({
+  id: z.string(),
+  group: z.enum(['demo', 'official']),
+  title: z.string(),
+  detail: z.string(),
+  requestCount: z.number().int().nonnegative(),
+  engineerCount: z.number().int().nonnegative(),
+});
+
+export type ReadyPack = z.infer<typeof readyPackSchema>;
+
+const readyPackResultSchema = z.object({
+  id: z.string(),
+  applied: z.boolean(),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  alreadyLoaded: z.boolean(),
+});
+
+export type ReadyPackResult = z.infer<typeof readyPackResultSchema>;
+
+/** Named datasets shipped with the installation, short demos first. */
+export function listReadyPacks(token: string): Promise<{ packs: ReadyPack[] }> {
+  return requestJson(
+    '/api/v1/dispatch/data/packs',
+    z.object({ packs: z.array(readyPackSchema) }),
+    token,
+  );
+}
+
+/** Loads one pack onto the running day. The same pack again creates nothing. */
+export function applyReadyPack(token: string, id: string): Promise<ReadyPackResult> {
+  return requestJson(
+    `/api/v1/dispatch/data/packs/${encodeURIComponent(id)}`,
+    readyPackResultSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    180_000,
+  );
+}
+
+/** Loads the official TZ dataset shipped in the repo (`regions: all`) without curl. */
 export async function importOfficialDataset(
   token: string,
   review?: ReviewImportQuality,

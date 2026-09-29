@@ -6,11 +6,11 @@ title = "LCT Smart Router"
 useDefault = true
 
 [allowlist]
-description = "Documented placeholders, the published jury login in README, and demo fixtures"
+description = "Documented placeholders, the published jury login in README, demo fixtures, and the launcher hash inventory"
 paths = [
   '''(^|/)\.env\.example$''',
   '''(^|/)README\.md$''',
   '''(^|/)demo/''',
   '''(^|/)docs/''',
-  '''(^|/)context/''',
+  '''(^|/)launch/manifest\.json$''',
 ]

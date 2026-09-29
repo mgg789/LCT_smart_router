@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { canonicalHash, canonicalJson } from '../../common/json';
+import { acceleratedLiveNow } from '../../orchestrator/live/live-clock';
 import type { Tx } from '../../persistence';
 import { lockRoutingCurrent } from '../../persistence';
 import type { PublicationTrigger } from './publication-triggers';
@@ -141,10 +142,6 @@ export class SnapshotPublisher {
         speedDurationSec: true,
       },
     });
-    if (day?.startedAtWallSec === null || day?.startedAtWallSec === undefined) return wallNow;
-    const elapsed = Math.max(0, wallNow - Number(day.startedAtWallSec));
-    const duration = Number(day.logicalEndAt) - Number(day.logicalStartAt);
-    const factor = day.speedDurationSec === null ? 1 : duration / Number(day.speedDurationSec);
-    return Number(day.logicalStartAt) + Math.floor(elapsed * factor);
+    return acceleratedLiveNow(day, wallNow);
   }
 }

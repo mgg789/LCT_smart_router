@@ -203,6 +203,9 @@ describe('HttpRouterClient', () => {
       fixedTravelTimeSec: 1200,
       earlyFinishReplanThresholdSec: 900,
       taskOverrunToleranceSec: 600,
+      solveTimeLimitMs: 6000,
+      verifyTimeLimitMs: 6000,
+      comparisonTimeLimitMs: 6000,
       routerContextVersion: 'ctx-old',
     });
     assert.deepEqual(
@@ -233,6 +236,9 @@ describe('HttpRouterClient', () => {
         fixedTravelTimeSec: 1200,
         earlyFinishReplanThresholdSec: 900,
         taskOverrunToleranceSec: 600,
+        solveTimeLimitMs: 6000,
+        verifyTimeLimitMs: 6000,
+        comparisonTimeLimitMs: 6000,
         routerContextVersion: 'ctx-new',
       },
     );
@@ -250,6 +256,9 @@ describe('HttpRouterClient', () => {
       fixed_travel_time_sec: 1200,
       early_finish_replan_threshold_sec: 900,
       task_overrun_tolerance_sec: 600,
+      solve_time_limit_ms: 6000,
+      verify_time_limit_ms: 6000,
+      comparison_time_limit_ms: 6000,
     });
   });
 
@@ -353,6 +362,9 @@ describe('HttpRouterClient', () => {
       fixedTravelTimeSec: 1200,
       earlyFinishReplanThresholdSec: 900,
       taskOverrunToleranceSec: 600,
+      solveTimeLimitMs: 6000,
+      verifyTimeLimitMs: 6000,
+      comparisonTimeLimitMs: 6000,
       routerContextVersion: 'ctx-new-controls',
     });
     const comparison = await client.getPolicyComparison();

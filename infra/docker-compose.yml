@@ -180,7 +180,8 @@ services:
       # Use the same shell/.env precedence as the Prometheus credential file.
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       # This local contour is the feature demo: today's walking engineer, passports
-      # and the rewind action. Unset DEMO_STAND in the shell env to keep a plain day.
+      # and the rewind action. The jury launcher sets DEMO_STAND=false so a
+      # fresh volume opens empty. A plain compose up keeps the seeded demo.
       DEMO_STAND: ${DEMO_STAND:-true}
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
       DATASET_ROOT: /app/data/dataset/anonymized
@@ -197,6 +198,7 @@ services:
       # Read-only bind mount rather than a copy into the image: the dataset is data, not
       # code, and the geocode sidecar the data zone will add must appear without a rebuild.
       - ../data/dataset:/app/data/dataset:ro
+      - ../data/samples:/app/data/samples:ro
     depends_on:
       postgres:
         condition: service_healthy

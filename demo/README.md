@@ -1,7 +1,7 @@
 # V1.0 demo recordings
 
 Recorded walkthrough of the public stand <https://navix.droidje.com> for jury
-review. Login is in the root [README](../README.md).
+review. Login data is on the Google Drive link attached with the LCT submission; the root [README](../README.md) points there and does not store the password.
 
 | File | What it shows |
 |---|---|

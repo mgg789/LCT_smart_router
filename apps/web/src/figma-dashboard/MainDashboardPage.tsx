@@ -55,6 +55,7 @@ import {
 import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaText } from './primitives';
+import { ReadyPacksModal } from './ReadyPacksModal';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
 import { RequestDetails, type RequestPaging } from './RequestDetails';
 import { RequestDetailView } from './RequestDetailView';
@@ -226,6 +227,7 @@ export function MainDashboardPage() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [packsOpen, setPacksOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(
@@ -922,8 +924,17 @@ export function MainDashboardPage() {
                 if (!dash.uploadingData) setUploadOpen(false);
               }}
               onUpload={dash.uploadDataset}
-              onImportOfficial={dash.importOfficialTzDataset}
+              onOpenReadyPacks={() => setPacksOpen(true)}
               onRoadImport={dash.importRoadResource}
+            />
+            <ReadyPacksModal
+              open={packsOpen}
+              token={dash.token}
+              busy={dash.uploadingData}
+              onClose={() => {
+                if (!dash.uploadingData) setPacksOpen(false);
+              }}
+              onApply={dash.applyReadyPackToDay}
             />
             <UserMenu
               manualMode={dash.snapshot?.plan.mode === 'manual'}

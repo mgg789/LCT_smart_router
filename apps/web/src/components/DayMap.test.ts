@@ -7,8 +7,19 @@ import {
   liveProgressSegments,
   lunchMarkerCoordinates,
   plannedRoadsCoverEdge,
+  showLiveJobPin,
   visiblePlannedSegments,
 } from './DayMap';
+
+describe('showLiveJobPin', () => {
+  it('drops a completed or cancelled visit and keeps an open one', () => {
+    expect(showLiveJobPin({ lifecycle: 'completed', assumedCompletedAt: null })).toBe(false);
+    expect(showLiveJobPin({ lifecycle: 'cancelled', assumedCompletedAt: null })).toBe(false);
+    expect(showLiveJobPin({ lifecycle: 'submitted', assumedCompletedAt: 10 })).toBe(false);
+    expect(showLiveJobPin({ lifecycle: 'submitted', assumedCompletedAt: null })).toBe(true);
+    expect(showLiveJobPin(null)).toBe(true);
+  });
+});
 
 describe('LIVE map factual projection', () => {
   const anchor = { kind: 'job' as const, requestId: 'done', lat: 55.75, lon: 37.61, at: 100 };
