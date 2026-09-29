@@ -56,7 +56,9 @@ fallback-провайдером для отдельных вызовов, а н�
 перепланирования пяти событий, точный gap-to-optimal на микро-инстансах
 (`core/exact_gap.py`, полный перебор с мемоизацией состояний), Монте-Карло-надёжность
 и повторный детерминизм. Квоты поиска детерминированы, поэтому колонки качества
-воспроизводимы на любой машине — от железа зависят только колонки времени.
+сверяются по хешам на зафиксированных версиях и параметрах. Раннее исчерпание
+wall-time в статическом OR-Tools-поиске может изменить результат; воспроизводимость
+динамических квот не является обещанием для любой сборки и машины.
 Методика и цифры после координат LocationIQ (Apple M5 Pro) —
 [benchmarks/solver-suite-20260929/README.md](./benchmarks/solver-suite-20260929/README.md).
 Снимок на центроидных проекциях и двух машинах —
@@ -315,14 +317,14 @@ core/tests/test_official_transport.py -q`.
 
 | Модуль | Ответственность |
 |---|---|
-| `core/types.py` | Слой JSON-контрактов: `SolverInput` / `PlanSolution`, парсинг «HH:MM» ↔ минуты |
-| `core/matrix.py` | Бэкенд матрицы времён: офлайн haversine × дорожный коэффициент × коэффициент часа (D-7); OSRM-кэш — будущий drop-in (D-5 без изменений) |
-| `core/model.py` | префильтр совместимости + OR-Tools-модель + извлечение маршрутов |
-| `core/reasons.py` | rule-based факторы объяснений (D-3, context/11 §3) |
-| `core/metrics.py` | объект метрик плана (подмножество context/14 §4) |
-| `core/gen.py` | сеяный генератор датасетов: `mini` (5×10, выполнимо) и `full` (10×80 по context/14 §5.1) |
-| `core/solve.py` | композиция `solve_task()` + CLI |
-| `core/studio.py` + `core/studio.html` | локальная интерактивная студия: добавление/отмена заявок на карте с репланами (dev-инструмент, не продуктовый API) |
+| `context/legacy_code/core/types.py` | Слой JSON-контрактов: `SolverInput` / `PlanSolution`, парсинг «HH:MM» ↔ минуты |
+| `context/legacy_code/core/matrix.py` | Бэкенд матрицы времён: офлайн haversine × дорожный коэффициент × коэффициент часа (D-7); OSRM-кэш — будущий drop-in прототипа |
+| `context/legacy_code/core/model.py` | Префильтр совместимости + OR-Tools-модель + извлечение маршрутов |
+| `context/legacy_code/core/reasons.py` | Rule-based факторы объяснений |
+| `context/legacy_code/core/metrics.py` | Объект метрик плана прототипа |
+| `context/legacy_code/core/gen.py` | Сеяный генератор `mini` и `full` |
+| `context/legacy_code/core/solve.py` | Композиция `solve_task()` + CLI |
+| `context/legacy_code/core/studio.py` + `context/legacy_code/core/studio.html` | Локальная студия замороженного прототипа |
 
 ## Перепланирование (warm start, D-4)
 
@@ -463,14 +465,14 @@ Pyright к runtime-зависимостям. Проверка всего product
 ```bash
 python -m venv core/.venv
 core/.venv/Scripts/python -m pip install -r core/requirements.txt   # Windows
-core/.venv/Scripts/python -m core.gen --scenario full --seed 42 --out data/full.json
-core/.venv/Scripts/python -m core.solve --input data/full.json --output data/solution.json
+core/.venv/Scripts/python -m core solve --graph core/examples/graph.json --snapshot core/examples/snapshot.json --output core/result.json
 core/.venv/Scripts/python -m pytest core/tests -q
 ```
 
-Оба CLI должны запускаться из корня репозитория (чтобы `core.types` не затенял
-стдбибный `types`); пути `--out`/`--output` ограничены текущей рабочей директорией
-через `core.cli.resolve_output_path` и отклоняются с кодом выхода 2 иначе.
+Эти команды относятся к текущему Router и выполняются из корня репозитория;
+в Linux/macOS используйте `core/.venv/bin/python`. `core.gen` и `core.solve`
+принадлежат архивному прототипу и больше не являются командами корневого `core/`.
+Его отдельные инструкции — [архивный README](../context/legacy_code/core/README.md).
 
 ## Референсные числа (2026-09-13, эта машина)
 
@@ -594,7 +596,7 @@ API/UI используют camelCase; старые настройки чита�
 из сравнения фиксированного состава. Смена политики не переносит память старой политики.
 
 Сравнение сначала собирает общий набор допустимых кандидатов и отдельно улучшает каждую
-политику от общего покрытия. Номинальный бюджет допускает 1…8000 мс; у динамического
+политику от общего покрытия. Текущий контракт бюджета допускает 1…120 000 мс; у динамического
 поиска он задаёт детерминированное число оценок, не точный wall-time. Время подготовки,
 полных конструктивных проходов и валидации входит в фактический `calculation_ms`.
 Результат не означает доказанную глобальную оптимальность.
@@ -686,7 +688,8 @@ API/UI используют camelCase; старые настройки чита�
   Dijkstra-деревьев), `nearest()` — по 0.01°-сетке вместо полного скана.
 - **Валидация против Яндекса** (29.09.2026): пять контрольных маршрутов
   (3 авто, 2 пешком+метро; час пик и день) — офлайн-прогноз сходится с
-  онлайн-оценкой Яндекс Карт в среднем на **8% (максимум 11%)** времени.
+  онлайн-оценкой Яндекс Карт с абсолютным отклонением в среднем
+  **8,1% (максимум 11,0%)** по отображённым временам этой выборки.
   Скриншоты, таблица и выводы —
   [benchmarks/roads-vs-yandex-20260929](./benchmarks/roads-vs-yandex-20260929/README.md).
 - **Запас при планировании**: сырые оценки route-engine3 — намеренный

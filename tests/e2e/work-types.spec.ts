@@ -36,9 +36,13 @@ test('dispatcher and anonymous client share grouped work types and a red emergen
     'true',
   );
   const clientPicker = page.getByRole('combobox', { name: 'Тип заявки', exact: true });
-  await expect(clientPicker.locator('option')).toHaveCount(16);
+  await expect(clientPicker).toHaveValue('');
+  await expect(clientPicker.locator('option[value=""]')).toHaveCount(1);
+  // The client requires an explicit choice; its placeholder is not a work type.
+  const clientWorkTypes = clientPicker.locator('option:not([value=""])');
+  await expect(clientWorkTypes).toHaveCount(16);
   expect(
-    await clientPicker.locator('option').evaluateAll((options) =>
+    await clientWorkTypes.evaluateAll((options) =>
       options.map((item) => ({
         code: (item as HTMLOptionElement).value,
         title: item.textContent,

@@ -38,7 +38,7 @@
 ```json
 {
   "command": "node",
-  "args": ["~/.mcp-servers/kan-mcp/kan-mcp.mjs"],
+  "args": ["C:/Users/<you>/.mcp-servers/kan-mcp/kan-mcp.mjs"],
   "env": {
     "KAN_BASE_URL": "https://task.droidje.com",
     "KAN_API_TOKEN": "<API-ключ>"
@@ -53,7 +53,7 @@ Codex (TOML):
 ```toml
 [mcp_servers.kan]
 command = "node"
-args = ["~/.mcp-servers/kan-mcp/kan-mcp.mjs"]
+args = ["C:/Users/<you>/.mcp-servers/kan-mcp/kan-mcp.mjs"]
 env = { KAN_BASE_URL = "https://task.droidje.com", KAN_API_TOKEN = "<API-ключ>" }
 ```
 

@@ -85,8 +85,8 @@ D-23; там ничего не менялось молча.
 
 ```bash
 git checkout dev && git pull
-cp .env.example .env          # обязательно: у учётных данных диспетчера нет дефолтов
-pnpm install
+cp .env.example .env          # затем задать DISPATCHER_EMAIL и DISPATCHER_PASSWORD (≥8 символов)
+pnpm install --frozen-lockfile
 pnpm compose:up               # docker compose -f infra/docker-compose.yml up -d --build
 ```
 
@@ -106,7 +106,16 @@ curl localhost:8000/health/services
 Router Core, который контур запускает отдельным сервисом (порт 8100, читает
 опубликованный снимок под read-only ролью в БД); `ai` сообщает `not_configured`.
 `smtp` — `not_configured` без `SMTP_HOST`, иначе проба внешнего контура
-(см. [smtp.md](./smtp.md)). Приложение спроектировано полноценно работать без почты.
+(см. [smtp.md](./smtp.md)). Диспетчер входит паролем независимо от почты. Клиенту
+и инженеру для входа по одноразовому коду нужен SMTP либо локальный
+`AUTH_DEV_EXPOSE_CODES=true` при `NODE_ENV=development`; в production код в ответ
+не выдаётся. Отказ почты не отменяет сохранённые заявки и план.
+
+Для подключённого ключа **2ГИС Routing API действует лимит 5 запросов в минуту**
+(подтверждён 29.09.2026). Проверка ключа в настройках тоже строит внешний маршрут
+и расходует квоту. При подготовке демо учитывайте общий расход ключа и используйте
+готовый кэш; ограничение параллельности не является минутным ограничителем.
+Подробности и состояние реализации — [квота текущего ключа 2ГИС](api.md#квота-текущего-ключа-2гис).
 
 ## 3. Повседневные команды
 
@@ -115,28 +124,32 @@ Router Core, который контур запускает отдельным �
 | `pnpm compose:up` | Собрать и запустить контур в фоне |
 | `pnpm compose:logs` | Следить за логами контейнеров |
 | `pnpm compose:down` | Остановить контур, сохранив том данных |
-| `pnpm --filter api build` | Скомпилировать сервис через `tsc` |
+| `pnpm --filter api build` | Скомпилировать сервис через `tsc` и проверить актуальность OpenAPI |
 | `pnpm --filter api test` | Собрать `src` + `test` и прогнать последовательно под `node:test` |
 | `pnpm --filter api typecheck` | Только типы, без вывода |
 | `pnpm --filter web dev` | Дашборд в dev-режиме на 127.0.0.1:5173 (vite) |
 | `pnpm --filter web test` | Тесты дашборда (vitest) |
-| `pnpm lint` / `pnpm format` | Biome check / write |
+| `pnpm lint` | Biome, i18n, OpenAPI и пороги покрытия тестами API/web |
+| `pnpm format` | Переформатировать файлы через Biome; команда пишет изменения |
 
 Запуск сервиса вне Docker, против базы из compose:
 
 ```bash
+pnpm install --frozen-lockfile
+pnpm --filter api exec prisma generate
 pnpm --filter api build
 node apps/api/dist/src/main.js
 ```
 
 Переменные окружения, относящиеся к ядру (все опциональные, см. `.env.example`):
 `ROUTER_BASE_URL` (где шлюз ищет Router Core; в compose — `http://router:8100`),
-`ROUTER_BUDGET_MS` (бюджет солвера, передаётся сервису ядра; по умолчанию 8000),
-`ROUTER_POLL_INTERVAL_MS` (период координатора превышений, по умолчанию 500),
+`ROUTER_BUDGET_MS` (начальный CLI-бюджет ядра в Compose; по умолчанию 6000 мс),
+`ROUTER_POLL_INTERVAL_MS` (период чтения результата Router шлюзом, по умолчанию 500 мс),
 `ROUTER_REQUEST_TIMEOUT_MS` (HTTP-таймаут шлюза, по умолчанию 3000).
 
-Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`, `geocode`,
-`project`, `export-map`, `prepare-2gis`, `schema`) и офлайн-ресурсы — быстрый старт
+Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`, `bench-suite`,
+`geocode`, `project`, `export-map`, `prepare-2gis`) и отдельный генератор схем
+`python -m core.schema`. Офлайн-ресурсы, быстрый старт
 и acceptance-бенчмарки: [core/README.md](../core/README.md). Сервис `router` в
 контуре запускается как `serve --official-regions east southeast south_central`
 с durable-технастройками в томе `router-state`.
@@ -148,7 +161,8 @@ Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`
 `http://road-api:8123`), а `ROUTER_ROAD_API_URL` остаётся legacy-fallback при отсутствии
 явного API-адреса. У переменных разные задачи: Router получает матрицу до поиска, API
 запрашивает полилинию выбранного плеча после него. При недоступности матрицы используется подготовленный региональный
-граф с сохранённым происхождением стоимости. Граф вендорен в `services/road-api` и
+граф с сохранённым происхождением стоимости. Автомобильный граф вендорен в
+`services/route-engine3/graphs/car/` и
 поднимается вместе с контуром двумя сервисами compose:
 `osrm` (граф MLD в tmpfs) и `road-api` (HTTP `/route2`). Отдельно:
 
@@ -179,8 +193,10 @@ System one (`/v1/choice`, `/v1/noul`) ищется по `JEV_API_URL`. На ма
 
 ## 4. Загрузка датасета
 
-Контур стартует пустым. Загрузка одного, нескольких или всех регионов данных
-организаторов:
+При `DEMO_STAND=false` обычный контур стартует пустым; Compose по умолчанию
+включает демо 14/3. В дашборде используйте подготовку импорта с просмотром
+замечаний перед подтверждением. Прямой API-импорт одного, нескольких или всех
+регионов организаторов:
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/dispatcher/password   -H 'content-type: application/json'   -d '{"email":"dispatcher@example.test","password":"<пароль из .env>"}' | jq -r .token)
@@ -261,10 +277,24 @@ read-only, так что обновлённый пакет не требует �
 
 ## 8. Smoke-гейт
 
+Предпочтительный воспроизводимый запуск — одноразовый контур, который сам
+применяет миграции, выполняет smoke, браузерные сценарии и проверку отказа Router:
+
 ```bash
-pnpm compose:up
-pnpm smoke
+pnpm test:regression
 ```
+
+На Windows запускайте из Git Bash либо `pnpm.cmd test:regression`, если Git Bash
+доступен в PATH. `C:\Windows\System32\bash.exe` — вход WSL и не является Git Bash.
+В PowerShell можно явно указать установленный Git Bash:
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' scripts/ci/run-regression.sh
+```
+
+Результаты и очистка временных ресурсов — `artifacts/regression/<run-id>/`.
+Для отдельного smoke уже поднятого одноразового контура выполните `pnpm smoke`;
+`SMOKE_BASE_URL` должен указывать именно на его API.
 
 `pnpm smoke` (AGENTS.md §11.1) прогоняет весь хребет по HTTP против **работающего
 контура**, а не в процессе: проверяется тот артефакт, который реально поставляется —
@@ -385,3 +415,16 @@ smoke-набор во время входа. Логи и браузерные а
 офлайн-изоляцию и получение настроек по PIN. Требования, сохранность данных и
 подготовка образов описаны в [руководстве лаунчера](launcher.md).
 Выдача пакетов настроек обслуживается отдельным [сервисом дистрибуции](distribution.md).
+
+## Синхронизация smoke с утренней выдачей оборудования
+
+Приёмка первого плана может выдать инженеру утренний комплект и опубликовать
+`engineer.equipment_issued`. Новый запас входит в снимок и меняет `inputHash`;
+это отдельный расчёт даже при прежних заявках и смене. Smoke ожидает актуальную
+публикацию, сверяет её точные UTF-8 байты и разрешает этот переход только при
+неизменных остальных полях задачи. Для данного инженера допускается только
+увеличение запаса; поколение набора и последовательность публикаций проверяются.
+Любое изменение окна, политики, исполнителя, смены или другое событие завершает
+проверку ошибкой. После перехода все назначения, ревизия и `appliedResult.inputHash`
+должны соответствовать новому снимку. Таймаут 45 секунд не увеличен, `lastResult`
+не используется как замена применённого плана.

@@ -62,7 +62,8 @@ pull request не запускаются.
 
 ### Задачи `ci`
 
-- **lint** — `pnpm lint` (Biome, i18n и актуальность OpenAPI) и `ruff check core`.
+- **lint** — `pnpm lint` (Biome, i18n, актуальность OpenAPI и пороги покрытия API/web)
+  и `ruff check core`.
   `lint:openapi` сам генерирует Prisma Client перед компиляцией: проверка работает
   и в чистом checkout без локальных артефактов предыдущей сборки.
 - **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
@@ -242,8 +243,9 @@ PR/мерж тимлида. Код в `dev` и зелёный локальный
 `restart=always`): `docker logs -f scw-light`, `docker restart scw-full`.
 PAT обновляется `/home/mgg/scw/install-pat.sh <токен>` (пишет конфиги,
 монтируемые в контейнеры), затем `docker restart scw-light scw-full`. Образы
-регрессии остаются в docker-кэше — при заполнении диска
-`docker system prune` (сейчас reclaimable ~140 ГиБ).
+регрессии остаются в docker-кэше. Перед очисткой диска измерьте текущий расход
+через `docker system df` и согласуйте область удаления: историческая оценка
+освобождаемого места не описывает сегодняшний хост.
 
 Воркеры работают от root внутри своих контейнеров с примонтированным
 docker-сокетом: контейнеры кубов пишут в workspace файлы от root, и
@@ -327,8 +329,8 @@ SSRF). Токен лежит в `/etc/navix-smtp/openrouter-mirror.env` на п�
 
 После обоих деплоев отдельная задача `health` ждёт 20 с и ещё раз проверяет
 публичный гейт плюс loopback `/health/live`, `/health/ready` и `/health/services`.
-Пайплайн красный, если `database`, `router` или `smtp` не `ok`. `ai` по-прежнему
-`not_configured` и в гейт не входит. Скрипты:
+Пайплайн красный, если `database`, `router` или `smtp` не `ok`. Статус `ai`
+зависит от провайдера и в этот гейт не входит. Скрипты:
 `scripts/ci/ssh-check-health.sh`, `scripts/ci/check-deploy-health.sh`,
 `scripts/ci/evaluate_health_services.py`.
 
@@ -400,7 +402,7 @@ sudo bash /home/mgg/navix/scripts/ci/install-navix-nginx.sh
   -HealthcheckUrl "https://navix.droidje.com/"
 ```
 
-## Порядок активации
+## Первоначальная активация (исторический порядок)
 
 1. Вмержить `feat/infra-sourcecraft-ci` в `dev`.
 2. Разложить deploy-ключ на сервер и приватную половину в SourceCraft **до** первого
