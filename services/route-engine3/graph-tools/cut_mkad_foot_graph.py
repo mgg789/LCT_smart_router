@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Cut the pedestrian/cyclist graph inside the buffered MKAD polygon.
 
 Host-side pass over the Central Federal District extract (same tactic as the

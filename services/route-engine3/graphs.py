@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Graph discovery and osrm-routed supervision for route-engine3.
 
 A graph is one subdirectory of the graphs root containing an OSRM page family
