@@ -3,7 +3,14 @@ import { t } from '../i18n';
 import { POLICY_DESCRIPTIONS, POLICY_LABELS } from './reasons';
 import { formatDurationMin } from './time';
 
-/** Dispatcher label for a comparison row, including the official FIFO baseline. */
+/**
+ * The one dispatcher-facing name of a strategy, including the official FIFO baseline.
+ *
+ * Every surface that names a strategy goes through this or `POLICY_LABELS` behind it. The
+ * comparison table used to keep its own shorter set, so the same policy was «Бережнее к
+ * окнам» in the picker and «По окнам» in the table, and the baseline had three names
+ * across three screens. The table columns are wide enough for the full names.
+ */
 export function strategyLabel(strategyId: StrategyId): string {
   return strategyId === 'baseline'
     ? t('lib.policyComparison.fbd36f8a94')

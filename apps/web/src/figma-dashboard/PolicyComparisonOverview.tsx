@@ -310,9 +310,7 @@ function ComparisonBars({
             <li key={row.strategyId}>
               <div className="mb-[6px] flex flex-wrap items-baseline justify-between gap-x-[12px] gap-y-[4px] text-[14px]">
                 <span className="font-semibold text-figma-ink">
-                  {row.strategyId === 'baseline'
-                    ? t('figma-dashboard.PolicyComparisonOverview.badc218718')
-                    : strategyLabel(row.strategyId)}
+                  {strategyLabel(row.strategyId)}
                   {usesReserve(row) ? ` (+${row.additionalEngineers})` : ''}
                 </span>
                 <span

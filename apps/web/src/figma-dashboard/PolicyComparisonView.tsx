@@ -11,7 +11,12 @@ import { unassignedRequests } from '../domain/dashboard';
 import { businessAt } from '../domain/liveClock';
 import type { RegionSelection } from '../domain/regions';
 import { locale, t } from '../i18n';
-import { comparisonValue, comparisonWinners, strategyDescription } from '../lib/policyComparison';
+import {
+  comparisonValue,
+  comparisonWinners,
+  strategyDescription,
+  strategyLabel,
+} from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 import { useArtboardStretch } from './artboardStretch';
 import { PolicyComparisonOverview } from './PolicyComparisonOverview';
@@ -21,16 +26,6 @@ import { FigmaText } from './primitives';
 export const POLICY_PAGE_CAPTION = t('figma-dashboard.PolicyComparisonView.2a62007976');
 
 const COLUMN_ORDER = ['baseline', 'fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const;
-
-const SHORT_NAME: Record<string, string> = {
-  baseline: t('figma-dashboard.PolicyComparisonView.90980a8366'),
-  fast: t('figma-dashboard.PolicyComparisonView.568e623109'),
-  compact: t('figma-dashboard.PolicyComparisonView.1024b68fd8'),
-  sla: t('figma-dashboard.PolicyComparisonView.3869fe38ea'),
-  balanced: t('figma-dashboard.PolicyComparisonView.94b4982ffa'),
-  eco: t('figma-dashboard.PolicyComparisonView.25907df14d'),
-  covering: t('figma-dashboard.PolicyComparisonView.0ae6737c4d'),
-};
 
 /**
  * Figma-styled policy comparison for the MAIN artboard.
@@ -335,7 +330,7 @@ export function PolicyComparisonView({
                               className="min-w-[168px] px-[12px] pb-[18px] align-top"
                             >
                               <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
-                                {SHORT_NAME[row.strategyId] ?? row.strategyId}
+                                {strategyLabel(row.strategyId)}
                               </div>
                               <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
                                 {strategyDescription(row.strategyId)}
