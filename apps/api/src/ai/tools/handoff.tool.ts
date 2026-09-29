@@ -157,11 +157,13 @@ async function identify(
       where: { clientAccountId: accountId },
       orderBy: { createdAt: 'desc' },
     });
-    if (!request) return { title: null, requestIds: [] };
-    return {
-      title: `Клиент · ${request.contactName?.trim() || request.addressText}`,
-      requestIds: [request.id],
-    };
+    const requestIds = request ? [request.id] : [];
+    const named = request && (request.contactName?.trim() || request.addressText.trim());
+    if (named) return { title: `Клиент · ${named}`, requestIds };
+    // Somebody who writes before filing anything still has to be addressable on the
+    // board; their sign-in address is the only handle both sides share.
+    const account = await tx.account.findUnique({ where: { id: accountId } });
+    return { title: account ? `Клиент · ${account.email}` : null, requestIds };
   }
   return { title: null, requestIds: [] };
 }
