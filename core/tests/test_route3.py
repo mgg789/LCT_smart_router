@@ -50,6 +50,22 @@ def test_quote_from_route3_provenance_and_segments():
     assert composite.provenance == "metro"
     assert [segment.provenance for segment in composite.segments] == ["route_api", "metro"]
     assert composite.segments[0].points[0] == GeoPoint(lat=55.75, lon=37.60)
+    residual = quote_from_route3(
+        {
+            "mode": "metro_composite",
+            "duration_s": 1500.2,
+            "distance_m": 6000.4,
+            "segments": [
+                {"kind": "walk", "duration_s": 400.2, "distance_m": 500.2},
+                {"kind": "metro", "duration_s": 1100.1, "distance_m": 5500.1},
+            ],
+        },
+        A,
+        B,
+    )
+    assert residual is not None
+    assert sum(segment.duration_sec for segment in residual.segments) == residual.duration_sec
+    assert sum(segment.distance_m for segment in residual.segments) == residual.distance_m
     straight = quote_from_route3({"mode": "straight", "duration_s": 10, "distance_m": 100}, A, B)
     assert straight.provenance == "approximate" and straight.geometry_exact is False
     assert quote_from_route3({"mode": "unreachable"}, A, B) is None
@@ -94,6 +110,78 @@ def test_prepared_route3_matrix_car_bands_and_walk_flat():
         matrix.quote_at(GeoPoint(lat=1.0, lon=2.0), B, "car", 0)
     with pytest.raises(TravelUnavailable):
         matrix.quote_at(A, B, "bike", 0)  # profile not prepared
+
+
+class _Base:
+    version = "base-v1"
+    provenance = "road_matrix"
+
+    def __init__(self):
+        self.asked = []
+
+    def quote(self, origin, destination, profile):
+        from core.geo import TravelQuote
+
+        self.asked.append(profile)
+        return TravelQuote(99, 999, (origin, destination), "road_matrix")
+
+
+def test_pedestrian_search_costs_come_from_the_route3_foot_graph():
+    from core.route3 import Route3PedestrianTravel
+
+    walk = _matrix_body(
+        "walk",
+        [
+            [{"mode": "self"}, {"mode": "road", "duration_s": 1446, "distance_m": 2008.3}],
+            [{"mode": "unreachable"}, {"mode": "self"}],
+        ],
+    )
+    base = _Base()
+    travel = Route3PedestrianTravel(base, PreparedRoute3Matrix("client-v1", {"walk": walk}, [A, B]))
+    foot = travel.quote(A, B, "walk")
+    assert (foot.duration_sec, foot.distance_m) == (1446, 2009)
+    assert base.asked == []
+    # A car and an out-of-graph foot cell keep the base estimate: no edge disappears.
+    assert travel.quote(A, B, "car").duration_sec == 99
+    assert travel.quote(B, A, "walk").duration_sec == 99
+    assert base.asked == ["car", "walk"]
+
+
+def test_verified_metro_composite_is_not_a_walk_only_answer():
+    from core.geo import TravelQuote
+    from core.route3 import VerifiedRoute3
+
+    composite = TravelQuote(1500, 6000, (A, B), "metro")
+    corrections = {(A.lat, A.lon, B.lat, B.lon, "transit"): composite}
+    verified = VerifiedRoute3(_Base(), corrections)
+    assert verified.quote(A, B, "walk").provenance == "road_matrix"
+    assert verified.quote(A, B, "transit") is composite
+
+
+def test_verification_asks_metro_only_for_transit_when_enabled():
+    from types import SimpleNamespace
+
+    from core.route3 import verify_plan_with_route3
+
+    calls = []
+
+    class Client:
+        def route(self, origin, destination, profile, *, traffic, metro, departure):
+            calls.append((profile, metro))
+            return {"mode": "road", "duration_s": 60, "distance_m": 100, "geometry": []}
+
+    def snapshot(profile):
+        engineer = SimpleNamespace(engineer_id="e", travel_profile=lambda: profile)
+        return SimpleNamespace(engineers=[engineer], requests=[], planning_as_of=0)
+
+    stop = SimpleNamespace(stop_id="s", kind="job", request_id="r", location=B, arrival_at=0)
+    plan = SimpleNamespace(
+        routes=[SimpleNamespace(engineer_id="e", start_location=A, stops=[stop], legs=[])]
+    )
+    verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=True)
+    verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=False)
+    verify_plan_with_route3(Client(), snapshot("walk"), plan, metro=True)
+    assert calls == [("transit", True), ("transit", False), ("walk", False)]
 
 
 def test_prepared_route3_matrix_rejects_mismatch():

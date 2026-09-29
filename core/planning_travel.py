@@ -381,7 +381,24 @@ def _prepared_travel(
         )
         if road is not None:
             base = MixedTravel(base, road)
+        base = _with_route3_foot(base, points)
     return base
+
+
+def _with_route3_foot(base: TravelSource, points: list[GeoPoint]) -> TravelSource:
+    """Give walk and bike search costs from the route3 foot graph when it is configured."""
+    from core.route3 import Route3PedestrianTravel, prepare_route3, route3_from_env
+
+    client = route3_from_env()
+    if client is None:
+        return base
+    prepared = _cached_prepared(
+        f"route3-foot:{client.version}:{client.offline}:{points}",
+        lambda: prepare_route3(client, points, departure=0, profiles=("walk", "bike")),
+    )
+    if prepared is None:
+        return base
+    return Route3PedestrianTravel(base, prepared)
 
 
 def planning_travel(

@@ -17,7 +17,15 @@ from typing import Literal
 from pydantic import Field, field_validator, model_validator
 
 from core.contracts import GeoPoint, Record, Transport
-from core.geo import TravelQuote, TravelSegment, TravelSource, content_hash, haversine_m, quote_at
+from core.geo import (
+    TravelQuote,
+    TravelSegment,
+    TravelSource,
+    content_hash,
+    haversine_m,
+    joined_segments,
+    quote_at,
+)
 
 
 class MetroStation(Record):
@@ -174,10 +182,27 @@ class MetroTravel:
             ).encode("utf-8")
         )
 
+    def _verified(self, origin: GeoPoint, destination: GeoPoint) -> TravelQuote | None:
+        """A transit pair already answered by /route3 verification, if any.
+
+        The verified route (walk or walk+metro+walk on real foot access) is the
+        final answer for that pair; the offline composite must not undercut it.
+        """
+        layer = self.travel
+        while layer is not None:
+            corrections = getattr(layer, "corrections", None)
+            if isinstance(corrections, dict):
+                return corrections.get((origin.lat, origin.lon, destination.lat, destination.lon, "transit"))
+            layer = getattr(layer, "travel", None)
+        return None
+
     def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
         """Compare the explicit transit profile with the metro composite."""
         if profile != "transit":
             return self.travel.quote(origin, destination, profile)
+        verified = self._verified(origin, destination)
+        if verified is not None:
+            return verified
         walking = self.travel.quote(origin, destination, "walk")
         if not self._inside_moscow(origin) or not self._inside_moscow(destination):
             return walking
@@ -192,6 +217,10 @@ class MetroTravel:
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int
     ) -> TravelQuote | None:
         """Build access, metro and egress segments only for supported city points."""
+        if profile == "transit":
+            verified = self._verified(origin, destination)
+            if verified is not None:
+                return verified
         # Transit uses pedestrian access and egress around the optional graph.
         base_profile = "walk" if profile in ("walk", "transit") else profile
         walking = quote_at(self.travel, origin, destination, base_profile, departure_at)
@@ -296,15 +325,19 @@ class MetroTravel:
                 if egress is None:
                     continue
                 metro_points = _path_points(path, self.stations)
-                segments = (
-                    TravelSegment(access.points, access.provenance, access.duration_sec, access.distance_m),
-                    TravelSegment(
-                        metro_points,
-                        "metro",
-                        self.network.enter_sec + self.network.wait_sec + path.duration_sec + self.network.exit_sec,
-                        path.distance_m,
+                segments = joined_segments(
+                    (
+                        TravelSegment(access.points, access.provenance, access.duration_sec, access.distance_m),
+                        TravelSegment(
+                            metro_points,
+                            "metro",
+                            self.network.enter_sec + self.network.wait_sec + path.duration_sec + self.network.exit_sec,
+                            path.distance_m,
+                        ),
+                        TravelSegment(egress.points, egress.provenance, egress.duration_sec, egress.distance_m),
                     ),
-                    TravelSegment(egress.points, egress.provenance, egress.duration_sec, egress.distance_m),
+                    origin,
+                    destination,
                 )
                 candidate = TravelQuote(
                     duration_sec=sum(segment.duration_sec for segment in segments),
@@ -333,16 +366,19 @@ class MetroTravel:
 def _path_points(path: _Path, stations: dict[str, "MetroStation"]) -> tuple[GeoPoint, ...]:
     """Middle-segment polyline: per-edge line geometry when present, else chords.
 
-    Edges are already in travel order; the join keeps only shared endpoints so
-    the result is one continuous polyline from entry to exit station.
+    Edges are already in travel order. Artifact line geometry is stored in one
+    direction and ends near, not on, the platforms, so each polyline is turned
+    to run from its source station and pinned to both station coordinates:
+    the ride is one continuous line from entry to exit station.
     """
     points: list[GeoPoint] = []
     for edge in path.edges:
-        polyline = edge.geometry or (
-            stations[edge.source].location,
-            stations[edge.target].location,
-        )
-        for point in polyline:
+        start = stations[edge.source].location
+        end = stations[edge.target].location
+        polyline = list(edge.geometry or ())
+        if polyline and haversine_m(polyline[-1], start) < haversine_m(polyline[0], start):
+            polyline.reverse()
+        for point in (start, *polyline, end):
             if not points or point != points[-1]:
                 points.append(point)
     return tuple(points)

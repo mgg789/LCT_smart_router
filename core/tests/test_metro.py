@@ -1,7 +1,14 @@
 """Offline metro selection, segment persistence and transport-policy regression tests."""
 
 from core.contracts import GeoPoint, RouterTechnicalSettings
-from core.geo import GraphTravel, RoadGraph, TravelQuote, configure_travel, routing_context_version
+from core.geo import (
+    GraphTravel,
+    RoadGraph,
+    TravelQuote,
+    configure_travel,
+    haversine_m,
+    routing_context_version,
+)
 from core.metro import MetroNetwork, MetroTravel, choose_metro, configured_metro_travel
 from core.schedule import baseline, eligible
 
@@ -72,6 +79,51 @@ def test_metro_shortest_path_includes_transfer_and_composite_segments():
     assert len(quote.segments[1].points) >= 2
     assert GeoPoint(lat=55.755, lon=37.620) in quote.segments[1].points
     assert MetroTravel(_WalkingTravel(), _network()).quote(origin, destination, "walk").provenance == "road_matrix"
+
+
+def test_metro_leg_is_one_continuous_line_even_with_reversed_offset_line_geometry():
+    network = _network()
+    # Artifact line stored target→source and ending ~50 m off both platforms.
+    stored = [GeoPoint(lat=55.7555, lon=37.6205), GeoPoint(lat=55.7505, lon=37.6005)]
+    edges = [
+        edge.model_copy(update={"geometry": stored}) if (edge.source, edge.target) == ("a", "b") else edge
+        for edge in network.edges
+    ]
+    network = network.model_copy(update={"edges": edges})
+    origin = GeoPoint(lat=55.7502, lon=37.6001)
+    destination = GeoPoint(lat=55.7601, lon=37.6502)
+
+    class Snapped(_WalkingTravel):
+        """Access routes snap onto the walk graph a few metres off the station."""
+
+        def quote(self, origin, destination, profile):
+            snapped = GeoPoint(lat=destination.lat + 0.0001, lon=destination.lon)
+            if haversine_m(origin, destination) < 500:
+                return TravelQuote(60, 50, (origin, snapped), "road_matrix")
+            return TravelQuote(1_800, 5_000, (origin, snapped), "road_matrix")
+
+    quote = MetroTravel(Snapped(), network).quote(origin, destination, "transit")
+    assert quote is not None and quote.provenance == "metro"
+    segments = quote.segments
+    assert segments[0].points[0] == origin and segments[-1].points[-1] == destination
+    for before, after in zip(segments, segments[1:]):
+        assert before.points[-1] == after.points[0]
+    ride = segments[1].points
+    assert ride[1] == GeoPoint(lat=55.750, lon=37.600)  # starts at the entry platform
+    assert ride.index(stored[1]) < ride.index(stored[0])  # line turned to the travel direction
+
+
+def test_verified_transit_pair_is_final_over_the_offline_composite():
+    from core.route3 import VerifiedRoute3
+
+    origin = GeoPoint(lat=55.750, lon=37.600)
+    destination = GeoPoint(lat=55.760, lon=37.650)
+    verified_walk = TravelQuote(2_400, 4_000, (origin, destination), "route_api", geometry_exact=True)
+    corrections = {(origin.lat, origin.lon, destination.lat, destination.lon, "transit"): verified_walk}
+    travel = MetroTravel(VerifiedRoute3(_WalkingTravel(), corrections), _network())
+    # The offline composite (~20 min) is faster on paper; /route3 said walking wins.
+    assert travel.quote(origin, destination, "transit") is verified_walk
+    assert travel.quote_at(origin, destination, "transit", 1_790_670_000) is verified_walk
 
 
 def test_metro_is_not_used_when_disabled_outside_boundary_or_unreachable():

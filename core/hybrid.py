@@ -1,4 +1,4 @@
-"""Hybrid planning: fast baseline solve, /route3 verification, one re-solve.
+"""Hybrid planning: fast baseline solve, then /route3 verify→re-solve rounds.
 
 The hybrid mode keeps planning latency dominated by the cheap prepared costs
 (haversine fallbacks or the regional graph) and spends the route-engine3
@@ -7,9 +7,11 @@ budget where it changes decisions:
 1. solve the snapshot with the fast provider as configured by planning_travel;
 2. verify every chosen leg against /route3 — traffic-factored car times,
    foot-graph pedestrian routes with metro composites;
-3. when the corrected schedule breaks any job window, re-solve once with the
-   verified pairs overriding the baseline costs; otherwise keep the fast plan
-   and report the drift.
+3. re-solve with those verified pairs, so the published geometry and
+   durations are the engine's, not the fast graph's. A re-solve may pick legs
+   nobody verified yet, so steps 2–3 repeat on the new plan's unverified legs
+   until none are left (``MAX_VERIFY_ROUNDS`` caps it). A window breach is
+   what the report calls out; it is not what decides whether pairs apply.
 
 The verification layer sits under the same technical stack (profile policy,
 forecast traffic, metro, weather) as the baseline: the corrected travel is
@@ -22,6 +24,7 @@ hybrid_plan degrades to a single fast solve and returns no report.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 
@@ -29,6 +32,9 @@ from core.contracts import RouterTaskSnapshot
 from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
 from core.geo import TravelSource, configure_travel
 from core.route3 import Route3Client, VerifiedRoute3, verify_plan_with_route3
+
+MAX_VERIFY_ROUNDS = 4
+"""Re-solves after the fast one; each round only adds pairs the new plan introduced."""
 
 
 def hybrid_enabled() -> bool:
@@ -67,30 +73,49 @@ def hybrid_plan(
     *,
     client: Route3Client | None = None,
 ) -> HybridRun:
-    """Run the fast→verify→(maybe)re-solve pipeline for one snapshot.
+    """Run the fast→verify→re-solve pipeline for one snapshot.
 
     Any verification failure (engine down, malformed body) degrades to the
     fast plan with no report: hybrid verification must never turn a working
     planner into an error.
     """
+    log = logging.getLogger(__name__)
     output = solve(snapshot, provider, settings, memory, context_version)
     if client is None:
         return HybridRun(output, provider, None)
-    try:
-        verification = verify_plan_with_route3(client, output.memory.snapshot, output.main)
-    except Exception as exc:  # noqa: BLE001 — any engine outage must degrade, not fail
-        import logging
-
-        logging.getLogger(__name__).warning(
-            "ROUTE3_VERIFICATION_UNAVAILABLE code=%s; keeping the fast plan", type(exc).__name__
+    chosen, chosen_provider, report = output, provider, None
+    corrections: dict = {}
+    for round_index in range(MAX_VERIFY_ROUNDS + 1):
+        try:
+            verification = verify_plan_with_route3(
+                client,
+                chosen.memory.snapshot,
+                chosen.main,
+                metro=settings.technical().metro_enabled,
+                known=corrections,
+            )
+        except Exception as exc:  # noqa: BLE001 — any engine outage must degrade, not fail
+            log.warning(
+                "ROUTE3_VERIFICATION_UNAVAILABLE code=%s; keeping the last plan", type(exc).__name__
+            )
+            return HybridRun(chosen, chosen_provider, report)
+        report = verification
+        if not verification["new_legs"]:
+            # Every leg of the chosen plan is already a verified pair.
+            return HybridRun(chosen, chosen_provider, report)
+        if round_index == MAX_VERIFY_ROUNDS:
+            break
+        corrections = verification["corrections"]
+        corrected_provider = configure_travel(
+            VerifiedRoute3(_unwrap_technical(provider), corrections),
+            settings.technical(),
+            snapshot.planning_as_of,
         )
-        return HybridRun(output, provider, None)
-    breaches = [row["window_breach"] for row in verification["routes"] if row["window_breach"]]
-    if not breaches or not verification["corrections"]:
-        return HybridRun(output, provider, verification)
-    corrected_base = VerifiedRoute3(_unwrap_technical(provider), verification["corrections"])
-    corrected_provider = configure_travel(
-        corrected_base, settings.technical(), snapshot.planning_as_of
-    )
-    corrected_output = solve(snapshot, corrected_provider, settings, memory, context_version)
-    return HybridRun(corrected_output, corrected_provider, verification)
+        try:
+            chosen = solve(snapshot, corrected_provider, settings, memory, context_version)
+        except Exception as exc:  # noqa: BLE001 — a bad verified quote must not discard the plan
+            log.warning("ROUTE3_RESOLVE_FAILED code=%s; keeping the last plan", type(exc).__name__)
+            return HybridRun(chosen, chosen_provider, report)
+        chosen_provider = corrected_provider
+    log.warning("ROUTE3_VERIFY_ROUNDS_EXHAUSTED; unverified legs keep fallback geometry")
+    return HybridRun(chosen, chosen_provider, report)

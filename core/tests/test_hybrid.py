@@ -26,9 +26,13 @@ class FakeOutput:
         self.memory = FakeMemory()
 
 
+class FakeTechnical:
+    metro_enabled = True
+
+
 class FakeSettings:
     def technical(self):
-        return "technical-settings"
+        return FakeTechnical()
 
 
 def test_hybrid_enabled(monkeypatch):
@@ -39,7 +43,12 @@ def test_hybrid_enabled(monkeypatch):
 
 
 def _patch_verification(monkeypatch, hybrid, report):
-    monkeypatch.setattr(hybrid, "verify_plan_with_route3", lambda client, snapshot, plan: report)
+    """The re-solved plan reuses the same pairs, so the second round adds none."""
+
+    def verify(client, snapshot, plan, *, known=None, **_kwargs):
+        return {**report, "new_legs": 0 if known else len(report["corrections"])}
+
+    monkeypatch.setattr(hybrid, "verify_plan_with_route3", verify)
 
 
 def test_hybrid_degrades_without_client(monkeypatch):
@@ -52,8 +61,11 @@ def test_hybrid_degrades_without_client(monkeypatch):
     assert run.verification is None and len(calls) == 1
 
 
-def test_hybrid_keeps_fast_plan_without_breach(monkeypatch):
+def test_hybrid_applies_verified_pairs_without_a_window_breach(monkeypatch):
     from core import hybrid
+
+    class FakeSnapshot:
+        planning_as_of = 0
 
     report = {
         "verified_legs": 3,
@@ -61,14 +73,47 @@ def test_hybrid_keeps_fast_plan_without_breach(monkeypatch):
         "routes": [{"engineer_id": "eng-1", "window_breach": None}],
     }
     _patch_verification(monkeypatch, hybrid, report)
+    providers = []
+
+    def fake_solve(snapshot, provider, settings, memory, context_version):
+        providers.append(provider)
+        return FakeOutput()
+
+    monkeypatch.setattr(hybrid, "solve", fake_solve)
+    run = hybrid_plan(FakeSnapshot(), FakeBase(), SearchSettings(), None, "ctx", client="client")
+    assert len(providers) == 2
+    corrected = hybrid._unwrap_technical(providers[1])
+    assert isinstance(corrected, VerifiedRoute3)
+    assert corrected.corrections is report["corrections"]
+    assert run.verification["corrections"] is report["corrections"]
+    assert run.provider is providers[1]
+
+
+def test_hybrid_verifies_legs_the_re_solve_introduced(monkeypatch):
+    from core import hybrid
+
+    class FakeSnapshot:
+        planning_as_of = 0
+
+    first = (A[0], A[1], B[0], B[1], "car")
+    second = (B[0], B[1], A[0], A[1], "car")
+    rounds = [{first}, {first, second}, {first, second}]
     calls = []
-    monkeypatch.setattr(
-        hybrid, "solve", lambda *args, **kwargs: calls.append(args[1]) or FakeOutput()
-    )
-    run = hybrid_plan("snapshot", "provider", FakeSettings(), None, "ctx", client="client")
-    assert len(calls) == 1  # no breach → no re-solve
-    assert run.verification is report
-    assert run.provider == "provider"
+
+    def verify(client, snapshot, plan, *, known=None, **_kwargs):
+        pairs = rounds[len(calls)]
+        corrections = {**(known or {}), **{key: TravelQuote(600, 5000, (), "traffic_api") for key in pairs}}
+        calls.append(dict(known or {}))
+        return {"corrections": corrections, "new_legs": len(corrections) - len(known or {}), "routes": []}
+
+    monkeypatch.setattr(hybrid, "verify_plan_with_route3", verify)
+    providers = []
+    monkeypatch.setattr(hybrid, "solve", lambda s, p, *a: providers.append(p) or FakeOutput())
+    run = hybrid_plan(FakeSnapshot(), FakeBase(), SearchSettings(), None, "ctx", client="client")
+    # fast solve, re-solve on the first pair, re-solve on the pair it introduced
+    assert len(providers) == 3 and len(calls) == 3
+    assert set(calls[1]) == {first}  # earlier pairs are passed on, not re-requested
+    assert set(hybrid._unwrap_technical(run.provider).corrections) == {first, second}
 
 
 class FakeBase:
@@ -116,7 +161,7 @@ def test_hybrid_resolves_on_window_breach(monkeypatch):
 def test_hybrid_degrades_on_verification_failure(monkeypatch):
     from core import hybrid
 
-    def broken(client, snapshot, plan):
+    def broken(client, snapshot, plan, **_kwargs):
         raise ConnectionError("engine down")
 
     monkeypatch.setattr(hybrid, "verify_plan_with_route3", broken)

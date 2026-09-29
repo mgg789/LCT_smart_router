@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast, runtime_checkable
@@ -145,6 +146,31 @@ class TravelSegment:
     provenance: TravelProvenance
     duration_sec: int
     distance_m: int
+
+
+def joined_segments(
+    segments: Sequence[TravelSegment], origin: GeoPoint, destination: GeoPoint
+) -> tuple[TravelSegment, ...]:
+    """Make a composite leg one continuous line from origin to destination.
+
+    Providers snap to their own graphs, so a walk into a station and the ride
+    out of it can end and start a few metres apart. A leg is published only
+    when each part starts exactly where the previous one ends; the missing
+    connector is added to the geometry and costs nothing.
+    """
+    joined: list[TravelSegment] = []
+    previous_end = origin
+    for index, segment in enumerate(segments):
+        points = list(segment.points) or [previous_end]
+        if points[0] != previous_end:
+            points.insert(0, previous_end)
+        if index == len(segments) - 1 and points[-1] != destination:
+            points.append(destination)
+        joined.append(
+            TravelSegment(tuple(points), segment.provenance, segment.duration_sec, segment.distance_m)
+        )
+        previous_end = points[-1]
+    return tuple(joined)
 
 
 class TravelSource(Protocol):

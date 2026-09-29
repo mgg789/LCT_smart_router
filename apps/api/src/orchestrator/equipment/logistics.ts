@@ -107,6 +107,20 @@ export async function persistLogistics(
     throw new SysError('RESULT_NOT_APPLICABLE', 'A pending equipment action was removed');
 }
 
+/**
+ * Engineers whose working availability an assigned action depends on.
+ *
+ * Router treats an assigned action as a frozen stop of these routes; once any of
+ * them is off the line the stop cannot be scheduled and the whole solve fails.
+ */
+export function logisticsParticipants(
+  row: Pick<EquipmentLogistics, 'donorEngineerId' | 'receiverEngineerId'>,
+): string[] {
+  return row.donorEngineerId === null
+    ? [row.receiverEngineerId]
+    : [row.donorEngineerId, row.receiverEngineerId];
+}
+
 /** Durable, role-sensitive projection for the one-sided logistics cards. */
 export function logisticsView(
   row: EquipmentLogistics,

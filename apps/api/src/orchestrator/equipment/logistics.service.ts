@@ -14,6 +14,7 @@ import {
 } from '../../routing/router-gateway/router-client.port';
 import { NotificationsService } from '../../notifications';
 import { LiveDayState } from '../live/live-day-state';
+import { logisticsParticipants } from './logistics';
 
 /** Durable search queue: network previews run between two short, fenced transactions. */
 @Injectable()
@@ -49,7 +50,15 @@ export class EquipmentLogisticsService {
           where: { id: row.requestId },
           select: { lifecycle: true },
         });
-        if (request && !['completed', 'cancelled'].includes(request.lifecycle)) continue;
+        const requestOpen = request && !['completed', 'cancelled'].includes(request.lifecycle);
+        const offline = await tx.engineerDay.count({
+          where: {
+            workDate: row.workDate,
+            engineerId: { in: logisticsParticipants(row) },
+            availability: 'offline',
+          },
+        });
+        if (requestOpen && offline === 0) continue;
         await tx.equipmentLogistics.update({
           where: { id: row.id },
           data: { status: 'cancelled', updatedAt: BigInt(wallNow) },

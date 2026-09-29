@@ -44,6 +44,7 @@ from core.geo import (
     TravelSource,
     TravelUnavailable,
     content_hash,
+    joined_segments,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -214,14 +215,34 @@ def quote_from_route3(body: dict, origin: GeoPoint, destination: GeoPoint) -> Tr
                 distance_m=int(segment.get("distance_m") or 0),
             )
         )
+    duration_sec = math.ceil(float(body["duration_s"]))
+    distance_m = math.ceil(float(distance))
+    # Ceil of the aggregate can exceed the sum of truncated segment parts.
+    # The leg contract requires those sums to match, so the residual stays on
+    # the last segment instead of failing the whole verified plan.
+    if segments:
+        duration_gap = duration_sec - sum(segment.duration_sec for segment in segments)
+        distance_gap = distance_m - sum(segment.distance_m for segment in segments)
+        if duration_gap or distance_gap:
+            last = segments[-1]
+            segments[-1] = TravelSegment(
+                points=last.points,
+                provenance=last.provenance,
+                duration_sec=last.duration_sec + duration_gap,
+                distance_m=last.distance_m + distance_gap,
+            )
+    joined = joined_segments(segments, origin, destination) if segments else ()
+    if joined:
+        # The body's own geometry is only the access walk; the leg line is all parts.
+        points = tuple(point for index, segment in enumerate(joined) for point in (segment.points if index == 0 else segment.points[1:]))
     return TravelQuote(
-        math.ceil(float(body["duration_s"])),
-        math.ceil(float(distance)),
+        duration_sec,
+        distance_m,
         points or (origin, destination),
         provenance,
         float(body.get("effective_factor") or 1.0),
         geometry_exact=mode in ("road", "metro_composite"),
-        segments=tuple(segments),
+        segments=joined,
     )
 
 
@@ -229,21 +250,28 @@ def verify_plan_with_route3(
     client: Route3Client,
     snapshot: RouterTaskSnapshot,
     plan,
+    *,
+    metro: bool = True,
+    known: dict | None = None,
 ) -> dict:
     """Verify every chosen leg of a plan against /route3.
 
     Returns a report with corrected quotes keyed by
     ``(lat, lon, lat, lon, profile)`` for the solver override, per-route
     duration drift and the jobs whose corrected schedule would break a window.
-    Car legs ask for traffic; walk/transit legs ask for metro composites.
+    Car legs ask for traffic; walk/transit legs ask for metro composites only
+    when ``metro`` is on, so a disabled metro setting is not bypassed here.
     The window check applies the route's total duration drift to every stop
     after the corrected leg — a deliberately conservative estimate.
+    ``known`` carries pairs verified in earlier rounds: they are reused, not
+    re-requested, and ``new_legs`` counts only the pairs this call added.
     """
     profile_of_engineer = {
         engineer.engineer_id: engineer.travel_profile() for engineer in snapshot.engineers
     }
     requests = {request.request_id: request for request in snapshot.requests}
-    corrections: dict[tuple[float, float, float, float, str], TravelQuote | None] = {}
+    corrections: dict[tuple[float, float, float, float, str], TravelQuote | None] = dict(known or {})
+    already_known = len(corrections)
     routes_report = []
     for route in plan.routes:
         profile = profile_of_engineer.get(route.engineer_id, "car")
@@ -266,7 +294,7 @@ def verify_plan_with_route3(
                     stop.location,
                     profile,
                     traffic=profile == "car",
-                    metro=profile in ("walk", "transit"),
+                    metro=metro and profile == "transit",
                     departure=departure,
                 )
                 corrections[key] = quote_from_route3(body, previous, stop.location)
@@ -296,9 +324,56 @@ def verify_plan_with_route3(
         })
     return {
         "verified_legs": len(corrections),
+        "new_legs": len(corrections) - already_known,
         "corrections": corrections,
         "routes": routes_report,
     }
+
+
+class Route3PedestrianTravel:
+    """Foot-graph walk and bike costs from /matrix3 over any base provider.
+
+    Pedestrian and cyclist search costs must come from the route3 foot graph,
+    not from the regional car-oriented graph. Car quotes, and points outside
+    the prepared matrix (metro station access, invented nodes), stay with the
+    base provider. Transit never reaches this layer: the profile policy asks
+    for walk, and metro is composed above it.
+    """
+
+    def __init__(self, base: TravelSource, prepared: PreparedRoute3Matrix):
+        self.travel = base
+        self.prepared = prepared
+        self.version = content_hash(
+            json.dumps({"base": base.version, "route3_foot": prepared.version}, sort_keys=True).encode()
+        )
+        self.provenance = getattr(base, "provenance", "route_api")
+
+    @property
+    def profiles(self):
+        return getattr(self.travel, "profiles", None)
+
+    def quote(self, origin, destination, profile):
+        return self._quote(origin, destination, profile, None)
+
+    def quote_at(self, origin, destination, profile, departure_at):
+        return self._quote(origin, destination, profile, departure_at)
+
+    def _quote(self, origin, destination, profile, departure_at):
+        if profile in ("walk", "bike") and profile in self.prepared.profiles:
+            try:
+                quote = self.prepared.quote_at(origin, destination, profile, departure_at)
+            except TravelUnavailable:
+                quote = None
+            # An unreachable foot cell (outside the MKAD cut) keeps the base
+            # provider's disclosed estimate: an edge is never dropped from a route.
+            if quote is not None:
+                return quote
+        if departure_at is None:
+            return self.travel.quote(origin, destination, profile)
+        timed = getattr(self.travel, "quote_at", None)
+        if timed is None:
+            return self.travel.quote(origin, destination, profile)
+        return timed(origin, destination, profile, departure_at)
 
 
 class VerifiedRoute3:
@@ -330,16 +405,26 @@ class VerifiedRoute3:
         for name in dict.fromkeys((profile, equivalent)):
             yield (*base, name)
 
-    def quote(self, origin, destination, profile):
+    def _correction(self, origin, destination, profile):
+        """Return (found, quote); a metro composite is never a walk-only answer."""
         for key in self._keys(origin, destination, profile):
             if key in self.corrections:
-                return self.corrections[key]
+                quote = self.corrections[key]
+                if profile != "transit" and quote is not None and quote.provenance == "metro":
+                    continue
+                return True, quote
+        return False, None
+
+    def quote(self, origin, destination, profile):
+        found, quote = self._correction(origin, destination, profile)
+        if found:
+            return quote
         return self.travel.quote(origin, destination, profile)
 
     def quote_at(self, origin, destination, profile, departure_at):
-        for key in self._keys(origin, destination, profile):
-            if key in self.corrections:
-                return self.corrections[key]
+        found, quote = self._correction(origin, destination, profile)
+        if found:
+            return quote
         timed = getattr(self.travel, "quote_at", None)
         if timed is None:
             # Static sources (StraightTravel) only carry quote().
@@ -494,6 +579,7 @@ def prepare_route3(
     traffic: bool = True,
     planning: bool = True,
     fallback: TravelSource | None = None,
+    profiles: tuple[str, ...] = ("car", "walk", "bike"),
 ) -> PreparedRoute3Matrix | None:
     """Prepare multi-profile cells; None when the engine has no usable profile.
 
@@ -505,10 +591,14 @@ def prepare_route3(
     if not points:
         return None
     per_profile: dict[str, dict] = {}
-    requests = (
-        ("car", traffic, planning),
-        ("walk", False, False),
-        ("bike", False, False),
+    requests = tuple(
+        request
+        for request in (
+            ("car", traffic, planning),
+            ("walk", False, False),
+            ("bike", False, False),
+        )
+        if request[0] in profiles
     )
     for profile, traffic_on, planning_on in requests:
         key = content_hash(

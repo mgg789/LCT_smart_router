@@ -275,8 +275,8 @@ def calculate(
         verification = None
         if hybrid_enabled():
             # Fast solve → /route3 verification of the chosen legs → one
-            # corrected re-solve when the verified schedule breaks a window
-            # (docs/route3.md). The engine degrades to the fast plan silently.
+            # re-solve on those pairs, so the published route is the engine's
+            # geometry (docs/route3.md). The engine degrades to the fast plan.
             run = hybrid_plan(
                 snapshot,
                 provider,
