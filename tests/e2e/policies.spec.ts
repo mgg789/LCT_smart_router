@@ -206,6 +206,8 @@ test('ordinary-replanning switch persists without changing the working plan', as
   await expect(toggle.getByRole('tooltip')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(toggle.getByRole('tooltip')).not.toBeVisible();
+  // Escape closes the panel as well as its hint; reopen before the next action.
+  await open();
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   expect((await readPlan(live.api)).revision).toBe(before.revision);

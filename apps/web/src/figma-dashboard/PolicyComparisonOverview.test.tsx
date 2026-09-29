@@ -110,6 +110,22 @@ describe('honest policy comparisons', () => {
     expect(html).not.toContain('20 из 20');
   });
 
+  it('draws the completion chart across the card at the taller smoothed size', () => {
+    const start = 1_700_000_000;
+    const html = renderToStaticMarkup(
+      <PolicyComparisonOverview
+        rows={[
+          { ...row('baseline', 2, 10), jobEnds: [start, start + 3600] },
+          { ...row('fast', 3, 12), jobEnds: [start + 600, start + 1800, start + 4000] },
+        ]}
+      />,
+    );
+    expect(html).toContain('h-[450px]');
+    expect(html).toContain('w-full');
+    expect(html).toContain('<polyline');
+    expect(html).not.toMatch(/NaN|Infinity/);
+  });
+
   it('renders zero-work data without fabricated percentages or invalid bar lengths', () => {
     const html = renderToStaticMarkup(
       <PolicyComparisonOverview rows={[row('baseline', 0, 0), row('fast', 0, 0)]} />,
