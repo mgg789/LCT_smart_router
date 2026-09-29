@@ -11,6 +11,8 @@ Navix собирает день в один инструмент, котором
 
 ![Дашборд диспетчера: план дня, карта и карточка инженера](demo/dashboard-view.jpg)
 
+Текущий релиз — **v1.9.0**, [что изменилось](CHANGELOG.md).
+
 ## Публичный стенд
 
 | Контур | Адрес |
@@ -96,6 +98,20 @@ docker compose -f infra/docker-compose.yml up -d --build
 
 При `DEMO_STAND=true` (значение по умолчанию) контур сам поднимает день из
 14 заявок и 3 инженеров.
+
+### Готовый билд
+
+В репозитории лежит собранный docker-билд версии 1.9 — [builds/v1.9](builds/v1.9/README.md):
+образы всего контура вместе с PostgreSQL и OSRM, без внешних загрузок. На
+компьютере с Apple Silicon он поднимается без сборки:
+
+```bash
+cat builds/v1.9/navix-v1.9-images.tar.gz.part-* | docker load
+docker compose -f infra/docker-compose.yml up -d
+```
+
+Образы собраны под linux/arm64; на x86 используйте сборку из исходников командой
+выше. Файл окружения нужен и здесь — см. [builds/v1.9/README.md](builds/v1.9/README.md).
 
 ## Как смотреть публичный стенд
 
