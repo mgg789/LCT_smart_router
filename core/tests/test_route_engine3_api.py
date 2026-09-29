@@ -151,6 +151,83 @@ def test_route3_car_traffic_and_fallback(tmp_path, monkeypatch):
     assert straight["distance_m"] > 0
 
 
+def test_route3_rejects_successful_osrm_route_snapped_far_from_destination(tmp_path, monkeypatch):
+    _, server, _ = load_engine3(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "REGISTRY", StubRegistry(FOOT_RUNTIME))
+    far = (54.8041762, 38.2768274)  # Kashira: outside the vendored MKAD graphs.
+
+    def snapped(runtime, a, b, *, steps):
+        return {
+            "duration": 1500.0,
+            "distance": 23000.0,
+            "geometry": [[a[0], a[1]], [55.575185, 37.695016]],
+            "steps": [],
+        }
+
+    monkeypatch.setattr(server, "_route_over_graph", snapped)
+    for profile in ("car", "walk"):
+        body = server.handle_route3({
+            "a": "55.6997977,37.7725762",
+            "b": f"{far[0]},{far[1]}",
+            "profile": profile,
+            "metro": "0",
+        })
+        assert body["mode"] == "straight"
+        assert body["geometry"] == [[55.6997977, 37.7725762], list(far)]
+        assert body["distance_m"] > 100_000
+    plain = server.handle_route3({
+        "a": "55.6997977,37.7725762", "b": f"{far[0]},{far[1]}",
+        "profile": "car", "traffic": "0", "departure": "1786946400",
+    })
+    factored = server.handle_route3({
+        "a": "55.6997977,37.7725762", "b": f"{far[0]},{far[1]}",
+        "profile": "car", "traffic": "1", "departure": "1786946400",
+    })
+    assert plain["duration_s"] == plain["base_duration_s"]
+    assert plain["traffic_applied"] is False
+    assert factored["duration_s"] >= plain["duration_s"]
+    assert factored["traffic_applied"] is True
+
+
+def test_matrix3_outside_graph_uses_straight_costs_without_discarding_job(tmp_path, monkeypatch):
+    _, server, _ = load_engine3(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "REGISTRY", StubRegistry(FOOT_RUNTIME))
+
+    def table(_url, timeout=120.0):
+        return {
+            "code": "Ok",
+            "durations": [[0.0, 1534.4], [1357.3, 0.0]],
+            "distances": [[0.0, 23119.7], [22514.6, 0.0]],
+            "sources": [{"distance": 27.6}, {"distance": 93_496.9}],
+            "destinations": [{"distance": 27.6}, {"distance": 93_496.9}],
+        }
+
+    monkeypatch.setattr(server, "_osrm_get", table)
+    params = {
+        "points": "55.6997977,37.7725762;54.8041762,38.2768274",
+        "profile": "car",
+        "traffic": "1",
+        "planning": "1",
+        "departure": "1786946400",
+    }
+    car = server.handle_matrix3(params)
+    cell = car["matrix"][0][1]
+    assert cell["mode"] == "straight"
+    assert cell["distance_m"] > 100_000
+    assert len(cell["forecast_duration_s"]) == len(car["forecast_band_starts"])
+    assert car["matrix"][1][0]["mode"] == "straight"
+    plain = server.handle_matrix3({**params, "traffic": "0", "planning": "0"})
+    assert plain["matrix"][0][1]["duration_s"] == plain["matrix"][0][1]["base_duration_s"]
+    walk = server.handle_matrix3({**params, "profile": "walk", "traffic": "0", "planning": "0"})
+    assert walk["matrix"][0][1]["mode"] == "straight"
+    assert walk["matrix"][0][1]["duration_s"] > 60_000
+    monkeypatch.setattr(server, "_osrm_get", lambda *_args, **_kwargs: {
+        "code": "Ok", "durations": [[0, 10], [10, 0]],
+        "distances": [[0, 50], [50, 0]],
+    })
+    assert server.handle_matrix3(params)["matrix"][0][1]["mode"] == "straight"
+
+
 def test_route3_metro_composite(tmp_path, monkeypatch):
     _, server, _ = load_engine3(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "REGISTRY", StubRegistry(FOOT_RUNTIME))
@@ -202,6 +279,7 @@ def test_route3_metro_composite(tmp_path, monkeypatch):
         lambda runtime, points, **_kwargs: (
             [[0] * len(points) for _ in points],
             [[0 if i == j else 500.0 for j in range(len(points))] for i in range(len(points))],
+            [True] * len(points),
         ),
     )
     body = server.handle_route3({"a": "55.75,37.60", "b": "55.78,37.66", "profile": "walk"})
@@ -254,6 +332,7 @@ def test_route3_metro_skips_unavailable_candidate_pairs(tmp_path, monkeypatch):
         lambda runtime, points, **_kwargs: (
             [[0] * len(points) for _ in points],
             [[0 if i == j else 500 for j in range(len(points))] for i in range(len(points))],
+            [True] * len(points),
         ),
     )
     body = server.handle_route3({"a": "55.75,37.60", "b": "55.78,37.66", "profile": "walk"})
@@ -270,6 +349,7 @@ def test_matrix3_walk_flat_and_unreachable(tmp_path, monkeypatch):
         return (
             [[0, None, None], [None, 0, None], [None, None, 0]],
             [[0, 3600.0, None], [3600.0, 0, None], [None, None, 0]],
+            [True] * len(requested),
         )
 
     monkeypatch.setattr(server, "_table_over_graph", table)
@@ -291,6 +371,7 @@ def test_matrix3_car_planning_forecast_bands(tmp_path, monkeypatch):
         return (
             [[0, 600.0], [600.0, 0]],
             [[0, 5000.0], [5000.0, 0]],
+            [True] * len(requested),
         )
 
     monkeypatch.setattr(server, "_table_over_graph", table)
@@ -348,7 +429,7 @@ def test_metro3_paths_and_constants(tmp_path, monkeypatch):
     path = body["paths"][0]
     assert path["composite_duration_sec"] == 240 + 180 + 120 + 300 + 120 + 240
     assert path["ride"]["duration_sec"] == 300
-    assert body["versions"]["model"].startswith("route-engine3-v2+traffic:")
+    assert body["versions"]["model"].startswith("route-engine3-v3+traffic:")
 
     server.METRO = None
     try:

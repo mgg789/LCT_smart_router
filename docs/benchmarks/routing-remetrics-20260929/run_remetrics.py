@@ -134,7 +134,7 @@ def verified_baseline(planner, snapshot, travel, settings, client):
     raise RuntimeError("BASELINE_VERIFY_ROUNDS_EXHAUSTED")
 
 
-def run_case(scenario, client, settings, *, covered=False, matrix_only=False):
+def run_case(scenario, client, settings, *, covered=False, matrix_only=False, allow_straight=False):
     """Record failures and separate preparation, matrix estimates and verified plans."""
     snapshot = apply_system_policy(scenario.snapshot, settings)
     started = time.perf_counter()
@@ -144,6 +144,7 @@ def run_case(scenario, client, settings, *, covered=False, matrix_only=False):
         "crews": len(snapshot.engineers),
         "settings": settings.__dict__,
         "covered_subset": covered,
+        "straight_fallback_allowed": allow_straight,
         "prepare_ms": round((time.perf_counter() - started) * 1000, 1),
         "metrics": [],
         "evidence": {},
@@ -180,7 +181,7 @@ def run_case(scenario, client, settings, *, covered=False, matrix_only=False):
     if matrix_only:
         result["publication_status"] = "MATRIX_ESTIMATE_NOT_ROUTE_VERIFIED"
         return result
-    if not covered:
+    if not covered and not allow_straight:
         result["publication_status"] = "INVALID_GRAPH_COVERAGE_RAW_DIAGNOSTIC_ONLY"
         return result
     for name, planner in (
@@ -225,7 +226,7 @@ def run_case(scenario, client, settings, *, covered=False, matrix_only=False):
         )
     from lab.audit_remetrics_plans import audit_case
 
-    result["selected_leg_audit"] = audit_case(result, client)
+    result["selected_leg_audit"] = audit_case(result, client, allow_straight=allow_straight)
     for strategy, audit in result["selected_leg_audit"].items():
         if audit["violations"]:
             result["failures"].append({"strategy": strategy, "code": "SELECTED_LEG_AUDIT_FAILED"})
@@ -241,6 +242,8 @@ def main() -> None:
     parser.add_argument("--budget-ms", type=int, default=3000)
     parser.add_argument("--tolerant", action="store_true")
     parser.add_argument("--matrix-only", action="store_true")
+    parser.add_argument("--include-straight", action="store_true",
+                        help="Verify all original jobs with disclosed straight connectors")
     parser.add_argument("--solution-limit", type=int, default=10000)
     parser.add_argument("--regions", nargs="+", default=[*REGIONS, "all"])
     args = parser.parse_args()
@@ -311,6 +314,23 @@ def main() -> None:
     }
     for name in args.regions:
         case = scenarios[name]
+        if args.include_straight:
+            print("full with straight", name, flush=True)
+            payload["cases"][name] = run_case(
+                case, client, settings, allow_straight=True, matrix_only=args.matrix_only
+            )
+            payload["cases"][name]["original_request_count"] = len(case.snapshot.requests)
+            payload["cases"][name]["excluded_count"] = 0
+            payload["checkpoint_at"] = datetime.now(timezone.utc).isoformat()
+            payload["python_peak_rss_bytes"] = resource.getrusage(
+                resource.RUSAGE_SELF
+            ).ru_maxrss * (1 if platform.system() == "Darwin" else 1024)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+            print("saved", args.output, name, flush=True)
+            continue
         if len(case.snapshot.requests) != len(covered[name].snapshot.requests):
             print("raw full", name, flush=True)
             payload["cases"][name + "_raw_full"] = run_case(

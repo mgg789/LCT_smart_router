@@ -67,6 +67,27 @@ def test_selected_leg_audit_rejects_bad_endpoint(snapshot, graph):
     assert any(row["code"] == "GRAPH_ENDPOINT" for row in result["fifo_verified"]["violations"])
 
 
+def test_full_area_audit_accepts_disclosed_straight_leg(snapshot, graph):
+    module = runpy.run_path(str(RUNNER))
+    plan = baseline(snapshot, GraphTravel(graph))
+
+    class Client:
+        def route(self, origin, destination, profile, **kwargs):
+            return {
+                "mode": "straight", "duration_s": 60, "distance_m": 100,
+                "geometry": [[origin.lat, origin.lon], [destination.lat, destination.lon]],
+            }
+
+    case = {
+        "snapshot": snapshot.model_dump(), "settings": SearchSettings().__dict__,
+        "evidence": {"fifo_verified": module["redacted_plan"](plan)},
+    }
+    strict_graph = audit_case(case, Client())
+    full_area = audit_case(case, Client(), allow_straight=True)
+    assert any(row["code"] == "GRAPH_ENDPOINT" for row in strict_graph["fifo_verified"]["violations"])
+    assert all(row["code"] != "GRAPH_ENDPOINT" for row in full_area["fifo_verified"]["violations"])
+
+
 def test_stress_absorbs_wait_before_propagating_service_delay():
     case = {"settings": {"access_buffer_sec": 0}, "snapshot": {
         "requests": [{"request_id": "r", "service_duration_sec": 100, "window_end_at": 230}],

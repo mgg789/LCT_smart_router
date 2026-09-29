@@ -12,8 +12,8 @@ from core.route3 import Route3Client
 from lab.audit_graph_coverage import endpoint_error_m
 
 
-def audit_case(case: dict, client: Route3Client) -> dict:
-    """Check every published verified leg and strict job, retaining each violation."""
+def audit_case(case: dict, client: Route3Client, *, allow_straight: bool = False) -> dict:
+    """Check verified legs; allow disclosed straight connectors in full-area runs."""
     snapshot = RouterTaskSnapshot.model_validate(case["snapshot"])
     requests = {row.request_id: row for row in snapshot.requests}
     engineers = {row.engineer_id: row for row in snapshot.engineers}
@@ -95,7 +95,10 @@ def audit_case(case: dict, client: Route3Client) -> dict:
                     "plan_travel_sec": leg["travel_time_sec"],
                 }
                 if (
-                    body["mode"] not in ("road", "metro_composite")
+                    body["mode"] not in (
+                        ("road", "metro_composite", "straight") if allow_straight
+                        else ("road", "metro_composite")
+                    )
                     or max(start_error, end_error) > 250
                 ):
                     violations.append({**identity, "code": "GRAPH_ENDPOINT", **row})

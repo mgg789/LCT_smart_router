@@ -33,6 +33,7 @@ def test_quote_from_route3_provenance_and_segments():
     assert road.provenance == "traffic_api"
     assert road.duration_sec == 601
     assert road.traffic_factor == 1.5
+    assert road.traffic_prepriced is True
     assert road.geometry_exact is True
     composite = quote_from_route3(
         {
@@ -67,8 +68,14 @@ def test_quote_from_route3_provenance_and_segments():
     assert residual is not None
     assert sum(segment.duration_sec for segment in residual.segments) == residual.duration_sec
     assert sum(segment.distance_m for segment in residual.segments) == residual.distance_m
-    straight = quote_from_route3({"mode": "straight", "duration_s": 10, "distance_m": 100}, A, B)
+    straight = quote_from_route3({"mode": "straight", "duration_s": 10, "distance_m": 100,
+                                  "traffic_applied": True}, A, B)
     assert straight.provenance == "approximate" and straight.geometry_exact is False
+    assert straight.traffic_prepriced is True
+    from core.route3 import VerifiedRoute3
+    from core.traffic_engine import ForecastTrafficTravel
+    verified = VerifiedRoute3(_Base(), {(A.lat, A.lon, B.lat, B.lon, "car", 1786946400): straight})
+    assert ForecastTrafficTravel(verified, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 10
     assert quote_from_route3({"mode": "unreachable"}, A, B) is None
 
 
@@ -112,6 +119,29 @@ def test_prepared_route3_matrix_car_bands_and_walk_flat():
         matrix.quote_at(GeoPoint(lat=1.0, lon=2.0), B, "car", 0)
     with pytest.raises(TravelUnavailable):
         matrix.quote_at(A, B, "bike", 0)  # profile not prepared
+
+
+def test_prepared_straight_matrix_stays_approximate_without_double_traffic():
+    from core.traffic_engine import ForecastTrafficTravel
+
+    car = _matrix_body("car", [
+        [{"mode": "self"}, {"mode": "straight", "base_duration_s": 600,
+                             "duration_s": 900, "distance_m": 6000,
+                             "forecast_duration_s": [600, 900]}],
+        [{"mode": "unreachable"}, {"mode": "self"}],
+    ])
+    car["forecast_band_starts"] = [0, 420]
+    prepared = PreparedRoute3Matrix("client", {"car": car}, [A, B])
+    quote = prepared.quote_at(A, B, "car", 1786946400)
+    assert quote.provenance == "approximate"
+    assert quote.geometry_exact is False
+    assert quote.duration_sec == 900
+    assert ForecastTrafficTravel(prepared, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 900
+    car["matrix"][0][1]["forecast_duration_s"] = [600, 600]
+    car["matrix"][0][1]["duration_s"] = 600
+    neutral = PreparedRoute3Matrix("client", {"car": car}, [A, B])
+    assert neutral.quote_at(A, B, "car", 1786946400).traffic_prepriced
+    assert ForecastTrafficTravel(neutral, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 600
 
 
 class _Base:

@@ -42,7 +42,7 @@ from graphs import GraphSupervisor, discover_graphs
 from metro import MetroService
 from metro_timetable import TIMETABLE_VERSION
 
-SERVICE_VERSION = "route-engine3-v2"
+SERVICE_VERSION = "route-engine3-v3"
 MODEL_VERSION = (
     f"{SERVICE_VERSION}+traffic:{traffic.MODEL_VERSION}+bands:msk-v2"
     f"+timetable:{TIMETABLE_VERSION}"
@@ -64,6 +64,7 @@ MODELS: dict[str, str] = {
 }
 
 PROFILES = ("car", "walk", "bike", "transit")
+MAX_ENDPOINT_SNAP_M = 250.0
 
 # Proxy-bypassing opener: OSRM children are loopback-only, proxies would break them.
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -163,6 +164,16 @@ def _route_over_graph(runtime, a, b, *, steps: bool) -> dict:
     return result
 
 
+def _route_covers_endpoints(route: dict, a, b) -> bool:
+    """Reject OSRM's successful route when it silently snaps outside the graph."""
+    geometry = route.get("geometry") or []
+    return (
+        len(geometry) >= 2
+        and traffic.haversine_m(a, geometry[0]) <= MAX_ENDPOINT_SNAP_M
+        and traffic.haversine_m(b, geometry[-1]) <= MAX_ENDPOINT_SNAP_M
+    )
+
+
 def _flatten_route_steps(route: dict) -> list[dict]:
     """Flatten steps already returned by one OSRM route response."""
     flat = []
@@ -208,7 +219,21 @@ def _table_over_graph(runtime, points, *, annotations: str = "duration,distance"
         raise ValueError("osrm table returned a mismatched durations grid")
     if distances is not None and len(distances) != len(points):
         raise ValueError("osrm table returned a mismatched distances grid")
-    return durations, distances
+    sources, destinations = payload.get("sources"), payload.get("destinations")
+    if (not isinstance(sources, list) or not isinstance(destinations, list)
+            or len(sources) != len(points) or len(destinations) != len(points)):
+        # A compatible table without snap metadata cannot prove road coverage.
+        return durations, distances, [False] * len(points)
+    covered = []
+    for source, destination in zip(sources, destinations):
+        try:
+            distances_m = (float(source["distance"]), float(destination["distance"]))
+        except (KeyError, TypeError, ValueError):
+            covered.append(False)
+            continue
+        covered.append(all(math.isfinite(value) and 0 <= value <= MAX_ENDPOINT_SNAP_M
+                           for value in distances_m))
+    return durations, distances, covered
 
 
 def _flat_speed(runtime, profile: str) -> float:
@@ -220,12 +245,14 @@ def _flat_speed(runtime, profile: str) -> float:
 # --- straight connectors ----------------------------------------------------
 
 
-def _straight_car(a, b, departure: float) -> dict:
+def _straight_car(a, b, departure: float, *, traffic_on: bool) -> dict:
     """Straight connector for car queries the graph cannot answer."""
     distance = traffic.haversine_m(a, b)
     speed = traffic.straight_speed_kmh(distance)
     base = distance / (speed * 1000 / 3600)
     factor, period = traffic.endpoint_factor(departure, a, b)
+    if not traffic_on:
+        factor = 1.0
     return {
         "mode": "straight",
         "distance_m": round(distance, 1),
@@ -257,13 +284,15 @@ def _straight_foot(runtime, a, b, profile: str) -> dict:
 def _car_route(runtime, a, b, *, traffic_on: bool, departure: float) -> dict:
     try:
         route = _route_over_graph(runtime, a, b, steps=traffic_on)
+        if not _route_covers_endpoints(route, a, b):
+            raise ValueError("OSRM endpoint outside graph coverage")
     except (RuntimeError, OSError, ValueError):
         return {
-            **_straight_car(a, b, departure),
+            **_straight_car(a, b, departure, traffic_on=traffic_on),
             "profile": "car",
             "graph_id": runtime.spec.graph_id,
             "map_version": runtime.spec.map_version,
-            "traffic_applied": False,
+            "traffic_applied": traffic_on,
         }
     base_route = {
         "mode": "road",
@@ -308,6 +337,8 @@ def _foot_route(
     metro_used_note = None
     try:
         direct = _route_over_graph(runtime, a, b, steps=False)
+        if not _route_covers_endpoints(direct, a, b):
+            raise ValueError("OSRM endpoint outside graph coverage")
     except (RuntimeError, OSError, ValueError):
         return {
             **_straight_foot(runtime, a, b, profile),
@@ -394,11 +425,12 @@ def _metro_composite(
         table_points.append((station["location"][0], station["location"][1]))
     table_points.append(b)
     try:
-        _durations, distances = _table_over_graph(runtime, table_points)
+        _durations, distances, covered = _table_over_graph(runtime, table_points)
     except (RuntimeError, OSError, ValueError, TypeError, IndexError):
         return None
     if (
         distances is None
+        or not all(covered)
         or len(distances) != len(table_points)
         or any(not isinstance(row, list) or len(row) != len(table_points) for row in distances)
     ):
@@ -592,6 +624,8 @@ def _access_leg(runtime, origin, destination, speed: float) -> dict | None:
     """One foot-graph route between two (lat, lon) points; None when unreachable."""
     try:
         route = _route_over_graph(runtime, origin, destination, steps=False)
+        if not _route_covers_endpoints(route, origin, destination):
+            return None
     except (RuntimeError, OSError, ValueError):
         return None
     return {
@@ -657,7 +691,7 @@ def handle_matrix3(params: dict[str, str]) -> dict:
     runtime = _require_graph(profile)
 
     if profile == "car":
-        durations, distances = _table_over_graph(runtime, points)
+        durations, distances, covered = _table_over_graph(runtime, points)
         matrix = []
         for i, row in enumerate(durations):
             cells = []
@@ -666,6 +700,16 @@ def handle_matrix3(params: dict[str, str]) -> dict:
                     cells.append(
                         {"mode": "self", "base_duration_s": 0, "distance_m": 0}
                     )
+                elif not (covered[i] and covered[j]):
+                    straight = _straight_car(points[i], points[j], departure, traffic_on=traffic_on)
+                    cell = {key: straight[key] for key in (
+                        "mode", "base_duration_s", "distance_m", "speed_kmh"
+                    )}
+                    cell["duration_s"] = straight["duration_s"]
+                    if traffic_on:
+                        cell["effective_factor"] = straight["effective_factor"]
+                        cell["period"] = straight["period"]
+                    cells.append(cell)
                 elif duration is None or (distances is None or distances[i][j] is None):
                     cells.append({"mode": "unreachable"})
                 else:
@@ -696,7 +740,7 @@ def handle_matrix3(params: dict[str, str]) -> dict:
             starts, representatives = _forecast_band_layout()
             for i, row in enumerate(matrix):
                 for j, cell in enumerate(row):
-                    if cell["mode"] != "road":
+                    if cell["mode"] not in ("road", "straight"):
                         continue
                     bands = []
                     for epoch in representatives:
@@ -713,13 +757,16 @@ def handle_matrix3(params: dict[str, str]) -> dict:
 
     # Walk/bike: flat speeds over foot-graph distances; no traffic engines.
     speed = _flat_speed(runtime, profile)
-    _durations, distances = _table_over_graph(runtime, points)
+    _durations, distances, covered = _table_over_graph(runtime, points)
     matrix = []
     for i, row in enumerate(distances):
         cells = []
         for j, distance in enumerate(row):
             if i == j:
                 cells.append({"mode": "self", "duration_s": 0, "distance_m": 0})
+            elif not (covered[i] and covered[j]):
+                straight = _straight_foot(runtime, points[i], points[j], profile)
+                cells.append({key: straight[key] for key in ("mode", "duration_s", "distance_m", "speed_kmh")})
             elif distance is None:
                 cells.append({"mode": "unreachable"})
             else:
@@ -924,7 +971,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "unknown endpoint", "path": path})
         except (ValueError, KeyError) as error:
             self._json(400, {"error": str(error)})
-        except (OSError, RuntimeError) as error:
+        except (OSError, RuntimeError, TypeError) as error:
             self._json(502, {"error": str(error)})
 
     def log_message(self, format: str, *args) -> None:

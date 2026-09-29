@@ -387,6 +387,7 @@ def quote_from_route3(body: dict, origin: GeoPoint, destination: GeoPoint) -> Tr
         float(body.get("effective_factor") or 1.0),
         geometry_exact=mode in ("road", "metro_composite"),
         segments=joined,
+        traffic_prepriced=bool(body.get("traffic_applied")),
     )
 
 
@@ -681,15 +682,15 @@ class PreparedRoute3Matrix:
                 for j, cell in enumerate(row):
                     mode = cell.get("mode")
                     if mode == "self":
-                        self.cells[profile, i, j] = (0, 0, None)
+                        self.cells[profile, i, j] = (0, 0, None, "self")
                     elif mode == "unreachable":
                         self.cells[profile, i, j] = None
-                    elif mode == "road":
+                    elif mode in ("road", "straight"):
                         distance = float(cell["distance_m"])
                         duration = float(cell["duration_s"])
                         base = float(cell.get("base_duration_s", duration))
                         if distance > 0 and duration <= 0:
-                            raise ValueError("nonzero road with zero duration")
+                            raise ValueError("nonzero route with zero duration")
                         forecast = cell.get("forecast_duration_s")
                         if forecast is not None and (
                             profile not in self.bands or len(forecast) != len(self.bands[profile])
@@ -699,6 +700,7 @@ class PreparedRoute3Matrix:
                             base,
                             distance,
                             tuple(float(v) for v in forecast) if forecast is not None else None,
+                            mode,
                         )
                     else:
                         raise ValueError(f"invalid route3 matrix mode: {mode}")
@@ -733,7 +735,7 @@ class PreparedRoute3Matrix:
         cell = self.cells[key]
         if cell is None:
             return None
-        base, distance, forecast = cell
+        base, distance, forecast, mode = cell
         duration = base
         factor = 1.0
         if forecast is not None and self.bands.get(profile):
@@ -747,8 +749,10 @@ class PreparedRoute3Matrix:
             math.ceil(duration),
             math.ceil(distance),
             (origin, destination),
-            "traffic_api" if forecast is not None and self.bands.get(profile) else "road_matrix",
+            ("approximate" if mode == "straight" else
+             "traffic_api" if forecast is not None and self.bands.get(profile) else "road_matrix"),
             factor,
+            traffic_prepriced=forecast is not None and bool(self.bands.get(profile)),
         )
 
 
