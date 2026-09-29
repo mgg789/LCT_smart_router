@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { ParsedRegion, ParsedRequest } from '../../src/orchestrator/imports/dataset.parser';
 import { rebaseToLiveHorizon } from '../../src/orchestrator/imports/dataset-import.service';
+import { acceleratedLiveNow, workDateAnchor } from '../../src/orchestrator/live/live-clock';
 
 const MOSCOW_OFFSET_SEC = 3 * 60 * 60;
 const DAY_SEC = 24 * 60 * 60;
@@ -85,6 +86,29 @@ describe('rebaseToLiveHorizon', () => {
       assert.equal(item.windowStartAt - original.windowStartAt, shift);
       assert.equal(item.windowEndAt - original.windowEndAt, shift);
     }
+  });
+
+  it('rebases a running LIVE morning onto today even when the wall clock is evening', () => {
+    const wallStart = moscow('2026-09-29', 20, 43);
+    const wallNow = moscow('2026-09-29', 20, 54);
+    const logical = acceleratedLiveNow(
+      {
+        logicalStartAt: moscow('2026-09-29', 9),
+        logicalEndAt: moscow('2026-09-29', 20),
+        startedAtWallSec: wallStart,
+        speedDurationSec: null,
+      },
+      wallNow,
+    );
+    const rebased = rebaseToLiveHorizon(benchmark(), logical);
+    assert.equal(rebased.requests[0]?.windowStartAt, moscow('2026-09-29', 10));
+  });
+
+  it('keeps an evening import on the workday that was already started', () => {
+    const anchor = workDateAnchor('2026-09-29', MOSCOW_OFFSET_SEC);
+    assert.equal(anchor, moscow('2026-09-29', 8));
+    const rebased = rebaseToLiveHorizon(benchmark(), anchor);
+    assert.equal(rebased.requests[0]?.windowStartAt, moscow('2026-09-29', 10));
   });
 
   it('lands the horizon on the first day its own opening hour is still ahead', () => {

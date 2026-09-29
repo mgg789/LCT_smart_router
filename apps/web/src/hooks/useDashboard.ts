@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  applyReadyPack,
   cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
@@ -1415,6 +1416,33 @@ export function useDashboard() {
     ],
   );
 
+  const applyReadyPackToDay = useCallback(
+    async (id: string) => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error(t('hooks.useDashboard.356cfc8bbe'));
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await applyReadyPack(token, id);
+        if (generation !== readGeneration.current) return summary;
+        const next = await loadDashboardSnapshot(token);
+        if (generation === readGeneration.current) {
+          setSnapshot(next);
+          setFocus({ engineerId: null, requestId: null });
+          setPolicyComparison(null);
+          await refreshLive();
+        }
+        return summary;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, refreshLive, setSnapshot, token, uploadingData],
+  );
+
   const displaySnapshot = useMemo(
     () =>
       snapshot && liveWorkday?.workday.status === 'running'
@@ -1505,6 +1533,7 @@ export function useDashboard() {
     uploadDataset,
     importRoadResource,
     importOfficialTzDataset,
+    applyReadyPackToDay,
     resolveAlert,
     setAttendanceOptOut,
     markNoticeSeen,

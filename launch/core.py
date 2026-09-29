@@ -357,6 +357,9 @@ def _launch(
             "NODE_ENV": "production",
             "AUTH_DEV_EXPOSE_CODES": "false",
             "VITE_SENTRY_ENABLED": "false",
+            # A fresh jury volume must open on an empty day. The public stand
+            # keeps the seeded demo through prepare_navix_env.py.
+            "DEMO_STAND": "false",
         }
     )
     if not options["online"]:

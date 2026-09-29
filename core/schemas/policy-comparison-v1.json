@@ -114,6 +114,13 @@
           "title": "Is Usable",
           "type": "boolean"
         },
+        "job_end_at": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Job End At",
+          "type": "array"
+        },
         "kind": {
           "enum": [
             "policy",
@@ -184,7 +191,7 @@
     },
     "search_budget_ms": {
       "exclusiveMinimum": 0,
-      "maximum": 8000,
+      "maximum": 120000,
       "title": "Search Budget Ms",
       "type": "integer"
     }

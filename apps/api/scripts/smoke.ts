@@ -4,8 +4,11 @@ import { resolve } from 'node:path';
 import { resolveSmokeBaseUrl } from './smoke-base-url';
 import {
   type ExpectedSmokePlan,
+  followsSmokeEquipmentIssue,
   matchesSmokePlan,
   type SmokePlanResponse as PlanResponse,
+  readSmokePublication,
+  type SmokePublication,
 } from './smoke-plan';
 
 /**
@@ -44,7 +47,7 @@ interface HttpResult {
 
 interface WaitForAppliedPlanInput extends ExpectedSmokePlan {
   readonly token: string;
-  readonly publicationId: string;
+  readonly publication: SmokePublication;
   readonly timeoutMs: number;
 }
 
@@ -190,21 +193,52 @@ async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
-async function waitForAppliedPlan(input: WaitForAppliedPlanInput): Promise<PlanResponse> {
+async function waitForAppliedPlan(
+  input: WaitForAppliedPlanInput,
+): Promise<{ response: PlanResponse; publication: SmokePublication }> {
+  if (input.inputHash !== input.publication.inputHash) {
+    throw new Error('Smoke expectation does not match its original publication');
+  }
   const deadline = Date.now() + input.timeoutMs;
   let last: PlanResponse = {};
+  let publication = input.publication;
+  let equipmentIssueFollowed = false;
   while (Date.now() < deadline) {
+    const snapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', input.token);
+    requireStatus(snapshot, 200, 'read current smoke publication');
+    const current = readSmokePublication(snapshot.body);
+    if (!current) throw new Error('Current smoke publication is unavailable or corrupt');
+    if (current.publicationId !== publication.publicationId) {
+      if (
+        equipmentIssueFollowed ||
+        !followsSmokeEquipmentIssue(publication, current, input.engineerId)
+      )
+        throw new Error(
+          `Unexpected publication change during smoke: ${publication.publicationId} -> ` +
+            `${current.publicationId} (${current.trigger})`,
+        );
+      publication = current;
+      equipmentIssueFollowed = true;
+      process.stdout.write(`  note  morning equipment issued; waiting for ${current.inputHash}\n`);
+    }
     const response = await call('GET', '/api/v1/dispatch/plan', input.token);
     requireStatus(response, 200, 'read working plan');
     last = response.body as PlanResponse;
-    if (matchesSmokePlan(last, input)) {
-      return last;
+    if (matchesSmokePlan(last, { ...input, inputHash: publication.inputHash })) {
+      const confirmation = await call('GET', '/api/v1/dispatch/debug/snapshot', input.token);
+      requireStatus(confirmation, 200, 'confirm smoke publication is still current');
+      const confirmed = readSmokePublication(confirmation.body);
+      if (
+        confirmed?.publicationId === publication.publicationId &&
+        confirmed.inputHash === publication.inputHash
+      )
+        return { response: last, publication };
     }
     await sleep(POLL_INTERVAL_MS);
   }
 
   throw new Error(
-    `Router plan was not applied within ${input.timeoutMs} ms for publication ${input.publicationId}; ` +
+    `Router plan was not applied within ${input.timeoutMs} ms for publication ${publication.publicationId}; ` +
       `last backend state: ${JSON.stringify(last)}`,
   );
 }
@@ -394,6 +428,8 @@ async function main(): Promise<void> {
   // Inspect the publication through sys only; Router reads the same bytes from PostgreSQL.
   const snapshotResponse = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
   requireStatus(snapshotResponse, 200, 'read published snapshot diagnostics');
+  const publication = readSmokePublication(snapshotResponse.body);
+  if (!publication) throw new Error('Published smoke task is unavailable or corrupt');
   const publicationId = snapshotResponse.body.publicationId;
   const inputHash = snapshotResponse.body.inputHash;
   const payload = snapshotResponse.body.payload;
@@ -423,14 +459,15 @@ async function main(): Promise<void> {
   );
 
   // Real asynchronous route: sector -> Router -> private HTTP -> sys acceptance -> plan.
-  const plan = await waitForAppliedPlan({
+  const accepted = await waitForAppliedPlan({
     token: dispatcher,
     requestIds,
     engineerId: engineer.id,
-    publicationId,
+    publication,
     inputHash,
     timeoutMs: planTimeoutMs,
   });
+  const plan = accepted.response;
   const firstRevision = plan.plan?.revision;
   const firstResultId = plan.appliedResult?.resultId;
   if (firstRevision === undefined || firstResultId === undefined) {
@@ -442,7 +479,7 @@ async function main(): Promise<void> {
     `revision=${String(plan.plan?.revision)}, assignments=${String(plan.plan?.assignments.length)}`,
   );
   check(
-    plan.appliedResult?.inputHash === inputHash,
+    plan.appliedResult?.inputHash === accepted.publication.inputHash,
     'backend accepted the current Router package',
     `result=${String(plan.appliedResult?.resultId)}`,
   );
@@ -490,6 +527,8 @@ async function main(): Promise<void> {
 
   const eventSnapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
   requireStatus(eventSnapshot, 200, 'read snapshot after urgent event');
+  const eventPublication = readSmokePublication(eventSnapshot.body);
+  if (!eventPublication) throw new Error('Urgent-event publication is unavailable or corrupt');
   const eventPublicationId = eventSnapshot.body.publicationId;
   const eventInputHash = eventSnapshot.body.inputHash;
   if (typeof eventPublicationId !== 'string' || typeof eventInputHash !== 'string') {
@@ -501,11 +540,11 @@ async function main(): Promise<void> {
     `publication=${eventPublicationId}, hash=${eventInputHash.slice(0, 12)}`,
   );
 
-  const replanned = await waitForAppliedPlan({
+  const { response: replanned } = await waitForAppliedPlan({
     token: dispatcher,
     requestIds: [...requestIds, urgentRequest.id],
     engineerId: engineer.id,
-    publicationId: eventPublicationId,
+    publication: eventPublication,
     inputHash: eventInputHash,
     timeoutMs: planTimeoutMs,
     minRevision: firstRevision,

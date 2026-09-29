@@ -38,7 +38,7 @@ export function DataUploadModal({
   motionOn,
   onClose,
   onUpload,
-  onImportOfficial,
+  onOpenReadyPacks,
   onRoadImport,
 }: {
   open: boolean;
@@ -49,7 +49,7 @@ export function DataUploadModal({
   motionOn: boolean;
   onClose: () => void;
   onUpload: (file: DataUploadFile, review?: ReviewImportQuality) => Promise<DataUploadSummary>;
-  onImportOfficial: (review?: ReviewImportQuality) => Promise<OfficialImportSummary>;
+  onOpenReadyPacks: () => void;
   onRoadImport: (payloadBase64: string) => Promise<RoadImportSummary>;
 }) {
   const inputId = useId();
@@ -460,19 +460,7 @@ export function DataUploadModal({
                 return;
               }
               setSubmitError(null);
-              setCandidates([]);
-              setIssues([]);
-              void onImportOfficial(reviewQuality)
-                .then(setResult)
-                .catch((error: unknown) =>
-                  setSubmitError(
-                    error instanceof ImportCancelledError
-                      ? null
-                      : error instanceof Error
-                        ? error.message
-                        : t('figma-dashboard.DataUploadModal.bbc31f0cba'),
-                  ),
-                );
+              onOpenReadyPacks();
             }}
             className="flex h-[56px] items-center justify-center rounded-[20px] bg-figma-bee px-[24px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
           >

@@ -216,7 +216,13 @@ const CATALOGUE = [
   {
     code: 'other_errors',
     title: 'TVE/ENT. Другие ошибки',
-    aliases: ['TVE/ENT. Другие ошибки'],
+    aliases: [
+      'TVE/ENT. Другие ошибки',
+      'TVE/ENT. Замирание картинки/появляется круг загрузки',
+      'TVE/ENT. Проблема с качеством изображения/звука',
+      'ТВ. Рассыпание/замирание картинки',
+      'Роутер. Не выходит ONLINE',
+    ],
     skill: 'local',
     ...LOCAL_REPAIR,
     priority: 'normal',

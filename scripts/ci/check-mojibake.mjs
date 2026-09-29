@@ -16,7 +16,6 @@ const INCLUDED_ROOT_PREFIXES = [
   "core/",
   "packages/",
   "docs/",
-  "context/",
   "infra/",
   "scripts/",
 ]
@@ -81,8 +80,6 @@ const EXCLUDED_PATH_PARTS = [
   "/.pnpm-store/",
   "/generated/",
   "/.venv/",
-  "/context/legacy_code/",
-  "/context/sources/",
 ]
 
 const replacementCharPattern = /\uFFFD/u

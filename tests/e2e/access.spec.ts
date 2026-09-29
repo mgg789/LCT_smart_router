@@ -43,9 +43,9 @@ test('engineer signs in by a real code on mobile and sees the assigned day', asy
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/engineer');
-  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Почта', { exact: true })).toBeVisible();
   if (!live.engineer.email) throw new Error('Seed engineer must have a login address');
-  await page.getByLabel('Email', { exact: true }).fill(live.engineer.email);
+  await page.getByLabel('Почта', { exact: true }).fill(live.engineer.email);
   const codeResponse = page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/v1/auth/login-code') && response.request().method() === 'POST',
@@ -66,5 +66,5 @@ test('engineer signs in by a real code on mobile and sees the assigned day', asy
   await expect(page.getByRole('heading', { name: 'Список заявок' })).toBeVisible();
   await page.getByRole('button', { name: 'Меню', exact: true }).click();
   await page.getByRole('button', { name: 'Выйти', exact: true }).click();
-  await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Почта', { exact: true })).toBeVisible();
 });
