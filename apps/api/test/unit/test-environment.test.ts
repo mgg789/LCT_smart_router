@@ -42,3 +42,23 @@ test('integration tests fail before boot without an isolated test database', () 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /TEST_DATABASE_URL is required/);
 });
+
+test('unit coverage imports Nest configuration without a developer environment or database', () => {
+  const helper = resolve(__dirname, '../support/unit-env.js');
+  const config = resolve(__dirname, '../../src/common/config/config.module.js');
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--require',
+      helper,
+      '-e',
+      `require(${JSON.stringify(config)}); setImmediate(() => process.stdout.write(JSON.stringify({ mode: process.env.NODE_ENV, database: process.env.DATABASE_URL })));`,
+    ],
+    { cwd: process.cwd(), encoding: 'utf8', env: {} },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    mode: 'test',
+    database: 'postgresql://unit:unit@127.0.0.1:1/unit_coverage',
+  });
+});
