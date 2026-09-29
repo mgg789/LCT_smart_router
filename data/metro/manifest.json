@@ -33,8 +33,8 @@
   ],
   "artifact": {
     "path": "core/resources/metro/moscow.json",
-    "bytes": 1031721,
-    "sha256": "7d2677147f0a2bbf98751ddc4880f74066e9563f54054ff2e89018aa24dc9ce8"
+    "bytes": 1156934,
+    "sha256": "33a1706d283fdd79bf88813d79d1b76f5a4d305b8fa080de53556f078dafe148"
   },
   "counts": {
     "stations": 278,
@@ -62,8 +62,8 @@
     ]
   },
   "method": {
-    "ride_duration": "ceil(distance_m * 1.15 / 41 km/h), minimum 60 sec",
-    "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 240 sec",
+    "ride_duration": "ceil(distance_m * 1.15 / 50 km/h), minimum 60 sec",
+    "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 60 sec and timetable waiting",
     "station_grouping": "normalized line/name across platform directions; shared line 4А stops canonicalized to line 4",
     "boundary": "Nominatim geometry for OSM relation 102269, includes New Moscow"
   }

@@ -37,7 +37,31 @@ def test_decode_marks_an_outside_mkad_connector_as_inexact():
         }
     )
     assert quote.geometry_exact is False
-    assert quote.provenance == "traffic_api"
+    assert quote.provenance == "approximate"
+    assert quote.traffic_factor == 1.1
+    assert quote.traffic_prepriced is True
+
+
+def test_prepriced_straight_road_api_quote_is_not_forecast_twice():
+    """Even a neutral provider factor is final for an already priced leg."""
+    from core.traffic_engine import ForecastTrafficTravel
+
+    quote = decode_road_api({
+        "mode": "straight", "duration_s": 100, "distance_m": 800,
+        "effective_factor": 1.0,
+        "geometry": [[55.1, 37.1], [55.2, 37.2]],
+    })
+
+    class FixedTravel:
+        version = "road-api-test"
+
+        def quote_at(self, *_args):
+            return quote
+
+    departure = 1786946400
+    assert ForecastTrafficTravel(FixedTravel(), departure).quote_at(
+        quote.points[0], quote.points[-1], "car", departure
+    ).duration_sec == 100
 
 
 def test_road_api_replaces_a_prepared_car_leg_and_leaves_walking(tmp_path, graph, monkeypatch):

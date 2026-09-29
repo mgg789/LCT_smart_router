@@ -29,6 +29,7 @@ import logging
 import math
 import os
 import socket
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -37,19 +38,23 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from core.contracts import GeoPoint, RouterTaskSnapshot
+from core.contracts import GeoPoint, RouterTaskSnapshot, RouterTechnicalSettings
 from core.geo import (
     TravelQuote,
     TravelSegment,
     TravelSource,
     TravelUnavailable,
     content_hash,
+    haversine_m,
     joined_segments,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 ROUTE3_VERSION = "route3-prepared-v1"
+ROUTE_DISK_CACHE_MAX_FILES = 4096
+ROUTE_DISK_CACHE_MAX_BYTES = 256 * 1024 * 1024
+ROUTE_DISK_PRUNE_INTERVAL_SEC = 60.0
 
 
 def _cached_route(kind: str, identity: str) -> dict | None:
@@ -67,6 +72,7 @@ def _remember_route(kind: str, identity: str, body: dict) -> None:
         cache.store_body(kind, identity, body)
 _PROVIDER_FAILURES = (httpx.HTTPError, OSError, ValueError, TypeError, KeyError, AttributeError)
 _TRUSTED_HOST_SUFFIXES = (".local",)
+_VERSION_KEYS = ("car", "foot", "metro", "model")
 
 
 def _host_is_private(host: str) -> bool:
@@ -140,11 +146,112 @@ class Route3Client:
         self.base_url = base_url
         self.cache = cache_dir
         self.offline = offline
+        self._versions: dict | None = None
+        self._disk_pruned_at = 0.0
+
+    @staticmethod
+    def _validate_versions(body: dict) -> dict:
+        """Validate the route-engine3 version snapshot used for cache identity."""
+        versions = body.get("versions") if isinstance(body, dict) else None
+        if not isinstance(versions, dict):
+            raise ValueError("ROUTE3_VERSIONS_MISSING")
+        if set(versions) != set(_VERSION_KEYS):
+            raise ValueError("ROUTE3_VERSIONS_INVALID")
+        if any(value is not None and not isinstance(value, str) for key, value in versions.items() if key != "model"):
+            raise ValueError("ROUTE3_VERSIONS_INVALID")
+        if not isinstance(versions["model"], str) or not versions["model"]:
+            raise ValueError("ROUTE3_VERSIONS_INVALID")
+        return {key: versions[key] for key in _VERSION_KEYS}
+
+    @property
+    def versions(self) -> dict | None:
+        """Current service version snapshot, fetched once per client lifecycle."""
+        return None if self._versions is None else dict(self._versions)
+
+    def _versions_path(self) -> Path:
+        endpoint = content_hash(self.base_url.encode())
+        return self.cache / f"versions3-{endpoint}.json"
+
+    def ensure_versions(self) -> dict:
+        """Load or fetch one version snapshot; never perform a per-pair request."""
+        if self._versions is not None:
+            return dict(self._versions)
+        path = self._versions_path()
+        if self.offline:
+            try:
+                body = json.loads(path.read_text(encoding="utf-8"))
+                self._versions = self._validate_versions(body)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise TravelUnavailable("ROUTE3_VERSIONS_CACHE_MISS") from exc
+            return dict(self._versions)
+        response = httpx.get(f"{self.base_url}/versions3", timeout=10.0, trust_env=False)
+        response.raise_for_status()
+        body = response.json()
+        self._versions = self._validate_versions(body)
+        self.cache.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f".{uuid4().hex}.tmp")
+        temporary.write_text(json.dumps({"versions": self._versions}, separators=(",", ":")), encoding="utf-8")
+        temporary.replace(path)
+        return dict(self._versions)
 
     @property
     def version(self) -> str:
-        """Cache namespace: the endpoint is the deployment's identity."""
-        return content_hash(json.dumps(["route3-v1", self.base_url]).encode())
+        """Cache namespace: endpoint and the service's immutable version snapshot."""
+        return content_hash(json.dumps(["route3-v2", self.base_url, self._versions], sort_keys=True).encode())
+
+    def _identity(self, kind: str, payload: list) -> str:
+        """Hash endpoint, versions and request parameters into a cache identity."""
+        return content_hash(json.dumps([kind, self.base_url, self._versions, *payload], separators=(",", ":"), sort_keys=True).encode())
+
+    def _disk_body(self, kind: str, identity: str) -> dict | None:
+        path = self.cache / self.version / f"{kind}-{identity}.json"
+        if not path.exists():
+            return None
+        body = json.loads(path.read_text(encoding="utf-8"))
+        self._validate_response(body)
+        return body
+
+    def _write_disk_body(self, kind: str, identity: str, body: dict) -> None:
+        path = self.cache / self.version / f"{kind}-{identity}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(f".{uuid4().hex}.tmp")
+        temporary.write_text(json.dumps(body, separators=(",", ":")), encoding="utf-8")
+        temporary.replace(path)
+        if kind == "route":
+            self._prune_disk_cache()
+
+    def _prune_disk_cache(self) -> None:
+        """Bound exact-departure route files while retaining the newest entries."""
+        now = time.monotonic()
+        if now - self._disk_pruned_at < ROUTE_DISK_PRUNE_INTERVAL_SEC:
+            return
+        self._disk_pruned_at = now
+        try:
+            entries = [
+                path
+                for path in self.cache.rglob("route-*.json")
+                if path.is_file()
+            ]
+            total = sum(path.stat().st_size for path in entries)
+            if len(entries) <= ROUTE_DISK_CACHE_MAX_FILES and total <= ROUTE_DISK_CACHE_MAX_BYTES:
+                return
+            entries.sort(key=lambda path: path.stat().st_mtime)
+            while entries and (len(entries) > ROUTE_DISK_CACHE_MAX_FILES or total > ROUTE_DISK_CACHE_MAX_BYTES):
+                path = entries.pop(0)
+                size = path.stat().st_size
+                path.unlink()
+                total -= size
+        except OSError:
+            return
+
+    def _validate_response(self, body: dict) -> dict:
+        """Reject responses from a different graph/model than this lifecycle."""
+        versions = self._validate_versions(body)
+        if self._versions is None:
+            self._versions = versions
+        elif versions != self._versions:
+            raise TravelUnavailable("ROUTE3_VERSION_CHANGED")
+        return body
 
     def route(
         self,
@@ -157,15 +264,16 @@ class Route3Client:
         departure: int,
     ) -> dict:
         """One /route3 call; returns the parsed response body."""
-        identity = content_hash(
-            json.dumps(
-                ["route", origin.lat, origin.lon, destination.lat, destination.lon, profile, traffic, metro, departure],
-                separators=(",", ":"),
-            ).encode()
-        )
+        self.ensure_versions()
+        identity = self._identity("route", [origin.lat, origin.lon, destination.lat, destination.lon, profile, traffic, metro, departure])
         cached = _cached_route("route", identity)
         if cached is not None:
+            return self._validate_response(cached)
+        cached = self._disk_body("route", identity)
+        if cached is not None:
             return cached
+        if self.offline:
+            raise TravelUnavailable("ROUTE3_CACHE_MISS")
         response = httpx.get(
             f"{self.base_url}/route3",
             params={
@@ -180,8 +288,9 @@ class Route3Client:
             trust_env=False,
         )
         response.raise_for_status()
-        body = response.json()
+        body = self._validate_response(response.json())
         _remember_route("route", identity, body)
+        self._write_disk_body("route", identity, body)
         return body
 
     def matrix(
@@ -194,15 +303,13 @@ class Route3Client:
         departure: int,
     ) -> dict:
         """One /matrix3 call for a whole point set."""
-        identity = content_hash(
-            json.dumps(
-                ["matrix", profile, traffic, planning, departure, [(p.lat, p.lon) for p in points]],
-                separators=(",", ":"),
-            ).encode()
-        )
+        self.ensure_versions()
+        identity = self._identity("matrix", [profile, traffic, planning, departure, [(p.lat, p.lon) for p in points]])
         cached = _cached_route("matrix", identity)
         if cached is not None:
-            return cached
+            return self._validate_response(cached)
+        if self.offline:
+            raise TravelUnavailable("ROUTE3_CACHE_MISS")
         response = httpx.get(
             f"{self.base_url}/matrix3",
             params={
@@ -216,7 +323,7 @@ class Route3Client:
             trust_env=False,
         )
         response.raise_for_status()
-        body = response.json()
+        body = self._validate_response(response.json())
         _remember_route("matrix", identity, body)
         return body
 
@@ -280,6 +387,7 @@ def quote_from_route3(body: dict, origin: GeoPoint, destination: GeoPoint) -> Tr
         float(body.get("effective_factor") or 1.0),
         geometry_exact=mode in ("road", "metro_composite"),
         segments=joined,
+        traffic_prepriced=bool(body.get("traffic_applied")),
     )
 
 
@@ -289,17 +397,22 @@ def verify_plan_with_route3(
     plan,
     *,
     metro: bool = True,
+    traffic: bool = True,
     known: dict | None = None,
+    technical: RouterTechnicalSettings | None = None,
 ) -> dict:
     """Verify every chosen leg of a plan against /route3.
 
     Returns a report with corrected quotes keyed by
-    ``(lat, lon, lat, lon, profile)`` for the solver override, per-route
+    ``(lat, lon, lat, lon, profile, departure)`` for the solver override, per-route
     duration drift and the jobs whose corrected schedule would break a window.
     Car legs ask for traffic; walk/transit legs ask for metro composites only
     when ``metro`` is on, so a disabled metro setting is not bypassed here.
-    The window check applies the route's total duration drift to every stop
-    after the corrected leg — a deliberately conservative estimate.
+    ``traffic`` follows the technical planning setting and prevents verification
+    from introducing traffic costs when the planner explicitly disabled them.
+    The diagnostic replays duration drift through waits and checks job completion.
+    ``technical`` aligns corrected costs with access buffers and weather scaling;
+    the re-solved plan validator remains the feasibility authority.
     ``known`` carries pairs verified in earlier rounds: they are reused, not
     re-requested, and ``new_legs`` counts only the pairs this call added.
     """
@@ -307,54 +420,69 @@ def verify_plan_with_route3(
         engineer.engineer_id: engineer.travel_profile() for engineer in snapshot.engineers
     }
     requests = {request.request_id: request for request in snapshot.requests}
-    corrections: dict[tuple[float, float, float, float, str], TravelQuote | None] = dict(known or {})
+    corrections: dict[tuple[float, float, float, float, str, int], TravelQuote | None] = dict(known or {})
     already_known = len(corrections)
     routes_report = []
     for route in plan.routes:
         profile = profile_of_engineer.get(route.engineer_id, "car")
         straight_total = corrected_total = 0
         breach = None
-        stops = [
-            stop
-            for stop in route.stops
-            if stop.kind in ("job", "lunch", "handoff", "delivery", "office_pickup")
-        ]
-        legs_by_stop = {leg.to_stop_id: leg for leg in route.legs}
-        previous = route.start_location
-        for stop in stops:
-            leg = legs_by_stop.get(stop.stop_id)
-            departure = leg.departure_at if leg is not None else snapshot.planning_as_of
-            key = (previous.lat, previous.lon, stop.location.lat, stop.location.lon, profile)
+        stops_by_id = {stop.stop_id: stop for stop in route.stops}
+        deltas_by_stop: dict[str, int] = {}
+        for leg in route.legs:
+            # A leg can end at a wait before a job, not at the job stop itself.
+            # Its recorded departure is authoritative for traffic and metro.
+            stop = stops_by_id[leg.to_stop_id]
+            previous = (route.start_location if leg.from_stop_id is None
+                        else stops_by_id[leg.from_stop_id].location)
+            departure = leg.departure_at
+            leg_profile = ("walk" if profile == "car"
+                           and haversine_m(previous, stop.location) <= 300 else profile)
+            key = (previous.lat, previous.lon, stop.location.lat, stop.location.lon, leg_profile, departure)
             if key not in corrections:
                 body = client.route(
                     previous,
                     stop.location,
-                    profile,
-                    traffic=profile == "car",
-                    metro=metro and profile == "transit",
+                    leg_profile,
+                    traffic=traffic and leg_profile == "car",
+                    metro=metro and leg_profile == "transit",
                     departure=departure,
                 )
                 corrections[key] = quote_from_route3(body, previous, stop.location)
             quote = corrections[key]
-            straight_total += leg.travel_time_sec if leg is not None else 0
+            straight_total += leg.travel_time_sec
             if quote is not None:
-                corrected_total += quote.duration_sec
-            if stop.kind == "job" and quote is not None:
+                corrected_sec = quote.duration_sec
+                if technical is not None and quote.distance_m:
+                    factor = getattr(leg, "weather_multiplier_used", None) or 1.0
+                    corrected_sec = math.ceil(corrected_sec * factor)
+                    corrected_sec = (corrected_sec + technical.access_buffer_sec
+                                     if technical.travel_time_mode == "graph_with_access_buffer"
+                                     else technical.fixed_travel_time_sec)
+                corrected_total += corrected_sec
+                deltas_by_stop[stop.stop_id] = corrected_sec - leg.travel_time_sec
+        # Replay every stop: an incoming leg may belong to the wait preceding a job.
+        # Existing waiting absorbs delay before it can shift the job's completion.
+        shift = 0
+        for stop in route.stops:
+            shift += deltas_by_stop.get(stop.stop_id, 0)
+            if stop.kind == "wait":
+                shift = max(0, shift - (stop.end_at - stop.start_at))
+            elif stop.kind == "job":
                 request = requests.get(stop.request_id)
                 if request is not None and request.window_end_at is not None:
-                    shift = corrected_total - straight_total
-                    corrected_arrival = stop.arrival_at + max(0, shift)
-                    if corrected_arrival > request.window_end_at:
+                    corrected_end = stop.end_at + max(0, shift)
+                    if corrected_end > request.window_end_at:
                         breach = {
                             "request_id": stop.request_id,
-                            "corrected_arrival_at": corrected_arrival,
+                            "corrected_arrival_at": stop.arrival_at + max(0, shift),
+                            "corrected_end_at": corrected_end,
                             "window_end_at": request.window_end_at,
                         }
-            previous = stop.location
         routes_report.append({
             "engineer_id": route.engineer_id,
             "profile": profile,
-            "legs": len(stops),
+            "legs": len(route.legs),
             "straight_duration_sec": straight_total,
             "corrected_duration_sec": corrected_total,
             "window_breach": breach,
@@ -426,7 +554,17 @@ class VerifiedRoute3:
         self.travel = base
         self.corrections = corrections
         self.version = content_hash(
-            json.dumps({"base": base.version, "verified": len(corrections)}, sort_keys=True).encode()
+            json.dumps(
+                {
+                    "base": base.version,
+                    "verified": [
+                        [*key, quote.duration_sec if quote is not None else None,
+                         quote.distance_m if quote is not None else None]
+                        for key, quote in sorted(corrections.items(), key=lambda item: repr(item[0]))
+                    ],
+                },
+                sort_keys=True,
+            ).encode()
         )
         self.provenance = getattr(base, "provenance", "route_api")
 
@@ -435,16 +573,21 @@ class VerifiedRoute3:
         return getattr(self.travel, "profiles", None)
 
     @staticmethod
-    def _keys(origin, destination, profile):
+    def _keys(origin, destination, profile, departure_at=None):
         """Correction keys for the profile and its transit/walk equivalent."""
         base = (origin.lat, origin.lon, destination.lat, destination.lon)
         equivalent = "walk" if profile == "transit" else ("transit" if profile == "walk" else profile)
         for name in dict.fromkeys((profile, equivalent)):
-            yield (*base, name)
+            if departure_at is None:
+                # Static callers may consume a legacy correction. Timed callers
+                # always use the six-field, departure-specific identity below.
+                yield (*base, name)
+            else:
+                yield (*base, name, departure_at)
 
-    def _correction(self, origin, destination, profile):
+    def _correction(self, origin, destination, profile, departure_at=None):
         """Return (found, quote); a metro composite is never a walk-only answer."""
-        for key in self._keys(origin, destination, profile):
+        for key in self._keys(origin, destination, profile, departure_at):
             if key in self.corrections:
                 quote = self.corrections[key]
                 if profile != "transit" and quote is not None and quote.provenance == "metro":
@@ -459,7 +602,7 @@ class VerifiedRoute3:
         return self.travel.quote(origin, destination, profile)
 
     def quote_at(self, origin, destination, profile, departure_at):
-        found, quote = self._correction(origin, destination, profile)
+        found, quote = self._correction(origin, destination, profile, departure_at)
         if found:
             return quote
         timed = getattr(self.travel, "quote_at", None)
@@ -494,6 +637,8 @@ class PreparedRoute3Matrix:
     durations. Points outside the matrix raise TravelUnavailable (MixedTravel
     falls back to the base graph); unreachable cells quote None.
     """
+
+    replaces_car_graph = True
 
     def __init__(
         self,
@@ -537,15 +682,15 @@ class PreparedRoute3Matrix:
                 for j, cell in enumerate(row):
                     mode = cell.get("mode")
                     if mode == "self":
-                        self.cells[profile, i, j] = (0, 0, None)
+                        self.cells[profile, i, j] = (0, 0, None, "self")
                     elif mode == "unreachable":
                         self.cells[profile, i, j] = None
-                    elif mode == "road":
+                    elif mode in ("road", "straight"):
                         distance = float(cell["distance_m"])
                         duration = float(cell["duration_s"])
                         base = float(cell.get("base_duration_s", duration))
                         if distance > 0 and duration <= 0:
-                            raise ValueError("nonzero road with zero duration")
+                            raise ValueError("nonzero route with zero duration")
                         forecast = cell.get("forecast_duration_s")
                         if forecast is not None and (
                             profile not in self.bands or len(forecast) != len(self.bands[profile])
@@ -555,6 +700,7 @@ class PreparedRoute3Matrix:
                             base,
                             distance,
                             tuple(float(v) for v in forecast) if forecast is not None else None,
+                            mode,
                         )
                     else:
                         raise ValueError(f"invalid route3 matrix mode: {mode}")
@@ -589,7 +735,7 @@ class PreparedRoute3Matrix:
         cell = self.cells[key]
         if cell is None:
             return None
-        base, distance, forecast = cell
+        base, distance, forecast, mode = cell
         duration = base
         factor = 1.0
         if forecast is not None and self.bands.get(profile):
@@ -603,8 +749,10 @@ class PreparedRoute3Matrix:
             math.ceil(duration),
             math.ceil(distance),
             (origin, destination),
-            "road_matrix",
+            ("approximate" if mode == "straight" else
+             "traffic_api" if forecast is not None and self.bands.get(profile) else "road_matrix"),
             factor,
+            traffic_prepriced=forecast is not None and bool(self.bands.get(profile)),
         )
 
 
@@ -627,6 +775,12 @@ def prepare_route3(
     """
     if not points:
         return None
+    # Establish one immutable service snapshot before reading any matrix key.
+    # This prevents a graph replacement behind the same URL from reusing old data.
+    try:
+        client.ensure_versions()
+    except _PROVIDER_FAILURES + (TravelUnavailable,):
+        return None
     per_profile: dict[str, dict] = {}
     requests = tuple(
         request
@@ -645,6 +799,7 @@ def prepare_route3(
                 profile,
                 traffic_on,
                 planning_on,
+                departure if traffic_on and not planning_on else None,
                 [(p.lat, p.lon) for p in points],
             ]).encode()
         )
@@ -656,7 +811,7 @@ def prepare_route3(
             )
 
         try:
-            per_profile[profile] = _document(path, fetch, client.offline)
+            per_profile[profile] = client._validate_response(_document(path, fetch, client.offline))
         except _PROVIDER_FAILURES:
             _LOGGER.warning("ROUTE3_MATRIX_UNAVAILABLE profile=%s; keeping other sources", profile)
     if not per_profile:

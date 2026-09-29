@@ -4,6 +4,31 @@ import importlib.util
 import shutil
 from pathlib import Path
 
+import pytest
+
+
+def test_route2_rejects_a_successful_but_distant_osrm_snap(tmp_path, monkeypatch):
+    root = Path(__file__).resolve().parents[2] / "services/road-api"
+    demo = tmp_path / "demo"
+    demo.mkdir()
+    data = tmp_path / "data"
+    data.mkdir()
+    for name in ("server.py", "traffic.py"):
+        shutil.copyfile(root / name, demo / name)
+    shutil.copyfile(root / "data/mkad-exact.geojson", data / "mkad-exact.geojson")
+    monkeypatch.syspath_prepend(str(demo))
+    spec = importlib.util.spec_from_file_location("road_snap_test_server", demo / "server.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    origin = (55.6997977, 37.7725762)
+    far = (54.8041762, 38.2768274)
+    monkeypatch.setattr(module, "osrm_route_steps", lambda *_: ([], {
+        "geometry": {"coordinates": [[37.772148, 55.699854], [37.695016, 55.575185]]},
+    }))
+    with pytest.raises(RuntimeError, match="outside graph coverage"):
+        module.road_route_v2(origin, far, 1786946400)
+    assert module.straight_line_v2(origin, far, 1786946400)["mode"] == "straight"
+
 
 def test_planning_matrix_batches_and_reuses_cached_bases(tmp_path, monkeypatch):
     root = Path(__file__).resolve().parents[2] / "services/road-api"

@@ -499,3 +499,17 @@ def test_reset_epoch_changes_factory_identity_and_rejects_stale_calibration(snap
             runtime._sync_working_set_generation(1, None)
     finally:
         runtime.close()
+
+
+def test_hybrid_failure_keeps_actionable_diagnostic(snapshot, graph, monkeypatch):
+    from core.hybrid import HybridVerificationError
+
+    monkeypatch.setenv('ROUTER_HYBRID', 'true')
+
+    def fail(*args, **kwargs):
+        raise HybridVerificationError('ROUTE3_VERIFY_ROUNDS_EXHAUSTED')
+
+    monkeypatch.setattr('core.runtime.hybrid_plan', fail)
+    result, output = calculate(snapshot.model_dump_json().encode(), graph, SearchSettings(), 'test')
+    assert result.status == 'error' and output is None
+    assert result.errors[0].code == 'ROUTE3_VERIFY_ROUNDS_EXHAUSTED'

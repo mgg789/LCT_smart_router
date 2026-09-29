@@ -10,7 +10,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
-COPY graphs.py server.py traffic.py metro.py ./
+COPY graphs.py server.py traffic.py metro.py metro_timetable.py ./
 
 ENV ENGINE3_PORT=8124 \
     ENGINE3_GRAPHS_DIR=/srv/graphs \

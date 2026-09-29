@@ -42,6 +42,7 @@ import traffic  # noqa: E402  (demo-local model, stdlib only)
 DEMO_PORT = int(os.environ.get("DEMO_PORT", "8123"))
 HOST = os.environ.get("HOST", "127.0.0.1")
 STRAIGHT_SPEED_KMH = 40.0  # v1 flat assumption; v2 uses traffic.straight_speed_kmh
+MAX_ENDPOINT_SNAP_M = 250.0
 
 # Base (traffic-free) duration/distance cache for /matrix2 cells. Keyed by the
 # rounded coordinates pair; traffic factors are applied AFTER the cache, so a
@@ -274,12 +275,17 @@ def straight_line_v2(a, b, departure_epoch):
 def road_route_v2(a, b, departure_epoch):
     """Road route factored per step by the v2 traffic model."""
     steps, route = osrm_route_steps(a, b)
+    coordinates = route["geometry"]["coordinates"]
+    if (len(coordinates) < 2
+            or haversine_m(a, (coordinates[0][1], coordinates[0][0])) > MAX_ENDPOINT_SNAP_M
+            or haversine_m(b, (coordinates[-1][1], coordinates[-1][0])) > MAX_ENDPOINT_SNAP_M):
+        raise RuntimeError("OSRM endpoint outside graph coverage")
     summary = traffic.summarize_route(steps, departure_epoch)
     waypoints = route.get("waypoints", [])
     summary.update({
         "mode": "road",
         "distance_m": round(route["distance"], 1),
-        "geometry": [[lat, lon] for lon, lat in route["geometry"]["coordinates"]],
+        "geometry": [[lat, lon] for lon, lat in coordinates],
         "snapped": [
             {"lat": w["location"][1], "lon": w["location"][0]} for w in waypoints[:2]
         ],

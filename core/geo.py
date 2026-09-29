@@ -136,6 +136,7 @@ class TravelQuote:
     geometry_exact: bool = False
     segments: tuple["TravelSegment", ...] = ()
     weather_multiplier_used: float | None = None
+    traffic_prepriced: bool = False
 
 
 @dataclass(frozen=True)
@@ -315,6 +316,7 @@ class TechnicalTravel:
             quote.geometry_exact if provenance != "approximate" else False,
             segments,
             quote.weather_multiplier_used,
+            quote.traffic_prepriced if self.settings.travel_time_mode == "graph_with_access_buffer" else False,
         )
 
 

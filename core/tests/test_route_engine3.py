@@ -23,7 +23,7 @@ def load_engine3(tmp_path: Path, monkeypatch) -> tuple[object, object]:
     """Copy the service into a sandbox with its own graphs dir and load it."""
     sandbox = tmp_path / "engine3"
     sandbox.mkdir()
-    for name in ("graphs.py", "server.py", "traffic.py", "metro.py"):
+    for name in ("graphs.py", "server.py", "traffic.py", "metro.py", "metro_timetable.py"):
         shutil.copyfile(ROOT / name, sandbox / name)
     graphs_dir = tmp_path / "graphs"
     (graphs_dir / "car").mkdir(parents=True)

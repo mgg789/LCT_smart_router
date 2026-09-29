@@ -1,3 +1,7 @@
+# Demo recordings
+
+The current stand walkthrough is [video_demo_v1.9.mp4](./video_demo_v1.9.mp4) (12:03, 960×540, compressed under the SourceCraft 100 MB object limit).
+
 # V1.0 demo recordings
 
 Recorded walkthrough of the public stand <https://navix.droidje.com> for jury
