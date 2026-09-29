@@ -256,7 +256,14 @@ function RequestRow({
       >
         {shortRequestId(row.id)}
       </FigmaText>
-      <p className="mx-auto line-clamp-2 max-w-[196px] text-center font-medium text-[20px] leading-[24px] text-figma-ink">
+      {/* The dataset writes «ул.Грайвороновская» with no space after the prefix, so the
+          street is one token wider than the column and used to be cut mid-word with no
+          ellipsis to show for it. Breaking inside the word lets the two-line clamp do its
+          job, and the full address stays available on hover. */}
+      <p
+        className="mx-auto line-clamp-2 max-w-[196px] break-words text-center font-medium text-[20px] leading-[24px] text-figma-ink"
+        title={row.address}
+      >
         {row.address}
       </p>
       <p className="figma-nowrap overflow-hidden text-center font-medium text-[20px] text-ellipsis text-figma-ink">

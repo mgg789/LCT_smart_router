@@ -387,6 +387,7 @@ export function ClientApp() {
         else go(id);
       }}
       onNewRequest={() => go('new')}
+      onSignOut={forgetSession}
       open
     />
   );
@@ -402,6 +403,7 @@ export function ClientApp() {
         else go(id);
       }}
       onNewRequest={() => go('new')}
+      onSignOut={forgetSession}
       open={menuOpen}
     />
   );

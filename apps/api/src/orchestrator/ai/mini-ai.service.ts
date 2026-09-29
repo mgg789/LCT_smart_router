@@ -225,7 +225,10 @@ export class MiniAiService {
     );
     const scheme = new URL(raw).protocol;
     if (scheme !== 'http:' && scheme !== 'https:') {
-      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one доступен только по HTTP(S).');
+      throw new SysError(
+        'SERVICE_NOT_CONFIGURED',
+        'Автоподбор недоступен: сервис настроен неверно. Выберите вручную.',
+      );
     }
     return raw;
   }
@@ -391,14 +394,23 @@ export class MiniAiService {
       // No System one in this deployment (it runs on the operator's machine, not in
       // compose): a 503 lets the client keep the locally parsed fields, per the
       // documented degradation, instead of surfacing an internal error.
-      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one недоступен.');
+      throw new SysError(
+        'SERVICE_NOT_CONFIGURED',
+        'Автоподбор сейчас недоступен — выберите вариант вручную.',
+      );
     }
     if (!response.ok) {
-      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one не ответил.');
+      throw new SysError(
+        'SERVICE_NOT_CONFIGURED',
+        'Автоподбор не ответил вовремя — выберите вариант вручную.',
+      );
     }
     const body = (await response.json()) as { choice?: unknown };
     if (typeof body.choice !== 'string' || !uniqueOptions.includes(body.choice)) {
-      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one вернул вариант вне списка.');
+      throw new SysError(
+        'SERVICE_NOT_CONFIGURED',
+        'Автоподбор предложил вариант вне списка — выберите вручную.',
+      );
     }
     return body.choice;
   }

@@ -42,6 +42,7 @@ export function RequestDetails({
   motionOn,
   onClose,
   onOpenEngineer,
+  onWriteToEngineer,
 }: {
   mode: 'plan' | 'request';
   request: RequestView | null;
@@ -57,6 +58,7 @@ export function RequestDetails({
   motionOn: boolean;
   onClose: () => void;
   onOpenEngineer?: () => void;
+  onWriteToEngineer?: () => Promise<void>;
 }) {
   const offline = isNavixOffline();
   const { dx, dy } = useArtboardStretch();
@@ -184,11 +186,13 @@ export function RequestDetails({
           >
             {t('figma-dashboard.RequestDetails.f07be04268')}
           </button>
+          {/* Opens the engineer's own dialogue; the button was behind a «Скоро»
+              although the chat contour has carried it from the start. */}
           <button
             type="button"
-            disabled
-            title={t('figma-dashboard.RequestDetails.72c299e0d6')}
-            className="h-[52px] flex-1 cursor-not-allowed rounded-[16px] bg-white/15 font-semibold text-[16px] text-white/45"
+            disabled={!onWriteToEngineer}
+            onClick={() => void onWriteToEngineer?.()}
+            className="h-[52px] flex-1 rounded-[16px] bg-white/15 font-semibold text-[16px] text-white disabled:cursor-not-allowed disabled:text-white/45"
           >
             {t('figma-dashboard.RequestDetails.3214e286d7')}
           </button>

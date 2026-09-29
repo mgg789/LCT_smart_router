@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { openDispatchChat } from '../api/ai';
+import { type DispatchChatTarget, openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
@@ -526,6 +526,23 @@ export function MainDashboardPage() {
   ]);
 
   const motionOn = !reduceMotion;
+
+  /**
+   * Opens (or re-enters) a dialogue with whoever this target names and shows it.
+   *
+   * The same path for all three entry points — the engineer's dossier, an open
+   * request's «Написать клиенту» and the engineer card's «Написать» — because the
+   * server resolves the account from the request or the engineer either way.
+   */
+  const openChatWith = async (target: DispatchChatTarget) => {
+    if (!dash.token) return;
+    const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), target);
+    setFocusedChatId(chat.handoff.id);
+    setOpenedRequestId(null);
+    setStackDir(stackSlideDir(stackNav, 'chats'));
+    setStackNav('chats');
+    setActiveNav('chats');
+  };
 
   if (!dash.authenticated) {
     return (
@@ -1221,17 +1238,7 @@ export function MainDashboardPage() {
                       onSetAvailability={(engineerId, availability) => {
                         void dash.updateEngineerAvailability(engineerId, availability);
                       }}
-                      onOpenChat={async (engineerId) => {
-                        if (!dash.token) return;
-                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
-                          kind: 'engineer',
-                          engineerId,
-                        });
-                        setFocusedChatId(chat.handoff.id);
-                        setStackDir(stackSlideDir(stackNav, 'chats'));
-                        setStackNav('chats');
-                        setActiveNav('chats');
-                      }}
+                      onOpenChat={(engineerId) => openChatWith({ kind: 'engineer', engineerId })}
                     />
                   ) : null}
                   {stackViewKey(stackNav) === 'main' ? (
@@ -1330,6 +1337,15 @@ export function MainDashboardPage() {
                               setStackNav('engineers');
                               setActiveNav('engineers');
                             }}
+                            onWriteToEngineer={
+                              dash.writesDisabled || !dash.selectedEngineer
+                                ? undefined
+                                : () =>
+                                    openChatWith({
+                                      kind: 'engineer',
+                                      engineerId: dash.selectedEngineer.id,
+                                    })
+                            }
                             request={dash.selectedRequest}
                             engineer={dash.selectedEngineer}
                             explanation={panelExplanation}
@@ -1390,6 +1406,11 @@ export function MainDashboardPage() {
                               }
                               await assign();
                             }
+                      }
+                      onWriteToClient={
+                        dash.writesDisabled
+                          ? undefined
+                          : () => openChatWith({ kind: 'request', requestId: openedRequestId })
                       }
                     />
                   </motion.div>

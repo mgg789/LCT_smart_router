@@ -172,3 +172,27 @@ describe('ALERTS inbox', () => {
     ).toEqual([3, 2, 1]);
   });
 });
+
+it('folds a run of identical notices into the newest card', () => {
+  const rebuilt = (id: string, createdAt: number) => ({
+    id,
+    kind: 'notice' as const,
+    code: 'plan_rebuilt',
+    createdAt,
+    seenAt: null,
+    resolvedAt: null,
+    reasons: ['Маршруты обновлены'],
+    requestIds: [],
+    engineerIds: [],
+  });
+  const snapshot = createDevSnapshot();
+  const { notices } = inboxFromSources(
+    { ...snapshot, alerts: [rebuilt('n-1', 100), rebuilt('n-2', 200), rebuilt('n-3', 300)] },
+    [],
+  );
+
+  // One card for the three, and hiding it accounts for all three.
+  expect(notices).toHaveLength(1);
+  expect(notices[0]?.sourceNoticeId).toBe('n-3');
+  expect([...(notices[0]?.repeatedNoticeIds ?? [])].sort()).toEqual(['n-1', 'n-2', 'n-3']);
+});
