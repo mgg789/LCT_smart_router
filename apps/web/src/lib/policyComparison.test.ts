@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { policyLabel } from '../figma-dashboard/fromSnapshot';
 import {
   perAssignmentDuration,
   perAssignmentKm,
@@ -11,8 +12,14 @@ describe('policy comparison labels', () => {
   it('names compact and the TZ baseline the way the dispatcher page does', () => {
     expect(strategyLabel('compact')).toBe('Дешевле');
     expect(strategyLabel('fast')).toBe('Быстрее до клиента');
-    expect(strategyLabel('baseline')).toBe('Базовая из ТЗ');
+    expect(strategyLabel('baseline')).toBe('FIFO · базовая из ТЗ');
     expect(strategyDescription('baseline')).toContain('очереди');
+  });
+
+  it('gives every policy one name, the picker and the comparison alike', () => {
+    for (const id of ['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const) {
+      expect(strategyLabel(id)).toBe(policyLabel(id));
+    }
   });
 
   it('formats per-assignment extras and FIFO deltas', () => {
