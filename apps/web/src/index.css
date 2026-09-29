@@ -95,12 +95,22 @@ body {
 
 /*
  * Text fields focus on a plain click, not only from the keyboard, so the halo above
- * drew a near-white ring around every field the moment it was tapped -- on the dark
- * composer and the dark request panel it read as a stray white border. The brand
- * yellow carries the same contrast on both shades without the halo, and the caret
- * already says which field is live.
+ * drew a ring around every field the moment it was tapped -- a border the mock does not
+ * have, and on the dark composer and the dark request panel it read as a stray light
+ * outline. A caret-bearing field announces itself with the caret, so it needs no ring of
+ * its own. Fields with nothing else to show that they are live -- `select`, a checkbox, a
+ * file picker -- keep a ring, in the brand yellow so it reads on both shades.
  */
-:where(input, textarea, select, [contenteditable]):focus-visible {
+:where(
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+  textarea,
+  [contenteditable]
+):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+:where(select, input[type="checkbox"], input[type="radio"], input[type="file"]):focus-visible {
   outline: 2px solid var(--color-figma-bee);
   outline-offset: 1px;
   box-shadow: none;
