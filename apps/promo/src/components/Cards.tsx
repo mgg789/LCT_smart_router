@@ -1,815 +1,1167 @@
 /**
  * The cards between sections.
  *
- * Each one is a short, designed beat rather than a title over black: its own palette,
- * its own abstraction, its own way of arriving. What they share is the grammar — a
- * ground that moves, a figure that draws itself, a word that lands last — so five very
- * different frames still read as one film.
- *
- * Everything here is deterministic: the only source of variation is `rand`, a hash of a
- * seed, so a re-render produces the identical frame.
+ * Each one is a title and one moving diagram on a flat ground, on a shared grid: 96px
+ * from the frame, the word top-left, the diagram below it. Every number on a card is
+ * read from the repository's own measurements (`docs/benchmarks/…`) or from the scene
+ * the reel films next; nothing is invented for the card.
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
-import { color, EASE_SNAP, font, HEIGHT, WIDTH } from '../theme.ts';
-import { ease } from './Type.tsx';
+import { color, font, HEIGHT, MARKER_BLUE, WIDTH } from '../theme.ts';
+import { Arrow, Loop, Note, Underline } from './Sketch.tsx';
+import { AI_GRADIENT, Rise } from './Type.tsx';
 
-/** A stable number in [0,1) for an integer seed. */
-function rand(seed: number): number {
-  const x = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
-  return x - Math.floor(x);
-}
+const INK = '#141416';
+const PAPER = '#f3f0e8';
+const PAPER_2 = '#e7e2d6';
+const LINE = 'rgba(20,20,22,0.14)';
+const MUTE_INK = 'rgba(20,20,22,0.55)';
+const MUTE_LIGHT = 'rgba(255,255,255,0.55)';
+const PANEL = '#17191e';
+const PANEL_EDGE = 'rgba(255,255,255,0.09)';
+const SLATE = '#7b8190';
+const ALARM = '#f72030';
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** Progress of a stage that starts at `delay` and runs for `length` frames. */
-const stage = (frame: number, delay: number, length: number) =>
-  ease(clamp01((frame - delay) / length));
-
-// ---------------------------------------------------------------------------
-// Shared furniture
-// ---------------------------------------------------------------------------
-
-interface ShellProps {
-  readonly children: ReactNode;
-  /** The wash behind everything, usually a gradient in the card's own hue. */
-  readonly wash: string;
-  readonly tint: string;
+function stage(frame: number, delay: number, length: number): number {
+  const t = clamp01((frame - delay) / length);
+  return 1 - (1 - t) ** 3;
 }
 
-/**
- * The stage a card is built on.
- *
- * A card is cut into and out of hard, so the whole thing carries a slow push of its own:
- * the frame is never static, even on a card that lasts under three seconds.
- */
-function Shell({ children, wash, tint }: ShellProps) {
+/** Ease-in-out progress, for things that travel rather than arrive. */
+function travel(frame: number, delay: number, length: number): number {
+  const t = clamp01((frame - delay) / length);
+  return t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+}
+
+function Brackets({ stroke }: { stroke: string }) {
+  const arm = 22;
+  const inset = 36;
+  const edge = `2px solid ${stroke}`;
+  const box = (style: CSSProperties): CSSProperties => ({
+    position: 'absolute',
+    width: arm,
+    height: arm,
+    ...style,
+  });
+  return (
+    <>
+      <div style={box({ left: inset, top: inset, borderLeft: edge, borderTop: edge })} />
+      <div style={box({ right: inset, top: inset, borderRight: edge, borderTop: edge })} />
+      <div style={box({ left: inset, bottom: inset, borderLeft: edge, borderBottom: edge })} />
+      <div style={box({ right: inset, bottom: inset, borderRight: edge, borderBottom: edge })} />
+    </>
+  );
+}
+
+function Ground({ bg, dots, children }: { bg: string; dots?: string; children: ReactNode }) {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
-  const inP = ease(clamp01(frame / 18), EASE_SNAP);
-  const outP = ease(clamp01((frame - (durationInFrames - 13)) / 13));
-  const drift = interpolate(frame, [0, durationInFrames], [1.045, 1.0]);
-
+  const out = stage(frame, durationInFrames - 10, 10);
   return (
-    <AbsoluteFill style={{ backgroundColor: color.stage, overflow: 'hidden' }}>
-      <AbsoluteFill style={{ background: wash, opacity: interpolate(inP, [0, 1], [0, 1]) }} />
-      {/* Grain, so a flat gradient does not band on a dark projector. */}
-      <AbsoluteFill
-        style={{
-          opacity: 0.045,
-          mixBlendMode: 'overlay',
-          backgroundImage:
-            'repeating-linear-gradient(0deg, rgba(255,255,255,0.8) 0 1px, rgba(0,0,0,0.8) 1px 2px)',
-          backgroundSize: '3px 3px',
-          transform: `translate3d(${(frame % 3) - 1}px, ${((frame * 5) % 3) - 1}px, 0)`,
-        }}
-      />
-      <AbsoluteFill
-        style={{
-          transform: `scale(${(drift * interpolate(outP, [0, 1], [1, 1.06])).toFixed(4)})`,
-          transformOrigin: '50% 50%',
-          opacity: interpolate(outP, [0, 1], [1, 0]),
-        }}
-      >
-        {children}
-      </AbsoluteFill>
-      {/* A rim of the card's colour, so the cut out of it carries the hue a beat longer. */}
-      <AbsoluteFill
-        style={{
-          boxShadow: `inset 0 0 ${HEIGHT * 0.22}px ${tint}22`,
-          pointerEvents: 'none',
-        }}
-      />
+    <AbsoluteFill style={{ backgroundColor: bg, overflow: 'hidden', opacity: 1 - out }}>
+      {dots ? (
+        <AbsoluteFill
+          style={{
+            backgroundImage: `radial-gradient(${dots} 1.1px, transparent 1.1px)`,
+            backgroundSize: '22px 22px',
+            backgroundPosition: `${(frame * 0.25).toFixed(2)}px 0px`,
+            opacity: 0.55,
+          }}
+        />
+      ) : null}
+      <Brackets stroke={dots ? 'rgba(255,255,255,0.28)' : 'rgba(20,20,22,0.28)'} />
+      {children}
     </AbsoluteFill>
   );
 }
 
-interface WordProps {
-  readonly word: string;
-  readonly kicker?: string;
-  readonly size: number;
-  readonly delay?: number;
-  readonly style?: CSSProperties;
-  readonly kickerColor?: string;
-}
-
-/** The word itself: masked up from its own baseline, tracking closing as it lands. */
-function Word({ word, kicker, size, delay = 6, style, kickerColor = color.muted }: WordProps) {
-  const frame = useCurrentFrame();
-  const p = stage(frame, delay, 26);
-  const kick = stage(frame, delay + 10, 20);
-  const tracking = interpolate(p, [0, 1], [0.15, -0.026]);
-
+function Title({
+  kicker,
+  word,
+  detail,
+  ink,
+  mute,
+}: {
+  kicker: string;
+  word: string;
+  detail: string;
+  ink: string;
+  mute: string;
+}) {
   return (
-    <div
-      style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: HEIGHT * 0.028,
-      }}
-    >
-      {/* The abstraction behind every card runs right through where the word sits, so the
-          word brings its own shade with it rather than each card drawing one. */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background:
-            'radial-gradient(46% 26% at 50% 50%, rgba(8,9,11,0.86) 0%, rgba(8,9,11,0.5) 52%, rgba(8,9,11,0) 78%)',
-          opacity: p,
-        }}
-      />
-      {kicker ? (
-        <div style={{ overflow: 'hidden', paddingBottom: HEIGHT * 0.004, zIndex: 1 }}>
-          <span
-            style={{
-              display: 'block',
-              transform: `translate3d(0, ${((1 - kick) * 110).toFixed(2)}%, 0)`,
-              opacity: kick,
-              fontFamily: font.text,
-              fontWeight: 700,
-              fontSize: HEIGHT * 0.0235,
-              letterSpacing: '0.4em',
-              textTransform: 'uppercase',
-              color: kickerColor,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {kicker}
-          </span>
-        </div>
-      ) : null}
-      <div style={{ overflow: 'hidden', paddingBottom: '0.06em', zIndex: 1 }}>
+    <div style={{ position: 'absolute', left: 96, top: 132, right: 96 }}>
+      <Rise delay={0} duration={16}>
         <span
           style={{
-            display: 'block',
-            transform: `translate3d(0, ${((1 - p) * 104).toFixed(2)}%, 0)`,
+            fontFamily: font.text,
+            fontWeight: 600,
+            fontSize: 15,
+            letterSpacing: '0.26em',
+            textTransform: 'uppercase',
+            color: mute,
+          }}
+        >
+          {kicker}
+        </span>
+      </Rise>
+      <Rise delay={5} duration={18} style={{ marginTop: 14 }}>
+        <span
+          style={{
             fontFamily: font.display,
-            fontSize: HEIGHT * size,
-            lineHeight: 1,
-            letterSpacing: `${tracking}em`,
-            paddingRight: '0.06em',
-            color: color.white,
-            whiteSpace: 'nowrap',
-            ...style,
+            fontSize: 124,
+            lineHeight: 0.88,
+            letterSpacing: '-0.035em',
+            color: ink,
           }}
         >
           {word}
         </span>
-      </div>
+      </Rise>
+      <Rise delay={12} duration={16} style={{ marginTop: 16 }}>
+        <span
+          style={{
+            fontFamily: font.text,
+            fontWeight: 500,
+            fontSize: 26,
+            letterSpacing: '-0.01em',
+            color: mute,
+          }}
+        >
+          {detail}
+        </span>
+      </Rise>
     </div>
   );
 }
 
-/** A line that draws itself, given the path's own length. */
-function DrawnPath({
-  d,
-  length,
-  progress,
-  stroke,
-  width,
-  dash,
-  cap = 'round',
-  opacity = 1,
+function Small({
+  children,
+  color: tint,
+  style,
 }: {
-  d: string;
-  length: number;
-  progress: number;
-  stroke: string;
-  width: number;
-  dash?: string;
-  cap?: 'round' | 'butt';
-  opacity?: number;
+  children: ReactNode;
+  color: string;
+  style?: CSSProperties;
 }) {
   return (
-    <path
-      d={d}
-      fill="none"
-      stroke={stroke}
-      strokeWidth={width}
-      strokeLinecap={cap}
-      strokeLinejoin="round"
-      opacity={opacity}
-      strokeDasharray={dash ?? `${length} ${length}`}
-      strokeDashoffset={dash ? undefined : length * (1 - progress)}
-    />
+    <div
+      style={{
+        fontFamily: font.text,
+        fontWeight: 600,
+        fontSize: 14,
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+        color: tint,
+        ...style,
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ИНЖЕНЕР — a route drawing itself across the frame, live
-// ---------------------------------------------------------------------------
+function Svg({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      width={WIDTH}
+      height={HEIGHT}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      style={{ position: 'absolute', inset: 0 }}
+      aria-hidden
+    >
+      <title>diagram</title>
+      {children}
+    </svg>
+  );
+}
 
-const ROUTE_D =
-  'M -60 690 L 250 690 L 330 560 L 560 560 L 660 430 L 980 430 ' +
-  'L 1080 300 L 1400 300 L 1490 430 L 1760 430 L 1840 330 L 1990 330';
-const ROUTE_LEN = 3050;
+// --- ИНЖЕНЕР ---------------------------------------------------------------
+
+/**
+ * Travel-time checks from `docs/benchmarks/roads-vs-yandex-20260929`: our offline
+ * forecast against Yandex Maps on the same five Moscow routes, in minutes.
+ */
+const ETA_CHECKS = [
+  { mode: 'авто', ours: 14 + 15 / 60, yandex: 16 },
+  { mode: 'авто', ours: 16 + 27 / 60, yandex: 18 },
+  { mode: 'метро', ours: 22 + 5 / 60, yandex: 21 },
+  { mode: 'метро', ours: 28 + 28 / 60, yandex: 32 },
+  { mode: 'авто', ours: 18 + 8 / 60, yandex: 19 },
+] as const;
+
+const clock = (minutes: number) => {
+  const whole = Math.floor(minutes);
+  const seconds = Math.round((minutes - whole) * 60);
+  return `${whole}:${String(seconds).padStart(2, '0')}`;
+};
 
 export function CardEngineer() {
   const frame = useCurrentFrame();
-  const draw = stage(frame, 2, 52);
-  const stops = [
-    { x: 330, y: 560 },
-    { x: 660, y: 430 },
-    { x: 1080, y: 300 },
-    { x: 1490, y: 430 },
-  ];
-  // The travelling dot rides the same progress, so it is always at the drawn end.
-  const headAt = draw;
-  const blink = 0.55 + 0.45 * Math.sin(frame * 0.26);
+  const left = 96;
+  const right = WIDTH - 96;
+  const y = 432;
+  const draw = stage(frame, 4, 34);
+  const moved = travel(frame, 22, 120);
+  const stops = [0.1, 0.38, 0.64, 0.9];
+  const xAt = (t: number) => left + (right - left) * t;
+
+  const base = 960;
+  const tall = 330;
+  const groupWidth = 196;
+  const barWidth = 62;
+  const chartLeft = 96;
+  const deviation = interpolate(stage(frame, 70, 50), [0, 1], [0, 8]);
 
   return (
-    <Shell
-      wash="radial-gradient(72% 86% at 24% 76%, rgba(37,99,235,0.30) 0%, rgba(8,9,11,0) 68%), radial-gradient(56% 64% at 82% 18%, rgba(110,197,255,0.16) 0%, rgba(8,9,11,0) 70%)"
-      tint="#6ec5ff"
-    >
-      {/* The ground: a field of measure marks, sliding as if the map were panning. */}
-      <AbsoluteFill
-        style={{
-          opacity: 0.16,
-          backgroundImage:
-            'linear-gradient(90deg, rgba(110,197,255,0.5) 1px, transparent 1px), linear-gradient(0deg, rgba(110,197,255,0.35) 1px, transparent 1px)',
-          backgroundSize: '96px 96px',
-          transform: `translate3d(${(-frame * 0.9).toFixed(1)}px, ${(-frame * 0.42).toFixed(1)}px, 0)`,
-          maskImage: 'radial-gradient(70% 70% at 50% 50%, #000 20%, transparent 78%)',
-          WebkitMaskImage: 'radial-gradient(70% 70% at 50% 50%, #000 20%, transparent 78%)',
-        }}
+    <Ground bg={PAPER}>
+      <Title
+        kicker="Приложение"
+        word="ИНЖЕНЕР"
+        detail="Один клик — и он на линии"
+        ink={INK}
+        mute={MUTE_INK}
       />
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: 'absolute', inset: 0 }}
-        aria-hidden
-      >
-        <title>route</title>
-        {/* The chord first, dashed, the way the product draws an edge it has no road for. */}
-        <DrawnPath
-          d={ROUTE_D}
-          length={ROUTE_LEN}
-          progress={1}
-          stroke="rgba(110,197,255,0.30)"
-          width={3}
-          dash="14 18"
+      <Svg>
+        <line x1={left} y1={y} x2={right} y2={y} stroke={LINE} strokeWidth={2} />
+        <line
+          x1={left}
+          y1={y}
+          x2={left + (right - left) * draw}
+          y2={y}
+          stroke={INK}
+          strokeWidth={4}
+          strokeLinecap="round"
         />
-        <DrawnPath
-          d={ROUTE_D}
-          length={ROUTE_LEN}
-          progress={draw}
-          stroke="#6ec5ff"
-          width={7}
-          opacity={0.9}
-        />
-        {stops.map((stop, index) => {
-          const on = clamp01((draw - (0.18 + index * 0.2)) * 9);
+        {stops.map((at, index) => {
+          const reached = moved >= at;
+          const pop = stage(frame, 22 + at * 120, 10);
+          const x = xAt(at);
           return (
-            <g key={`${stop.x}-${stop.y}`} opacity={on}>
+            <g key={at} opacity={clamp01(draw * 3 - index * 0.4)}>
               <circle
-                cx={stop.x}
-                cy={stop.y}
-                r={13 + (1 - on) * 26}
-                fill="none"
-                stroke="#6ec5ff"
-                strokeWidth={2.5}
-                opacity={0.55}
+                cx={x}
+                cy={y}
+                r={13 + (reached ? pop * 2 : 0)}
+                fill={reached ? color.bee : PAPER}
+                stroke={INK}
+                strokeWidth={3}
               />
-              <circle cx={stop.x} cy={stop.y} r={9} fill={color.stage} />
-              <circle cx={stop.x} cy={stop.y} r={9} fill="none" stroke="#6ec5ff" strokeWidth={4} />
+              {reached ? (
+                <path
+                  d={`M${x - 5} ${y} l4 4 l7 -8`}
+                  fill="none"
+                  stroke={INK}
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pathLength={1}
+                  strokeDasharray={1}
+                  strokeDashoffset={1 - pop}
+                />
+              ) : null}
+              <text
+                x={x}
+                y={y + 46}
+                textAnchor="middle"
+                fill={INK}
+                fontFamily={font.text}
+                fontSize={17}
+                fontWeight={600}
+              >
+                {`0${index + 1}`}
+              </text>
             </g>
           );
         })}
-        {/* The head of the line: where the engineer is right now. */}
-        <g opacity={headAt > 0.02 && headAt < 0.995 ? 1 : 0}>
-          <circle
-            cx={0}
-            cy={0}
-            r={26}
-            fill="rgba(110,197,255,0.22)"
-            style={{
-              transform: `translate(${interpolate(headAt, [0, 1], [-60, 1990])}px, ${interpolate(headAt, [0, 0.26, 0.52, 0.78, 1], [690, 560, 430, 300, 330])}px)`,
-            }}
-          />
+        <g transform={`translate(${xAt(moved)}, ${y})`} opacity={clamp01((frame - 20) / 6)}>
+          <circle r={26 + Math.sin(frame / 5) * 3} fill={color.bee} opacity={0.28} />
+          <circle r={10} fill={INK} stroke={color.bee} strokeWidth={4} />
         </g>
-      </svg>
 
-      {/* A live badge, because the point of this app is that it is happening now. */}
+        {ETA_CHECKS.map((check, index) => {
+          const grow = stage(frame, 40 + index * 7, 30);
+          const gx = chartLeft + index * groupWidth;
+          const hOurs = (check.ours / 32) * tall * grow;
+          const hYa = (check.yandex / 32) * tall * grow;
+          return (
+            <g key={`${check.mode}-${check.yandex}`}>
+              <rect x={gx} y={base - hOurs} width={barWidth} height={hOurs} rx={8} fill={INK} />
+              <rect
+                x={gx + barWidth + 10}
+                y={base - hYa}
+                width={barWidth}
+                height={hYa}
+                rx={8}
+                fill="none"
+                stroke={INK}
+                strokeWidth={2.5}
+                strokeDasharray="7 6"
+              />
+              <g opacity={clamp01((grow - 0.7) / 0.3)}>
+                <text
+                  x={gx + barWidth / 2}
+                  y={base - hOurs - 12}
+                  textAnchor="middle"
+                  fontFamily={font.text}
+                  fontWeight={700}
+                  fontSize={16}
+                  fill={INK}
+                >
+                  {clock(check.ours)}
+                </text>
+                <text
+                  x={gx + barWidth * 1.5 + 10}
+                  y={base - hYa - 12}
+                  textAnchor="middle"
+                  fontFamily={font.text}
+                  fontWeight={500}
+                  fontSize={16}
+                  fill={MUTE_INK}
+                >
+                  {`${check.yandex}:00`}
+                </text>
+              </g>
+              <text
+                x={gx + barWidth + 5}
+                y={base + 32}
+                textAnchor="middle"
+                fontFamily={font.text}
+                fontWeight={600}
+                fontSize={16}
+                fill={MUTE_INK}
+              >
+                {check.mode}
+              </text>
+            </g>
+          );
+        })}
+        <line x1={chartLeft} y1={base} x2={chartLeft + 5 * groupWidth - 40} y2={base} stroke={INK} strokeWidth={2} />
+      </Svg>
+
       <div
         style={{
           position: 'absolute',
-          left: WIDTH * 0.5,
-          top: HEIGHT * 0.245,
-          transform: 'translateX(-50%)',
-          zIndex: 2,
+          left: 96,
+          top: 548,
           display: 'flex',
+          gap: 28,
           alignItems: 'center',
-          gap: 12,
-          padding: '10px 20px',
-          borderRadius: 999,
-          background: 'rgba(110,197,255,0.12)',
-          boxShadow: 'inset 0 0 0 1px rgba(110,197,255,0.4)',
-          opacity: stage(frame, 22, 18),
+          opacity: stage(frame, 36, 14),
+          fontFamily: font.text,
+          fontWeight: 600,
+          fontSize: 17,
+          color: INK,
         }}
       >
-        <span
-          style={{
-            width: 11,
-            height: 11,
-            borderRadius: '50%',
-            background: '#ff4d5e',
-            opacity: blink,
-            boxShadow: `0 0 ${10 + blink * 12}px rgba(255,77,94,0.8)`,
-          }}
-        />
-        <span
-          style={{
-            fontFamily: font.text,
-            fontWeight: 700,
-            fontSize: HEIGHT * 0.019,
-            letterSpacing: '0.3em',
-            color: '#cbe8ff',
-          }}
-        >
-          НА ЛИНИИ
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 18, height: 18, borderRadius: 4, background: INK }} />
+          Наш прогноз, офлайн
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ width: 18, height: 18, borderRadius: 4, border: `2.5px dashed ${INK}` }} />
+          Яндекс Карты
         </span>
       </div>
 
-      <Word word="ИНЖЕНЕР" kicker="LIVE-приложение" size={0.175} delay={8} kickerColor="#8fcdff" />
-    </Shell>
+      <div style={{ position: 'absolute', left: 1200, top: 590, width: 620 }}>
+        <Small color={MUTE_INK} style={{ opacity: stage(frame, 60, 14) }}>
+          Среднее отклонение времени в пути
+        </Small>
+        <div
+          style={{
+            marginTop: 8,
+            fontFamily: font.display,
+            fontSize: 210,
+            lineHeight: 1,
+            letterSpacing: '-0.04em',
+            color: INK,
+            opacity: stage(frame, 66, 10),
+          }}
+        >
+          {`${deviation.toFixed(1).replace('.', ',')}%`}
+        </div>
+        <div
+          style={{
+            marginTop: 10,
+            fontFamily: font.text,
+            fontWeight: 500,
+            fontSize: 22,
+            color: MUTE_INK,
+            opacity: stage(frame, 80, 14),
+          }}
+        >
+          пять маршрутов по Москве, авто и метро
+        </div>
+      </div>
+      <Loop centre={{ x: 1515, y: 745 }} rx={335} ry={98} at={112} draw={20} hold={400} seed={3} />
+      <Note at={128} hold={400} position={{ x: 1824, y: 962 }} size={42} align="right" color={MARKER_BLUE}>
+        без спутников, LIVE-данных и API пробок
+      </Note>
+    </Ground>
   );
 }
 
-// ---------------------------------------------------------------------------
-// КЛИЕНТ — a request lands, and the cycle closes around it
-// ---------------------------------------------------------------------------
+// --- КЛИЕНТ ----------------------------------------------------------------
 
-const CYCLE_STEPS = ['РАССКАЗ', 'ЗАЯВКА', 'ПЛАН', 'ВИЗИТ', 'ОТЧЁТ'] as const;
+/** The customer's own words, as the capture types them (`capture/run.ts` STORY). */
+const STORY_PARTS = [
+  { text: 'У нас в офисе полностью ' },
+  { text: 'пропал интернет', mark: 0 },
+  { text: ', не работают кассы и телефония. Адрес: ' },
+  { text: 'Москва, улица Лесная, 7', mark: 1 },
+  { text: '. Меня зовут ' },
+  { text: 'Иван Петров', mark: 2 },
+  { text: '. Нужна помощь срочно, ' },
+  { text: 'сегодня', mark: 3 },
+  { text: '.' },
+] as const;
+
+const STORY_LENGTH = STORY_PARTS.reduce((total, part) => total + part.text.length, 0);
+
+/** What the form filled in from that story, as the client take shows it. */
+const FIELDS = [
+  { label: 'Проблема', value: 'Интернет не работает' },
+  { label: 'Адрес', value: 'Москва, улица Лесная, 7' },
+  { label: 'Контакт', value: 'Иван Петров' },
+  { label: 'Когда', value: 'Сегодня' },
+] as const;
 
 export function CardClient() {
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const cx = WIDTH / 2;
-  const cy = HEIGHT / 2;
-  const radius = HEIGHT * 0.355;
-  const arc = stage(frame, 4, 56);
-  const spin = interpolate(frame, [0, durationInFrames], [-14, 8]);
+  const card = stage(frame, 4, 18);
+  const typed = Math.floor(clamp01((frame - 12) / 78) * STORY_LENGTH);
+  const caretOn = frame < 96 && Math.floor(frame / 8) % 2 === 0;
+
+  let left = typed;
+  const spans = STORY_PARTS.map((part, index) => {
+    const shown = part.text.slice(0, Math.max(0, Math.min(part.text.length, left)));
+    left -= part.text.length;
+    const mark = 'mark' in part ? part.mark : null;
+    const highlight = mark === null ? 0 : stage(frame, 94 + mark * 7, 14);
+    return (
+      <span
+        key={`${index}-${part.text}`}
+        style={
+          mark === null
+            ? undefined
+            : {
+                backgroundImage: 'linear-gradient(rgba(255,199,44,0.38), rgba(255,199,44,0.38))',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: `${(highlight * 100).toFixed(1)}% 100%`,
+                backgroundPosition: '0 0',
+                padding: '0.06em 0.08em',
+                margin: '0 -0.08em',
+                borderRadius: 4,
+                boxDecorationBreak: 'clone',
+                WebkitBoxDecorationBreak: 'clone',
+              }
+        }
+      >
+        {shown}
+      </span>
+    );
+  });
 
   return (
-    <Shell
-      wash="radial-gradient(64% 76% at 50% 50%, rgba(47,158,68,0.26) 0%, rgba(8,9,11,0) 70%), radial-gradient(48% 40% at 14% 84%, rgba(110,231,168,0.14) 0%, rgba(8,9,11,0) 72%)"
-      tint="#6ee7a8"
-    >
-      {/* Ripples out of the middle: the request arriving. */}
-      {[0, 1, 2, 3].map((index) => {
-        const born = index * 16;
-        const age = ((frame - born) % 64) / 64;
-        if (frame < born) return null;
-        const r = interpolate(age, [0, 1], [HEIGHT * 0.05, HEIGHT * 0.62]);
-        return (
-          <div
-            key={index}
-            style={{
-              position: 'absolute',
-              left: cx - r,
-              top: cy - r,
-              width: r * 2,
-              height: r * 2,
-              borderRadius: '50%',
-              border: '1.5px solid rgba(110,231,168,0.5)',
-              opacity: interpolate(age, [0, 0.12, 1], [0, 0.6, 0]),
-            }}
-          />
-        );
-      })}
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: 'absolute', inset: 0, transform: `rotate(${spin.toFixed(2)}deg)` }}
-        aria-hidden
-      >
-        <title>cycle</title>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
-          fill="none"
-          stroke="rgba(110,231,168,0.18)"
-          strokeWidth={2}
-          strokeDasharray="6 12"
-        />
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
-          fill="none"
-          stroke="#6ee7a8"
-          strokeWidth={6}
-          strokeLinecap="round"
-          strokeDasharray={`${2 * Math.PI * radius}`}
-          strokeDashoffset={2 * Math.PI * radius * (1 - arc * 0.94)}
-          transform={`rotate(-96 ${cx} ${cy})`}
-        />
-        {CYCLE_STEPS.map((label, index) => {
-          const angle = (-96 + (index * 360) / CYCLE_STEPS.length) * (Math.PI / 180);
-          const px = cx + Math.cos(angle) * radius;
-          const py = cy + Math.sin(angle) * radius;
-          const on = clamp01((arc - index / CYCLE_STEPS.length) * 7);
-          return (
-            <g key={label} opacity={on}>
-              <circle cx={px} cy={py} r={14} fill={color.stage} />
-              <circle cx={px} cy={py} r={14} fill="none" stroke="#6ee7a8" strokeWidth={5} />
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* The step names ride outside the ring, upright — a rotated label is unreadable. */}
-      {CYCLE_STEPS.map((label, index) => {
-        const angle = (-96 + (index * 360) / CYCLE_STEPS.length + spin) * (Math.PI / 180);
-        const px = cx + Math.cos(angle) * (radius + HEIGHT * 0.072);
-        const py = cy + Math.sin(angle) * (radius + HEIGHT * 0.072);
-        const on = clamp01((arc - index / CYCLE_STEPS.length) * 7);
-        return (
-          <span
-            key={label}
-            style={{
-              position: 'absolute',
-              left: px,
-              top: py,
-              transform: `translate(-50%, -50%) scale(${interpolate(on, [0, 1], [0.7, 1])})`,
-              fontFamily: font.text,
-              fontWeight: 700,
-              fontSize: HEIGHT * 0.0165,
-              letterSpacing: '0.24em',
-              color: '#9ff0c4',
-              opacity: on * 0.92,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {label}
-          </span>
-        );
-      })}
-
-      <Word
+    <Ground bg="#121316" dots="rgba(255,255,255,0.22)">
+      <Title
+        kicker="Заявка"
         word="КЛИЕНТ"
-        kicker="полный цикл заявок"
-        size={0.155}
-        delay={10}
-        kickerColor="#9ff0c4"
+        detail="Рассказ своими словами становится визитом"
+        ink={color.white}
+        mute={MUTE_LIGHT}
       />
-    </Shell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ПЕРЕПЛАН — the day's bars pick themselves up and swap
-// ---------------------------------------------------------------------------
-
-const LANES = 7;
-
-export function CardReplan() {
-  const frame = useCurrentFrame();
-  const swap = stage(frame, 12, 34);
-  const laneH = HEIGHT * 0.052;
-  const gap = HEIGHT * 0.028;
-  const top = HEIGHT / 2 - ((LANES - 1) * (laneH + gap)) / 2 - laneH / 2;
-
-  return (
-    <Shell
-      wash="radial-gradient(64% 72% at 78% 24%, rgba(255,199,44,0.17) 0%, rgba(8,9,11,0) 66%), radial-gradient(48% 56% at 16% 80%, rgba(245,166,35,0.1) 0%, rgba(8,9,11,0) 70%)"
-      tint={color.bee}
-    >
-      {/* Hazard stripes, sliding: the day is being cut and rejoined. Kept to the corners
-          and kept faint — the middle of this frame belongs to the word. */}
-      <AbsoluteFill
-        style={{
-          opacity: 0.05,
-          backgroundImage: `repeating-linear-gradient(-45deg, ${color.bee} 0 20px, transparent 20px 58px)`,
-          transform: `translate3d(${((frame * 1.6) % 78).toFixed(1)}px, 0, 0)`,
-          maskImage: 'radial-gradient(58% 58% at 50% 50%, transparent 20%, #000 82%)',
-          WebkitMaskImage: 'radial-gradient(58% 58% at 50% 50%, transparent 20%, #000 82%)',
-        }}
-      />
-
-      {Array.from({ length: LANES }, (_, slot) => slot).map((index) => {
-        const seed = rand(index * 3 + 1);
-        const fromX = WIDTH * (0.1 + seed * 0.2);
-        const width = WIDTH * (0.22 + rand(index * 5 + 2) * 0.42);
-        // Every other lane slides the other way, so the frame reshuffles rather than pans.
-        const dir = index % 2 === 0 ? 1 : -1;
-        const shift = interpolate(swap, [0, 1], [0, dir * WIDTH * (0.05 + seed * 0.13)]);
-        const born = stage(frame, 2 + index * 3, 20);
-        const y = top + index * (laneH + gap);
-        const hot = index === 3;
-        return (
-          <div
-            key={index}
-            style={{
-              position: 'absolute',
-              left: fromX + shift,
-              top: y,
-              width,
-              height: laneH,
-              borderRadius: laneH / 2,
-              background: hot
-                ? `linear-gradient(90deg, ${color.bee} 0%, ${color.beeDeep} 100%)`
-                : 'rgba(255,255,255,0.09)',
-              boxShadow: hot
-                ? `0 0 ${HEIGHT * 0.05}px rgba(255,199,44,0.45)`
-                : 'inset 0 0 0 1px rgba(255,255,255,0.1)',
-              opacity: born * (hot ? 1 : 0.8),
-              transform: `scaleX(${interpolate(born, [0, 1], [0.7, 1])})`,
-              transformOrigin: 'left center',
-            }}
-          />
-        );
-      })}
-
-      {/* Two arrows trading places over the stack. */}
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: 'absolute', inset: 0 }}
-        aria-hidden
-      >
-        <title>reshuffle</title>
-        {[
-          {
-            d: 'M 1420 330 C 1620 330 1620 620 1420 620',
-            head: 'M 1452 600 L 1418 621 L 1452 642',
-            at: 16,
-          },
-          {
-            d: 'M 470 620 C 270 620 270 330 470 330',
-            head: 'M 438 350 L 472 329 L 438 308',
-            at: 22,
-          },
-        ].map((arrow) => {
-          const drawn = stage(frame, arrow.at, 30);
-          return (
-            <g key={arrow.d}>
-              <DrawnPath
-                d={arrow.d}
-                length={760}
-                progress={drawn}
-                stroke={color.bee}
-                width={5}
-                opacity={0.8}
-              />
-              <path
-                d={arrow.head}
-                fill="none"
-                stroke={color.bee}
-                strokeWidth={5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={clamp01((drawn - 0.86) * 7) * 0.9}
-              />
-            </g>
-          );
-        })}
-      </svg>
-
-      <Word
-        word="ПЕРЕПЛАН"
-        kicker="реагирует на изменения"
-        size={0.135}
-        delay={14}
-        kickerColor={color.bee}
-      />
-    </Shell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// AI — a field that thinks
-// ---------------------------------------------------------------------------
-
-const AI_SWEEP = `linear-gradient(104deg, ${color.aiFrom} 0%, ${color.aiVia} 46%, ${color.aiTo} 100%)`;
-
-export function CardAi() {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-  const cx = WIDTH / 2;
-  const cy = HEIGHT / 2;
-  const bloom = stage(frame, 0, 40);
-  const spin = interpolate(frame, [0, durationInFrames], [0, 150]);
-
-  return (
-    <Shell
-      wash="radial-gradient(62% 70% at 50% 48%, rgba(201,164,255,0.22) 0%, rgba(8,9,11,0) 72%)"
-      tint={color.aiVia}
-    >
-      {/* The thinking blob: a conic sweep, blurred past recognition. */}
       <div
         style={{
           position: 'absolute',
-          left: cx - HEIGHT * 0.46,
-          top: cy - HEIGHT * 0.46,
-          width: HEIGHT * 0.92,
-          height: HEIGHT * 0.92,
-          borderRadius: '50%',
-          background: `conic-gradient(from ${spin.toFixed(1)}deg, ${color.aiFrom}, ${color.aiVia}, ${color.aiTo}, ${color.aiFrom})`,
-          filter: `blur(${HEIGHT * 0.1}px)`,
-          opacity: bloom * 0.42,
-          transform: `scale(${interpolate(bloom, [0, 1], [0.6, 1])})`,
+          left: 96,
+          top: 420,
+          width: 960,
+          opacity: card,
+          transform: `translate3d(0, ${(1 - card) * 26}px, 0)`,
+          background: PANEL,
+          border: `1px solid ${PANEL_EDGE}`,
+          borderRadius: 26,
+          padding: '26px 32px 34px',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
         }}
-      />
-
-      {/* Particles on three orbits — the field the answer is drawn out of. */}
-      {Array.from({ length: 26 }, (_, slot) => slot).map((index) => {
-        const ring = index % 3;
-        const radius = HEIGHT * (0.2 + ring * 0.13);
-        const speed = 0.011 + ring * 0.005;
-        const angle = rand(index) * Math.PI * 2 + frame * speed * (ring % 2 === 0 ? 1 : -1);
-        const size = 3 + rand(index + 40) * 6;
-        const born = stage(frame, 4 + index, 22);
-        return (
-          <div
-            key={index}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 17,
+                background: 'rgba(255,255,255,0.08)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: font.text,
+                fontWeight: 700,
+                fontSize: 15,
+                color: color.white,
+              }}
+            >
+              ИП
+            </span>
+            <Small color={MUTE_LIGHT}>Рассказ клиента</Small>
+          </div>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center', height: 24 }}>
+            {[0, 1, 2, 3, 4].map((bar) => (
+              <span
+                key={bar}
+                style={{
+                  width: 4,
+                  borderRadius: 2,
+                  background: color.bee,
+                  height: frame < 92 ? 8 + Math.abs(Math.sin(frame / 4 + bar * 1.3)) * 14 : 6,
+                  opacity: 0.85,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        <div
+          style={{
+            marginTop: 18,
+            fontFamily: font.text,
+            fontWeight: 500,
+            fontSize: 30,
+            lineHeight: 1.42,
+            color: color.white,
+            minHeight: 170,
+          }}
+        >
+          {spans}
+          <span
             style={{
-              position: 'absolute',
-              left: cx + Math.cos(angle) * radius - size / 2,
-              top: cy + Math.sin(angle) * radius * 0.66 - size / 2,
-              width: size,
-              height: size,
-              borderRadius: '50%',
-              background: [color.aiFrom, color.aiVia, color.aiTo][ring],
-              opacity: born * (0.35 + rand(index + 9) * 0.5),
-              boxShadow: `0 0 ${size * 3}px currentColor`,
-              color: [color.aiFrom, color.aiVia, color.aiTo][ring],
+              display: 'inline-block',
+              width: 3,
+              height: 32,
+              marginLeft: 2,
+              verticalAlign: '-5px',
+              background: color.bee,
+              opacity: caretOn ? 1 : 0,
             }}
           />
-        );
-      })}
+        </div>
+      </div>
 
-      {/* Two gradient rules, opening away from the word. */}
-      {[-1, 1].map((side) => (
-        <div
-          key={side}
-          style={{
-            position: 'absolute',
-            left: cx,
-            top: cy + side * HEIGHT * 0.175,
-            width: interpolate(stage(frame, 16, 30), [0, 1], [0, WIDTH * 0.42]),
-            height: 2,
-            transform: 'translateX(-50%)',
-            background: `linear-gradient(90deg, transparent, ${color.aiVia}, transparent)`,
-            opacity: 0.8,
-          }}
-        />
-      ))}
-
-      <Word
-        word="AI"
-        kicker="глубоко интегрированный"
-        size={0.3}
-        delay={8}
-        kickerColor={color.aiVia}
-        // No filter on this span: a drop-shadow over a background-clipped fill makes
-        // Chrome rasterise the element's box, and the box is what ends up on screen.
-        // The glow behind the word is the conic bloom above, which is doing that job.
-        style={{
-          backgroundImage: AI_SWEEP,
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          color: 'transparent',
-        }}
-      />
-    </Shell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// КОНТРОЛЬ — the instrument panel
-// ---------------------------------------------------------------------------
-
-export function CardControl() {
-  const frame = useCurrentFrame();
-  const cx = WIDTH / 2;
-  const cy = HEIGHT / 2;
-  const sweep = stage(frame, 6, 44);
-  const radius = HEIGHT * 0.3;
-  // A three-quarter dial, filled to a deliberately imperfect reading: control is a
-  // number you can act on, not a green tick.
-  const total = Math.PI * 1.5 * radius;
-
-  return (
-    <Shell
-      wash="radial-gradient(60% 72% at 50% 46%, rgba(255,255,255,0.09) 0%, rgba(8,9,11,0) 70%), radial-gradient(40% 44% at 82% 80%, rgba(255,199,44,0.13) 0%, rgba(8,9,11,0) 72%)"
-      tint={color.white}
-    >
-      {/* Measurement rules, sliding in from both edges. */}
-      {Array.from({ length: 40 }, (_, slot) => slot).map((index) => {
-        const p = stage(frame, index * 0.7, 26);
-        const long = index % 5 === 0;
-        const y = (index / 39) * HEIGHT;
+      {FIELDS.map((field, index) => {
+        const on = stage(frame, 100 + index * 8, 16);
+        const top = 420 + index * 112;
         return (
-          <div key={index}>
-            <div
+          <div
+            key={field.label}
+            style={{
+              position: 'absolute',
+              left: 1210,
+              top,
+              width: 610,
+              opacity: on,
+              transform: `translate3d(${(1 - on) * 40}px, 0, 0)`,
+              background: PANEL,
+              border: `1px solid ${PANEL_EDGE}`,
+              borderRadius: 20,
+              padding: '16px 22px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            <span
               style={{
-                position: 'absolute',
-                left: 0,
-                top: y,
-                width: (long ? 54 : 26) * p,
-                height: long ? 2 : 1,
-                background: long ? color.bee : 'rgba(255,255,255,0.4)',
-                opacity: 0.55,
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                background: color.bee,
+                color: INK,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: font.text,
+                fontWeight: 800,
+                fontSize: 16,
+                flexShrink: 0,
               }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                right: 0,
-                top: y,
-                width: (long ? 54 : 26) * p,
-                height: long ? 2 : 1,
-                background: long ? color.bee : 'rgba(255,255,255,0.4)',
-                opacity: 0.55,
-              }}
-            />
+            >
+              ✓
+            </span>
+            <div>
+              <Small color={MUTE_LIGHT} style={{ fontSize: 12 }}>
+                {field.label}
+              </Small>
+              <div
+                style={{
+                  marginTop: 4,
+                  fontFamily: font.text,
+                  fontWeight: 600,
+                  fontSize: 25,
+                  color: color.white,
+                }}
+              >
+                {field.value}
+              </div>
+            </div>
           </div>
         );
       })}
-
-      <svg
-        width={WIDTH}
-        height={HEIGHT}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        style={{ position: 'absolute', inset: 0 }}
-        aria-hidden
-      >
-        <title>dial</title>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.1)"
-          strokeWidth={14}
-          strokeLinecap="round"
-          strokeDasharray={`${total} ${total * 3}`}
-          transform={`rotate(135 ${cx} ${cy})`}
-        />
-        <circle
-          cx={cx}
-          cy={cy}
-          r={radius}
-          fill="none"
-          stroke={color.bee}
-          strokeWidth={14}
-          strokeLinecap="round"
-          strokeDasharray={`${total * 0.82} ${total * 3}`}
-          strokeDashoffset={total * 0.82 * (1 - sweep)}
-          transform={`rotate(135 ${cx} ${cy})`}
-          opacity={0.92}
-        />
-        {/* Ticks around the dial, arriving with the sweep. */}
-        {Array.from({ length: 25 }, (_, slot) => slot).map((index) => {
-          const a = (135 + (index / 24) * 270) * (Math.PI / 180);
-          const on = clamp01((sweep - index / 24) * 8);
-          const r0 = radius + 18;
-          const r1 = radius + (index % 6 === 0 ? 38 : 27);
-          return (
-            <line
-              key={index}
-              x1={cx + Math.cos(a) * r0}
-              y1={cy + Math.sin(a) * r0}
-              x2={cx + Math.cos(a) * r1}
-              y2={cy + Math.sin(a) * r1}
-              stroke={index % 6 === 0 ? color.bee : 'rgba(255,255,255,0.55)'}
-              strokeWidth={index % 6 === 0 ? 3 : 1.6}
-              strokeLinecap="round"
-              opacity={on}
-            />
-          );
-        })}
-      </svg>
-
-      {/* A crosshair through the middle, the way a plan is read off a chart. */}
-      {[0, 1].map((axis) => (
-        <div
-          key={axis}
-          style={{
-            position: 'absolute',
-            left: axis === 0 ? 0 : cx,
-            top: axis === 0 ? cy : 0,
-            width: axis === 0 ? WIDTH * stage(frame, 10, 34) : 1,
-            height: axis === 0 ? 1 : HEIGHT * stage(frame, 14, 34),
-            background: 'rgba(255,255,255,0.16)',
-          }}
+      {FIELDS.map((field, index) => (
+        <Arrow
+          key={`arrow-${field.label}`}
+          from={{ x: 1070, y: 520 + index * 46 }}
+          to={{ x: 1196, y: 462 + index * 112 }}
+          bend={index < 2 ? -0.18 : 0.18}
+          color={color.bee}
+          width={3.5}
+          at={96 + index * 8}
+          draw={12}
+          hold={400}
         />
       ))}
+      <Note at={140} hold={400} position={{ x: 1210, y: 900 }} color={color.bee} size={48}>
+        форма заполнилась сама
+      </Note>
+    </Ground>
+  );
+}
 
-      <Word word="КОНТРОЛЬ" kicker="политики и метрики" size={0.125} delay={16} />
-    </Shell>
+// --- ПЕРЕПЛАН --------------------------------------------------------------
+
+type NodeId = 'd0' | 'a1' | 'a2' | 'a3' | 'd1' | 'b1' | 'b2' | 'b3' | 'd2' | 'c1' | 'c2' | 'x';
+
+const NODES: Record<NodeId, { x: number; y: number }> = {
+  d0: { x: 130, y: 520 },
+  a1: { x: 320, y: 450 },
+  a2: { x: 520, y: 600 },
+  a3: { x: 780, y: 470 },
+  d1: { x: 150, y: 770 },
+  b1: { x: 360, y: 710 },
+  b2: { x: 610, y: 800 },
+  b3: { x: 830, y: 720 },
+  d2: { x: 170, y: 930 },
+  c1: { x: 430, y: 900 },
+  c2: { x: 720, y: 930 },
+  x: { x: 560, y: 430 },
+};
+
+/** Three crews before and after an emergency lands next to the first one's route. */
+const CREWS = [
+  { tint: INK, before: ['d0', 'a1', 'a2', 'a3'], after: ['d0', 'a1', 'x', 'a3'] },
+  { tint: color.beeDeep, before: ['d1', 'b1', 'b2', 'b3'], after: ['d1', 'b1', 'a2', 'b2', 'b3'] },
+  { tint: SLATE, before: ['d2', 'c1', 'c2'], after: ['d2', 'c1', 'c2'] },
+] as const;
+
+const path = (ids: readonly string[]) =>
+  ids
+    .map((id, index) => {
+      const node = NODES[id as NodeId];
+      return `${index === 0 ? 'M' : 'L'}${node.x} ${node.y}`;
+    })
+    .join(' ');
+
+/**
+ * Re-plan latency and stability from `docs/benchmarks/solver-suite-20260928`: five
+ * events at 15:00 on top of an applied plan, Router Core on the M5 Pro.
+ */
+const REPLAN_EVENTS = [
+  { name: 'Новая заявка', ms: 247.4, kept: 52 },
+  { name: 'Срочная заявка', ms: 144.7, kept: 32 },
+  { name: 'Инженер выпал', ms: 98.9, kept: 75 },
+  { name: 'Две техостановки', ms: 102.3, kept: 84 },
+  { name: 'Пробки ×3 в районе', ms: 184.8, kept: 68 },
+] as const;
+
+export function CardReplan() {
+  const frame = useCurrentFrame();
+  const graph = stage(frame, 4, 24);
+  const alarm = stage(frame, 34, 12);
+  const swap = stage(frame, 52, 40);
+
+  return (
+    <Ground bg={PAPER}>
+      <Title
+        kicker="День"
+        word="ПЕРЕПЛАН"
+        detail="Новая авария — и маршруты пересобраны"
+        ink={INK}
+        mute={MUTE_INK}
+      />
+      <Svg>
+        {CREWS.map((crew) => {
+          const same = crew.before.join() === crew.after.join();
+          return (
+            <g key={crew.tint}>
+              <path
+                d={path(crew.before)}
+                fill="none"
+                stroke={crew.tint}
+                strokeWidth={6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity={same ? graph : graph * (1 - swap * 0.82)}
+                strokeDasharray={same || swap < 0.05 ? undefined : '10 12'}
+                pathLength={same ? undefined : 1}
+              />
+              {same ? null : (
+                <path
+                  d={path(crew.after)}
+                  fill="none"
+                  stroke={crew.tint}
+                  strokeWidth={7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  pathLength={1}
+                  strokeDasharray={1}
+                  strokeDashoffset={1 - swap}
+                />
+              )}
+            </g>
+          );
+        })}
+        {(Object.keys(NODES) as NodeId[])
+          .filter((id) => id !== 'x')
+          .map((id, index) => {
+            const node = NODES[id];
+            const depot = id.startsWith('d');
+            const on = stage(frame, 2 + index * 1.5, 10);
+            return (
+              <g key={id} opacity={on}>
+                {depot ? (
+                  <rect x={node.x - 13} y={node.y - 13} width={26} height={26} rx={6} fill={INK} />
+                ) : (
+                  <circle cx={node.x} cy={node.y} r={13} fill={PAPER} stroke={INK} strokeWidth={3.5} />
+                )}
+              </g>
+            );
+          })}
+        <g opacity={alarm}>
+          <circle
+            cx={NODES.x.x}
+            cy={NODES.x.y}
+            r={18 + ((frame - 34) % 30) * 1.4}
+            fill="none"
+            stroke={ALARM}
+            strokeWidth={3}
+            opacity={frame > 34 ? 1 - ((frame - 34) % 30) / 30 : 0}
+          />
+          <circle cx={NODES.x.x} cy={NODES.x.y} r={16 * alarm} fill={ALARM} />
+        </g>
+      </Svg>
+      <Arrow from={{ x: 700, y: 385 }} to={{ x: 585, y: 420 }} bend={-0.3} at={40} draw={12} hold={400} />
+      <Note at={40} hold={400} position={{ x: 712, y: 378 }} size={44}>
+        авария
+      </Note>
+
+      <div style={{ position: 'absolute', left: 1000, top: 420, width: 824 }}>
+        <Small color={MUTE_INK} style={{ opacity: stage(frame, 10, 14) }}>
+          Пересчёт после события · доля плана на месте
+        </Small>
+        <div style={{ marginTop: 26, display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {REPLAN_EVENTS.map((event, index) => {
+            const grow = stage(frame, 20 + index * 7, 30);
+            const width = (event.ms / 247.4) * 330 * grow;
+            return (
+              <div
+                key={event.name}
+                style={{ display: 'flex', alignItems: 'center', height: 50, opacity: stage(frame, 16 + index * 7, 10) }}
+              >
+                <div
+                  style={{
+                    width: 270,
+                    fontFamily: font.text,
+                    fontWeight: 600,
+                    fontSize: 22,
+                    color: INK,
+                  }}
+                >
+                  {event.name}
+                </div>
+                <div style={{ width, height: 24, borderRadius: 7, background: INK }} />
+                <div
+                  style={{
+                    marginLeft: 14,
+                    fontFamily: font.text,
+                    fontWeight: 700,
+                    fontSize: 21,
+                    color: INK,
+                    width: 110,
+                    opacity: clamp01((grow - 0.6) / 0.4),
+                  }}
+                >
+                  {`${Math.round(event.ms * grow)} мс`}
+                </div>
+                <div
+                  style={{
+                    marginLeft: 'auto',
+                    fontFamily: font.text,
+                    fontWeight: 600,
+                    fontSize: 21,
+                    color: MUTE_INK,
+                    opacity: clamp01((grow - 0.6) / 0.4),
+                  }}
+                >
+                  {`${Math.round(event.kept * grow)}%`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div
+          style={{
+            marginTop: 30,
+            fontFamily: font.text,
+            fontWeight: 500,
+            fontSize: 17,
+            color: MUTE_INK,
+            opacity: stage(frame, 60, 14),
+          }}
+        >
+          Router Core, пять событий в 15:00 поверх применённого плана, бенчмарк 28.09.2026
+        </div>
+      </div>
+      <Loop centre={{ x: 1792, y: 704 }} rx={60} ry={32} at={96} draw={16} hold={400} seed={5} />
+      <Note
+        at={108}
+        hold={400}
+        position={{ x: 1824, y: 950 }}
+        size={44}
+        rotate={-3}
+        align="right"
+        color={MARKER_BLUE}
+      >
+        84% назначений остались на месте
+      </Note>
+    </Ground>
+  );
+}
+
+// --- AI --------------------------------------------------------------------
+
+const ASK = 'Что произошло с планом?';
+const ANSWER = 'Смотрю факты сегодняшнего плана.';
+
+/** The alert the reel solves next and the three moves the product offers on it. */
+const OPTIONS = ['Написать и снять', 'Снять со смены', 'Продлить ожидание'] as const;
+const PICKED = 1;
+
+export function CardAi() {
+  const frame = useCurrentFrame();
+  const card = stage(frame, 4, 16);
+  const asked = ASK.slice(0, Math.floor(clamp01((frame - 10) / 28) * ASK.length));
+  const thinking = frame > 40 && frame < 70;
+  const answered = ANSWER.slice(0, Math.floor(clamp01((frame - 70) / 34) * ANSWER.length));
+  const panel = stage(frame, 30, 18);
+  // The ring walks the options twice as the model weighs them, then settles.
+  const scan = clamp01((frame - 58) / 70);
+  const ringAt = scan < 1 ? Math.round(scan * 4) % OPTIONS.length : PICKED;
+  const settled = frame >= 128;
+  const orb = 1 + Math.sin(frame / 7) * 0.06;
+
+  return (
+    <Ground bg="#101114" dots="rgba(255,255,255,0.16)">
+      <Title
+        kicker="System One"
+        word="AI"
+        detail="Ответ по фактам сегодняшнего плана"
+        ink={color.white}
+        mute="rgba(255,255,255,0.5)"
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 262,
+          top: 196,
+          width: 72,
+          height: 72,
+          borderRadius: 36,
+          backgroundImage: AI_GRADIENT,
+          filter: 'blur(1px)',
+          transform: `scale(${orb * stage(frame, 6, 18)}) rotate(${frame * 2}deg)`,
+          opacity: 0.9,
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 96,
+          top: 420,
+          width: 860,
+          opacity: card,
+          transform: `translate3d(0, ${(1 - card) * 24}px, 0)`,
+          background: PANEL,
+          border: `1px solid ${PANEL_EDGE}`,
+          borderRadius: 26,
+          padding: '28px 30px 32px',
+          minHeight: 300,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 22,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div
+            style={{
+              padding: '14px 18px',
+              borderRadius: 16,
+              background: '#2a2d36',
+              color: color.white,
+              fontFamily: font.text,
+              fontWeight: 500,
+              fontSize: 24,
+              minHeight: 30,
+              opacity: frame > 10 ? 1 : 0,
+            }}
+          >
+            {asked}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          <span
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundImage: AI_GRADIENT,
+              flexShrink: 0,
+              opacity: stage(frame, 38, 10),
+            }}
+          />
+          <div
+            style={{
+              fontFamily: font.text,
+              fontWeight: 500,
+              fontSize: 26,
+              lineHeight: 1.4,
+              color: 'rgba(255,255,255,0.92)',
+              paddingTop: 4,
+            }}
+          >
+            {thinking ? (
+              <span style={{ display: 'flex', gap: 8, paddingTop: 12 }}>
+                {[0, 1, 2].map((dot) => (
+                  <span
+                    key={dot}
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 5,
+                      background: color.aiVia,
+                      opacity: 0.35 + 0.65 * Math.abs(Math.sin(frame / 5 - dot * 0.8)),
+                    }}
+                  />
+                ))}
+              </span>
+            ) : (
+              answered
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          position: 'absolute',
+          left: 1060,
+          top: 420,
+          width: 760,
+          opacity: panel,
+          transform: `translate3d(${(1 - panel) * 30}px, 0, 0)`,
+        }}
+      >
+        <Small color={MUTE_LIGHT}>Алерт · Не вышел на смену</Small>
+        <div style={{ marginTop: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {OPTIONS.map((option, index) => {
+            const ringed = frame >= 58 && index === ringAt;
+            const chosen = settled && index === PICKED;
+            return (
+              <div
+                key={option}
+                style={{
+                  position: 'relative',
+                  padding: '20px 24px',
+                  borderRadius: 18,
+                  background: chosen ? color.white : PANEL,
+                  color: chosen ? INK : color.white,
+                  border: `1px solid ${PANEL_EDGE}`,
+                  fontFamily: font.text,
+                  fontWeight: 600,
+                  fontSize: 25,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  boxShadow: ringed
+                    ? `0 0 0 3px ${color.aiFrom}, 0 0 0 6px rgba(201,164,255,0.35)`
+                    : undefined,
+                }}
+              >
+                {option}
+                {chosen ? (
+                  <span style={{ fontWeight: 800, color: color.done }}>✓</span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <Note at={134} hold={400} position={{ x: 1060, y: 820 }} color={color.aiVia} size={48}>
+        выбор только из допустимых действий
+      </Note>
+    </Ground>
+  );
+}
+
+// --- КОНТРОЛЬ --------------------------------------------------------------
+
+/** Names the dispatcher actually picks. Colours are the comparison map's own. */
+const POLICIES = [
+  { name: 'Быстрее до клиента', swatch: '#E11D48' },
+  { name: 'Бережнее к окнам', swatch: '#16A34A' },
+  { name: 'Ровнее загрузка', swatch: '#D97706' },
+  { name: 'Короче пробег', swatch: '#2563EB' },
+] as const;
+
+/**
+ * Requests closed on the east region, same crews, from
+ * `docs/benchmarks/solver-suite-20260928` (66 requests in the day).
+ */
+const COVERAGE = [
+  { name: 'FIFO-диспетчер', done: 28, ours: false },
+  { name: 'Жадный «срочность + ближайший»', done: 50, ours: false },
+  { name: 'Navix Router', done: 62, ours: true },
+] as const;
+
+export function CardControl() {
+  const frame = useCurrentFrame();
+  const selected = Math.min(POLICIES.length - 1, Math.floor(stage(frame, 10, 50) * POLICIES.length));
+  const gain = Math.round(interpolate(stage(frame, 60, 44), [0, 1], [0, 121]));
+
+  return (
+    <Ground bg={PAPER}>
+      <Title
+        kicker="Политики"
+        word="КОНТРОЛЬ"
+        detail="Один день, несколько стратегий, одни факты"
+        ink={INK}
+        mute={MUTE_INK}
+      />
+      <div
+        style={{
+          position: 'absolute',
+          left: 96,
+          top: 408,
+          right: 96,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 16,
+        }}
+      >
+        {POLICIES.map((policy, index) => {
+          const on = stage(frame, 6 + index * 4, 14);
+          const hot = index === selected;
+          return (
+            <div
+              key={policy.name}
+              style={{
+                opacity: on,
+                transform: `translate3d(0, ${(1 - on) * 16}px, 0) scale(${hot ? 1.02 : 1})`,
+                background: hot ? INK : '#fff',
+                color: hot ? color.white : INK,
+                borderRadius: 16,
+                padding: '16px 20px',
+                border: `1px solid ${hot ? INK : PAPER_2}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                fontFamily: font.text,
+                fontWeight: 600,
+                fontSize: 21,
+              }}
+            >
+              <span style={{ width: 12, height: 12, borderRadius: 6, background: policy.swatch }} />
+              {policy.name}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ position: 'absolute', left: 96, top: 548, width: 1180 }}>
+        <Small color={MUTE_INK} style={{ opacity: stage(frame, 20, 14) }}>
+          Восток · заявок закрыто из 66 · те же бригады
+        </Small>
+        <div style={{ marginTop: 28, display: 'flex', flexDirection: 'column', gap: 26 }}>
+          {COVERAGE.map((row, index) => {
+            const grow = stage(frame, 28 + index * 10, 36);
+            return (
+              <div key={row.name}>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontFamily: font.text,
+                    fontWeight: 600,
+                    fontSize: 21,
+                    color: INK,
+                    marginBottom: 10,
+                    opacity: stage(frame, 24 + index * 10, 12),
+                  }}
+                >
+                  <span>{row.name}</span>
+                  <span>{`${Math.round(row.done * grow)} из 66`}</span>
+                </div>
+                <div style={{ height: 30, borderRadius: 9, background: PAPER_2, overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${((row.done / 66) * 100 * grow).toFixed(2)}%`,
+                      height: '100%',
+                      borderRadius: 9,
+                      background: row.ours ? color.bee : INK,
+                      opacity: row.ours ? 1 : 0.8,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ position: 'absolute', left: 1360, top: 590, width: 470 }}>
+        <div
+          style={{
+            fontFamily: font.display,
+            fontSize: 124,
+            lineHeight: 1,
+            letterSpacing: '-0.04em',
+            color: INK,
+            opacity: stage(frame, 58, 10),
+          }}
+        >
+          {`+${gain}%`}
+        </div>
+        <div
+          style={{
+            marginTop: 36,
+            fontFamily: font.text,
+            fontWeight: 500,
+            fontSize: 22,
+            lineHeight: 1.3,
+            color: MUTE_INK,
+            opacity: stage(frame, 70, 14),
+          }}
+        >
+          плана дня к FIFO-диспетчеру, срочных — 11 из 13 против 2
+        </div>
+      </div>
+      <Underline from={{ x: 1362, y: 728 }} to={{ x: 1800, y: 722 }} at={104} draw={14} hold={400} seed={7} />
+      <Note at={116} hold={400} position={{ x: 1200, y: 960 }} size={46} color={MARKER_BLUE}>
+        бенчмарк Router Core, 28.09
+      </Note>
+    </Ground>
   );
 }

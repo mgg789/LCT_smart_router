@@ -44,6 +44,11 @@ export function shot(scene: string): FootageEntry {
   return entry;
 }
 
+/** Whether the capture marked this instant. A missing mark is not the same as time zero. */
+export function hasMark(scene: string, name: string): boolean {
+  return byScene.get(scene)?.marks[name] !== undefined;
+}
+
 /** Seconds into a take for a named instant, falling back to the take's own start. */
 export function mark(scene: string, name: string, fallback = 0): number {
   const value = byScene.get(scene)?.marks[name];

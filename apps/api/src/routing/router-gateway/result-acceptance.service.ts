@@ -4,8 +4,10 @@ import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { NotificationsService } from '../../notifications';
+import { isUnconfirmedOfficeMeeting } from '../../orchestrator/equipment/handoffs';
 import type { Tx } from '../../persistence';
 import { lockControlState, lockRoutingCurrent, PrismaService, UnitOfWork } from '../../persistence';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
 import { AppliedPlanService } from './applied-plan.service';
 import { manualNeedsReview, readManualState, writeManualState } from './manual-state';
 import { planSchema, type RouterPlan, type RouterResult, routerResultSchema } from './result.types';
@@ -113,6 +115,7 @@ export class ResultAcceptanceService {
     private readonly clock: Clock,
     private readonly plans: AppliedPlanService,
     private readonly notifications: NotificationsService,
+    private readonly publisher: SnapshotPublisher,
   ) {}
 
   /**
@@ -141,11 +144,14 @@ export class ResultAcceptanceService {
     }
     if (result.status === 'error') {
       // A visible error, not an endless spinner and not a mass refusal to customers
-      // (context/33 section 10.5).
-      await this.recordPackage(result, false, 'ROUTER_ERROR');
+      // (context/33 section 10.5). An overdue unconfirmed meeting at the office is
+      // not that error: the building issues the device, so the meeting is dropped
+      // and the task is published again for a real plan.
+      const released = await this.releaseOverdueOfficeMeetings(result);
+      if (!released) await this.recordPackage(result, false, 'ROUTER_ERROR');
       return {
         accepted: false,
-        reason: 'ROUTER_ERROR',
+        reason: released ? 'OFFICE_MEETING_RELEASED' : 'ROUTER_ERROR',
         detail: result.errors[0]?.message ?? 'Router reported an error',
       };
     }
@@ -319,6 +325,38 @@ export class ResultAcceptanceService {
       );
 
       return { accepted: true, resultId: result.result_id, planRevision: plan.revision };
+    });
+  }
+
+  /**
+   * Drops an overdue unconfirmed meeting that sits on a depot and republishes.
+   *
+   * Router refuses to plan while that meeting is in the task. The office can
+   * issue the device, and nobody has confirmed the exchange, so the row is not
+   * a fact that has to keep blocking the day.
+   */
+  private async releaseOverdueOfficeMeetings(result: RouterResult): Promise<boolean> {
+    const ids = result.errors.flatMap((error) =>
+      error.code === 'WAITING_HANDOFF' && error.entity_id ? [error.entity_id] : [],
+    );
+    if (ids.length === 0) return false;
+    return this.uow.run(async (tx) => {
+      const depots = await tx.depot.findMany({ select: { lat: true, lon: true } });
+      const rows = await tx.equipmentHandoff.findMany({ where: { id: { in: ids } } });
+      if (
+        rows.length !== ids.length ||
+        rows.some((row) => !isUnconfirmedOfficeMeeting(row, depots))
+      ) {
+        return false;
+      }
+      await tx.equipmentHandoff.deleteMany({ where: { id: { in: ids } } });
+      await this.publisher.publishIfChanged(
+        tx,
+        this.clock.nowSeconds(),
+        PUBLICATION_TRIGGERS.EQUIPMENT_MEETING_RELEASED,
+        { force: true },
+      );
+      return true;
     });
   }
 

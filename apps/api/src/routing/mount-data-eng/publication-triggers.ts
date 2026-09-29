@@ -45,6 +45,11 @@ export const PUBLICATION_TRIGGERS = {
   LIVE_WORKDAY_STARTED: 'live.workday_started',
   /** The no-marking policy advanced completed scheduled stops without fabricating facts. */
   LIVE_SILENT_SCHEDULE_PROGRESS: 'live.silent_schedule_progress',
+  /**
+   * An unconfirmed meeting recorded at the office went overdue. The office issues
+   * the equipment, so the meeting is dropped and the task is published again.
+   */
+  EQUIPMENT_MEETING_RELEASED: 'equipment.meeting_released',
 } as const;
 
 export type PublicationTrigger = (typeof PUBLICATION_TRIGGERS)[keyof typeof PUBLICATION_TRIGGERS];

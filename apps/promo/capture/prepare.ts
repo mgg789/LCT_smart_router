@@ -446,7 +446,6 @@ async function main() {
     requiredSkill: 'local' as const,
     requiredTransport: 'transit' as const,
     workType: 'cable_work',
-    workCategory: 'service' as const,
   };
 
   async function append(

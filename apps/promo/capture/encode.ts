@@ -136,8 +136,22 @@ async function main() {
     const entry = await encodeScene(scene);
     if (entry) entries.push(entry);
   }
-  await writeFile(MANIFEST, `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
-  console.log(`encoded ${entries.length} scenes -> ${PUBLIC}, manifest -> ${MANIFEST}`);
+  // A reshoot of one scene must not drop the takes that were not filmed this pass.
+  // Raw frames are deleted after a successful encode, so the previous manifest is the
+  // only copy of every scene that is not in `out/raw` right now.
+  let previous: FootageEntry[] = [];
+  try {
+    previous = JSON.parse(await readFile(MANIFEST, 'utf8')) as FootageEntry[];
+  } catch {
+    previous = [];
+  }
+  const fresh = new Set(entries.map((entry) => entry.scene));
+  const kept = previous.filter((entry) => !fresh.has(entry.scene));
+  const merged = [...kept, ...entries].sort((a, b) => a.scene.localeCompare(b.scene));
+  await writeFile(MANIFEST, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
+  console.log(
+    `encoded ${entries.length} scenes, kept ${kept.length} -> ${PUBLIC}, manifest -> ${MANIFEST}`,
+  );
 }
 
 main().catch((error) => {

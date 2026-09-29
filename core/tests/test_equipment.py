@@ -143,6 +143,27 @@ def test_enabled_transfer_schedules_paired_meeting_and_moves_stock_after_it(snap
     ).sequence
 
 
+def test_shift_start_at_the_office_loads_there_instead_of_a_handoff(snapshot, graph):
+    """Two engineers still in the office do not hand a device to each other."""
+    task = _handoff_snapshot(snapshot)
+    office = task.engineers[0].start_location
+    task = task.model_copy(update={
+        "depots": [Depot(depot_id="east-office", region="east", location=office)],
+    })
+    plan = solve(task, GraphTravel(graph), SearchSettings(
+        time_limit_ms=100, solution_limit=4, equipment_transfers_enabled=True, access_buffer_sec=0,
+    )).main
+    assert plan.assignments[0].status == "assigned"
+    assert plan.assignments[0].engineer_id == "receiver"
+    stops = [stop for route in plan.routes for stop in route.stops]
+    assert not any(stop.kind == "handoff" for stop in stops)
+    pickup = next(stop for stop in stops if stop.kind == "office_pickup")
+    assert pickup.location == office
+    assert pickup.start_at == task.planning_as_of
+    donor = next(route for route in plan.routes if route.engineer_id == "donor")
+    assert all(stop.kind != "office_pickup" for stop in donor.stops)
+
+
 def test_transfer_is_disabled_or_rejected_across_regions(snapshot, graph):
     """The optional rescue never weakens the disabled or same-region constraints."""
     travel = GraphTravel(graph)

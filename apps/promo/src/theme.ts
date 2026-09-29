@@ -31,10 +31,23 @@ export const color = {
 export const font = {
   display: 'MursGothic',
   text: 'PromoInter',
+  /** Handwriting for the marker layer: notes on the flipchart, never UI copy. */
+  hand: 'PromoHand',
 } as const;
+
+/** The marker drawn over footage: warm enough to read on the light dashboard. */
+export const MARKER = '#ff4a2b';
+/** The second marker, so the flipchart is not written in one colour. */
+export const MARKER_BLUE = '#2f62e8';
 
 /** Injected once per composition so every text element measures the same. */
 export const FONT_FACES = `
+@font-face {
+  font-family: 'PromoHand';
+  src: url('${staticFile('brand/Caveat.ttf')}') format('truetype');
+  font-weight: 400 700;
+  font-display: block;
+}
 @font-face {
   font-family: 'MursGothic';
   src: url('${staticFile('brand/mursgothic-widedark.otf')}') format('opentype');

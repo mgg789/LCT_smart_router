@@ -22,7 +22,7 @@ const BPM = 124;
 const BEAT = 60 / BPM;
 const BAR = BEAT * 4;
 /** Long enough to cover the reel with a tail to fade under the last card. */
-const BARS = 62;
+const BARS = 52;
 const LENGTH = BARS * BAR;
 
 const TAU = Math.PI * 2;
@@ -73,24 +73,17 @@ interface Section {
 }
 
 const SECTIONS: readonly Section[] = [
-  // the logo and the first screen
-  { from: 0, kick: false, bass: false, arp: 0.35, hats: 0, clap: false, pad: 0.5, lead: 0 },
-  { from: 2, kick: true, bass: true, arp: 0.5, hats: 0.3, clap: false, pad: 0.55, lead: 0 },
-  // the board, the map, the crew
-  { from: 6, kick: true, bass: true, arp: 0.75, hats: 0.55, clap: true, pad: 0.5, lead: 0.4 },
-  // the engineer
-  { from: 14, kick: true, bass: true, arp: 0.6, hats: 0.5, clap: true, pad: 0.6, lead: 0.25 },
-  // the customer
-  { from: 22, kick: true, bass: true, arp: 0.5, hats: 0.4, clap: true, pad: 0.7, lead: 0.15 },
-  // the rebuild
-  { from: 28, kick: true, bass: true, arp: 0.8, hats: 0.6, clap: true, pad: 0.5, lead: 0.5 },
-  // the assistant
-  { from: 34, kick: true, bass: true, arp: 0.7, hats: 0.55, clap: true, pad: 0.75, lead: 0.45 },
-  // control
-  { from: 42, kick: true, bass: true, arp: 0.85, hats: 0.65, clap: true, pad: 0.55, lead: 0.55 },
-  // the close of the day and the desk
-  { from: 52, kick: true, bass: true, arp: 0.6, hats: 0.45, clap: true, pad: 0.9, lead: 0.6 },
-  { from: 59, kick: false, bass: false, arp: 0.2, hats: 0, clap: false, pad: 1, lead: 0.3 },
+  { from: 0, kick: false, bass: false, arp: 0.22, hats: 0, clap: false, pad: 0.5, lead: 0 },
+  { from: 2, kick: true, bass: true, arp: 0.4, hats: 0.22, clap: false, pad: 0.4, lead: 0 },
+  { from: 6, kick: true, bass: true, arp: 0.72, hats: 0.4, clap: true, pad: 0.32, lead: 0.4 },
+  // The phones. The kick drops out so the picture is not marching in place.
+  { from: 12, kick: false, bass: true, arp: 0.22, hats: 0.12, clap: false, pad: 0.62, lead: 0.08 },
+  { from: 19, kick: true, bass: true, arp: 0.5, hats: 0.32, clap: true, pad: 0.38, lead: 0.22 },
+  { from: 25, kick: true, bass: true, arp: 0.88, hats: 0.48, clap: true, pad: 0.28, lead: 0.55 },
+  { from: 32, kick: false, bass: false, arp: 0.12, hats: 0, clap: false, pad: 0.75, lead: 0 },
+  { from: 34, kick: true, bass: true, arp: 0.7, hats: 0.42, clap: true, pad: 0.36, lead: 0.48 },
+  { from: 42, kick: true, bass: true, arp: 0.35, hats: 0.18, clap: false, pad: 0.8, lead: 0.3 },
+  { from: 48, kick: false, bass: false, arp: 0.08, hats: 0, clap: false, pad: 0.95, lead: 0.12 },
 ];
 
 function sectionAt(bar: number): Section {
@@ -271,12 +264,15 @@ function render(): Float32Array[] {
     if (section.arp > 0) {
       const shape = [0, 2, 1, 2, 0, 1, 2, 1];
       const notes = [hz(chord.root, 3), hz(chord.third, 3), hz(chord.fifth, 3)];
+      // Every other pair of bars drops the off-beats, so the figure is not one loop.
+      const sparse = bar % 4 >= 2;
       for (let step = 0; step < 8; step += 1) {
+        if (sparse && step % 2 === 1) continue;
         const freq = notes[shape[step] as number] as number;
         add(
           at + step * (BEAT / 2),
           0.4,
-          (t) => pluck(t, freq, 0.1) * section.arp * 0.28,
+          (t) => pluck(t, freq, sparse ? 0.16 : 0.1) * section.arp * 0.28,
           step % 2 === 0 ? -0.35 : 0.35,
         );
       }

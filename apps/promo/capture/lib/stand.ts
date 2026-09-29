@@ -165,6 +165,30 @@ export async function hideCodeCellFocus(context: BrowserContext): Promise<void> 
   });
 }
 
+/**
+ * Takes the browser's own focus ring off fields the reel types into.
+ *
+ * The assistant's composer already sets `outline-none`. Headless Chrome still draws
+ * the platform focus ring the moment the caret lands, and that ring is not part of
+ * the product. Code cells are covered separately by {@link hideCodeCellFocus}.
+ */
+export async function hideCaptureFocus(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const css =
+      'textarea, input, button, [contenteditable="true"]{outline:none!important}' +
+      'textarea:focus, textarea:focus-visible, input:focus, input:focus-visible,' +
+      'button:focus, button:focus-visible{outline:none!important;box-shadow:none!important}';
+    const apply = () => {
+      const style = document.createElement('style');
+      style.dataset.promoFocus = 'off';
+      style.textContent = css;
+      document.head.appendChild(style);
+    };
+    if (document.head) apply();
+    else document.addEventListener('DOMContentLoaded', apply, { once: true });
+  });
+}
+
 /** Clears the "the dispatcher already pressed start today" flag so the reel can film it. */
 export async function forgetWorkdayStart(context: BrowserContext): Promise<void> {
   await context.addInitScript(() => {

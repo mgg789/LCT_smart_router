@@ -22,6 +22,42 @@ export function handoffView(row: EquipmentHandoff) {
 }
 export type HandoffView = ReturnType<typeof handoffView>;
 
+/** Offices share coordinates with engineer starts; a metre keeps float noise from looking like a field point. */
+const OFFICE_LOCATION_EPSILON = 1e-6;
+
+/**
+ * An unconfirmed meeting recorded on top of a depot is not a field exchange.
+ *
+ * Both people are still in the building that issues the equipment. Nobody has
+ * confirmed it, so a later plan may drop it instead of freezing the pair at
+ * clock-in. A confirmation or any other meeting place stays immutable.
+ */
+export function isUnconfirmedOfficeMeeting(
+  meeting: {
+    lat: number;
+    lon: number;
+    donorConfirmedAt: bigint | null;
+    receiverConfirmedAt: bigint | null;
+    completedAt: bigint | null;
+  },
+  depots: readonly { lat: number | null; lon: number | null }[],
+): boolean {
+  if (
+    meeting.completedAt !== null ||
+    meeting.donorConfirmedAt !== null ||
+    meeting.receiverConfirmedAt !== null
+  ) {
+    return false;
+  }
+  return depots.some(
+    (depot) =>
+      depot.lat !== null &&
+      depot.lon !== null &&
+      Math.abs(depot.lat - meeting.lat) <= OFFICE_LOCATION_EPSILON &&
+      Math.abs(depot.lon - meeting.lon) <= OFFICE_LOCATION_EPSILON,
+  );
+}
+
 /** Accepts only synchronized same-region pairs; existing reservations cannot be rewritten. */
 export async function persistHandoffs(
   tx: Tx,
@@ -43,12 +79,15 @@ export async function persistHandoffs(
       groups.set(stop.handoff.handoff_id, pair);
     }
   const pending = await tx.equipmentHandoff.findMany({ where: { workDate, completedAt: null } });
-  for (const row of pending)
-    if (!groups.has(row.id))
-      throw new SysError(
-        'VALIDATION_FAILED',
-        'A plan cannot discard an accepted equipment meeting',
-      );
+  const depots = await tx.depot.findMany({ select: { lat: true, lon: true } });
+  for (const row of pending) {
+    if (groups.has(row.id)) continue;
+    if (isUnconfirmedOfficeMeeting(row, depots)) {
+      await tx.equipmentHandoff.delete({ where: { id: row.id } });
+      continue;
+    }
+    throw new SysError('VALIDATION_FAILED', 'A plan cannot discard an accepted equipment meeting');
+  }
   for (const [id, pair] of groups) {
     const a = pair[0];
     const b = pair[1];

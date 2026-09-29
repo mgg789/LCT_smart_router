@@ -59,8 +59,31 @@ export class Pointer {
   }
 
   async moveOver(locator: Locator, ms = 700): Promise<void> {
+    await this.reveal(locator);
     const { x, y } = await this.centreOf(locator);
     await this.moveTo(x, y, ms);
+  }
+
+  /**
+   * Scrolls an element that sits past the bottom of the viewport into view with the
+   * wheel, the way a person would, so the take shows the scroll instead of a jump.
+   */
+  async reveal(locator: Locator): Promise<void> {
+    const box = await locator.boundingBox();
+    const viewport = this.page.viewportSize();
+    if (!box || !viewport || box.y + box.height <= viewport.height) return;
+    const overshoot = box.y + box.height - (viewport.height - 72);
+    const steps = 8;
+    for (let index = 0; index < steps; index += 1) {
+      await this.page.mouse.wheel(0, overshoot / steps);
+      await this.page.waitForTimeout(28);
+    }
+    await this.page.waitForTimeout(220);
+    const after = await locator.boundingBox();
+    if (after && after.y + after.height > viewport.height) {
+      await locator.scrollIntoViewIfNeeded();
+      await this.page.waitForTimeout(200);
+    }
   }
 
   /** Presses where the cursor already is, with the small pause a real press has. */

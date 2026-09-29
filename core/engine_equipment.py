@@ -56,6 +56,25 @@ def _insert_steps(steps: list[ScheduleStep], item: ScheduleStep) -> Iterator[lis
         yield steps[:index] + [item] + steps[index:]
 
 
+def _is_depot_location(snapshot: RouterTaskSnapshot, lat: float, lon: float) -> bool:
+    """True when the point is a known office. Offices issue equipment; they are not meeting points."""
+    return any(
+        abs(depot.location.lat - lat) <= 1e-6 and abs(depot.location.lon - lon) <= 1e-6
+        for depot in snapshot.depots
+    )
+
+
+def _request_has_logistics(snapshot: RouterTaskSnapshot, plan: Plan, request_id: str) -> bool:
+    """True when this request already has an office pickup or a donor delivery."""
+    if any(item.logistics.request_id == request_id for item in snapshot.pending_equipment_logistics):
+        return True
+    return any(
+        stop.logistics is not None and stop.logistics.request_id == request_id
+        for route in plan.routes
+        for stop in route.stops
+    )
+
+
 def _rescue_equipment_handoffs(
     snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider, settings: SearchSettings
 ) -> Plan:
@@ -74,6 +93,10 @@ def _rescue_equipment_handoffs(
     for assignment in current.assignments:
         request = requests[assignment.request_id]
         if assignment.status != "unassigned" or request.required_equipment is None:
+            continue
+        # A warehouse issue for this request is already the supply. A second
+        # meeting would take a colleague's van stock for the same job.
+        if _request_has_logistics(snapshot, current, request.request_id):
             continue
         receivers = [
             engineer for engineer in snapshot.engineers
@@ -107,6 +130,11 @@ def _rescue_equipment_handoffs(
                 # coordinates without relying on object identity.
                 unique_locations = list(dict.fromkeys((point.lat, point.lon) for point in locations))[:8]
                 for lat, lon in unique_locations:
+                    # Both engineers are often still standing in the office. That
+                    # building issues any device; it is not a place where one van
+                    # hands its morning stock to the other.
+                    if _is_depot_location(snapshot, lat, lon):
+                        continue
                     location = GeoPoint(lat=lat, lon=lon)
                     for offset in range(0, 32):
                         meeting_at = snapshot.planning_as_of + offset * 300
@@ -232,10 +260,23 @@ def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: Tra
                     equipment_type=request.required_equipment, receiver_engineer_id=engineer.engineer_id,
                     depot_id=depot.depot_id,
                 )
+                # Someone who has not left the office takes the device as they
+                # clock out. The dependent job can stay later, so a published
+                # visit is not pulled forward and they do not drive back.
+                starts_here = (
+                    abs(engineer.start_location.lat - depot.location.lat) <= 1e-6
+                    and abs(engineer.start_location.lon - depot.location.lon) <= 1e-6
+                )
+                opening_quote = (
+                    quote_at(travel, engineer.start_location, depot.location, engineer.travel_profile(), release)
+                    if starts_here else None
+                )
+                sequences: list[list[ScheduleStep]] = []
+                if opening_quote is not None:
+                    opening = LogisticsStep(logistics, depot.location, release + opening_quote.duration_sec)
+                    for job_index in range(len(old) + 1):
+                        sequences.append([opening, *old[:job_index], request.request_id, *old[job_index:]])
                 for index in range(len(old) + 1):
-                    evaluations += 1
-                    if evaluations > EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
-                        return current
                     previous = occupied[index - 1] if index else None
                     departure = previous.end_at if previous else release
                     location = previous.location if previous else engineer.start_location
@@ -243,7 +284,12 @@ def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: Tra
                     if quote is None:
                         continue
                     pickup = LogisticsStep(logistics, depot.location, departure + quote.duration_sec)
-                    candidate = schedule_steps(snapshot, engineer, old[:index] + [pickup, request.request_id] + old[index:], travel)
+                    sequences.append([*old[:index], pickup, request.request_id, *old[index:]])
+                for steps in sequences:
+                    evaluations += 1
+                    if evaluations > EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                        return current
+                    candidate = schedule_steps(snapshot, engineer, steps, travel)
                     if candidate is None:
                         continue
                     observed = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff)

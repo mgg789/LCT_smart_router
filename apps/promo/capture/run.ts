@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
 import { appears, scrollSmooth, typeHuman, watchLoginCode } from './lib/act.ts';
+import { holdRoutes, playRouteChange, stageMapReveal } from './lib/mapStage.ts';
 import { Pointer } from './lib/pointer.ts';
 import { Recorder, type SceneMeta } from './lib/recorder.ts';
 import {
@@ -32,6 +33,7 @@ import {
   deskContext,
   ENGINEER_EMAIL,
   forgetWorkdayStart,
+  hideCaptureFocus,
   hideCodeCellFocus,
   launchArgs,
   PHONE_VIEWPORT,
@@ -147,6 +149,7 @@ let desk: Page | null = null;
 async function openDesk(browser: Browser): Promise<Page> {
   if (desk) return desk;
   deskCtx = await deskContext(browser);
+  await hideCaptureFocus(deskCtx);
   await seedSession(deskCtx, 'dispatcher', await signIn(DISPATCHER_EMAIL, 'dispatcher'));
   await forgetWorkdayStart(deskCtx);
   desk = await deskCtx.newPage();
@@ -154,6 +157,30 @@ async function openDesk(browser: Browser): Promise<Page> {
   await desk.goto(WEB, { waitUntil: 'networkidle' });
   await settle(desk, 2600);
   return desk;
+}
+
+/**
+ * Keeps the assistant's transcript pinned to the top while it streams.
+ *
+ * The product calls `scrollTo` the bottom on every token. Replacing that on the
+ * scroller itself — and repeating it when the text changes — leaves the new answer
+ * growing downward through the pane instead of disappearing above it.
+ */
+async function pinAiTranscript(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const field = document.querySelector('textarea[aria-label="Сообщение ассистенту"]');
+    const scroller = field?.closest('section')?.querySelector('.overflow-y-auto');
+    if (!(scroller instanceof HTMLElement)) return;
+    const pin = () => {
+      scroller.scrollTop = 0;
+    };
+    scroller.scrollTo = () => {
+      pin();
+    };
+    pin();
+    const observer = new MutationObserver(pin);
+    observer.observe(scroller, { childList: true, subtree: true, characterData: true });
+  });
 }
 
 /**
@@ -301,6 +328,48 @@ async function resetBoard(page: Page): Promise<void> {
  * is only a couple of real minutes, which is why this is called between scenes rather
  * than once at the start.
  */
+/**
+ * Opens the desk and presses through the welcome screen when it is still there.
+ *
+ * Scenes filmed on their own (`--only`) find the day not yet started, because pressing
+ * «Начать рабочий день» is the opening scene's job.
+ */
+async function startDay(browser: Browser): Promise<Page> {
+  const page = await openDesk(browser);
+  const welcome = page.getByRole('button', { name: /Начать рабочий день/ });
+  if (await appears(welcome, 4000)) {
+    await welcome.first().click();
+    await appears(page.locator('[data-name="MAIN"]'), 40_000);
+    await settle(page, 2600);
+  }
+  return page;
+}
+
+/**
+ * Addresses of today's requests whose building already has an object passport.
+ *
+ * The demo restore fills passports for all but the first few requests, so which card
+ * carries one depends on the plan; the stand is asked instead of guessing.
+ */
+async function passportAddresses(): Promise<string[]> {
+  const session = await signIn(DISPATCHER_EMAIL, 'dispatcher');
+  const headers = { authorization: `Bearer ${session.token}` };
+  const list = (await fetch(`${API}/dispatch/requests`, { headers })
+    .then((r) => r.json())
+    .catch(() => null)) as { requests?: { id: string; addressText: string }[] } | null;
+  const found: string[] = [];
+  for (const request of list?.requests ?? []) {
+    const state = (await fetch(
+      `${API}/dispatch/requests/${encodeURIComponent(request.id)}/passport`,
+      { headers },
+    )
+      .then((r) => r.json())
+      .catch(() => null)) as { passport?: unknown } | null;
+    if (state?.passport) found.push(request.addressText);
+  }
+  return found;
+}
+
 async function bringCrewOnLine(): Promise<void> {
   const session = await signIn(DISPATCHER_EMAIL, 'dispatcher');
   const headers = {
@@ -363,14 +432,21 @@ async function sceneOpen(browser: Browser): Promise<void> {
 
   await appears(page.locator('[data-name="MAIN"]'), 40_000);
   recorder.mark('dashboard');
-  await page.waitForTimeout(2200);
-  recorder.mark('points');
 
-  // The map keeps swapping straight chords for real road geometry while the plan's
-  // geometry arrives; hold on it so the reel has the whole change to work with.
-  await page.waitForTimeout(9000);
-  recorder.mark('roads');
-  await page.waitForTimeout(2600);
+  // Points, then dashed chords, then the real roads in three waves. When the map
+  // cannot be driven this way, the take falls back to however the product draws it.
+  const staged = await stageMapReveal(page, recorder);
+  if (!staged) {
+    await page.waitForTimeout(2200);
+    recorder.mark('points');
+    await page.waitForTimeout(9000);
+    recorder.mark('roads');
+  }
+  // The corner notice covers the engineer panel the next shot opens. It has to be
+  // gone before that shot, not during it.
+  await dismissToasts(page);
+  recorder.mark('toastGone');
+  await page.waitForTimeout(700);
   await finish(recorder);
   await bringCrewOnLine();
 }
@@ -385,6 +461,19 @@ async function sceneOpen(browser: Browser): Promise<void> {
 async function sceneEngineers(browser: Browser): Promise<void> {
   const page = await openDesk(browser);
   await resetBoard(page);
+  await dismissToasts(page);
+  await page
+    .waitForFunction(
+      () => {
+        const text = document.body.innerText;
+        return (
+          !text.includes('Пересчитываем маршруты') && !text.includes('Уточняем линии на карте')
+        );
+      },
+      undefined,
+      { timeout: 20_000 },
+    )
+    .catch(() => console.log('  the route toast was still covering the board'));
   const { recorder, pointer } = await take(
     page,
     'engineers',
@@ -477,7 +566,33 @@ async function sceneEngineerLogin(
     console.log('  the engineer was already on the line');
   }
   recorder.mark('dayList');
-  await page.waitForTimeout(1800);
+  await page.waitForTimeout(800);
+
+  // The day list and the visit are one take. A second recording here is a cut, and
+  // the storyboard opens a card from the screen the engineer just landed on — the first
+  // one whose building already has an object passport, because the reel says so over it.
+  // «Приступить» stays off camera: the reel holds on the passport, it does not press it.
+  const withPassport = await passportAddresses();
+  const cards = page.getByRole('button').filter({ hasText: /Город Москва/ });
+  const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const texts = (await cards.allInnerTexts()).map(flat);
+  const index = texts.findIndex((text) => withPassport.some((address) => text.includes(flat(address))));
+  const card = cards.nth(Math.max(0, index));
+  if (index < 0) console.log('  no visit in the list has an object passport');
+  if (await appears(card, 8000)) {
+    await pointer.click(card, { travel: 720, settle: 260 });
+    recorder.mark('opened');
+    if (await appears(page.getByRole('region', { name: 'Паспорт объекта' }), 8000)) {
+      await page.waitForTimeout(500);
+    } else {
+      console.log('  the opened visit shows no object passport');
+      await page.waitForTimeout(1800);
+    }
+    recorder.mark('passport');
+    await page.waitForTimeout(3200);
+  } else {
+    console.log('  the day list had no visit card to open');
+  }
   await finish(recorder);
   return { context, page };
 }
@@ -707,20 +822,48 @@ async function sceneClient(browser: Browser): Promise<{ context: BrowserContext;
   recorder.mark('formFilled');
 
   // The retelling writes the address as text, but the visit needs a point on the map,
-  // and only the geocoder can give it one. Typing the line again is what asks: the first
-  // hit it returns becomes the coordinates, whether or not a suggestion is clicked.
+  // and only typing in the field asks the geocoder for one. The street is already
+  // there, so the take completes what is missing instead of typing it a second time.
+  // Without the city the geocoder's first hit is another town's Lesnaya street, so the
+  // city goes in front. On macOS neither `Control+A` nor Home/End move the caret in a
+  // field, so the caret is placed through the element and a rewrite clears it there.
   const address = page.locator('#client-address');
+  const caretTo = (where: 'start' | 'end') =>
+    address.evaluate((element, side) => {
+      if (!(element instanceof HTMLInputElement)) return;
+      const at = side === 'start' ? 0 : element.value.length;
+      element.setSelectionRange(at, at);
+    }, where);
   if (await appears(address, 5000)) {
     await pointer.click(address, { travel: 650 });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
-    await typeHuman(page, CLIENT_ADDRESS, 34);
+    const current = (await address.inputValue()).trim();
+    if (/Лесн/i.test(current)) {
+      if (!/Москв/i.test(current)) {
+        await caretTo('start');
+        await typeHuman(page, 'Москва, ', 50);
+      }
+      await caretTo('end');
+      if (!/\b7\b/.test(current)) await typeHuman(page, ', 7', 60);
+    } else {
+      await address.fill('');
+      await typeHuman(page, CLIENT_ADDRESS, 34);
+    }
+    console.log(`  address "${current}" -> "${(await address.inputValue()).trim()}"`);
     recorder.mark('addressTyped');
-    await page.waitForTimeout(3200);
-    const suggestion = page.locator('button').filter({ hasText: /Лесн/ }).first();
-    if (await appears(suggestion, 5000)) {
+    const suggestion = page.locator('button').filter({ hasText: /Лесная.*Москва/ }).first();
+    let found = await appears(suggestion, 12_000);
+    if (!found) {
+      // The public geocoder sometimes drops a request; one more keystroke asks again.
+      await caretTo('end');
+      await typeHuman(page, ' ', 60);
+      found = await appears(suggestion, 12_000);
+    }
+    if (found) {
+      await page.waitForTimeout(700);
       await pointer.click(suggestion, { travel: 520 });
       await page.waitForTimeout(1600);
+    } else {
+      console.log('  no Moscow suggestion for the address');
     }
     recorder.mark('addressPicked');
     await page.waitForTimeout(900);
@@ -780,7 +923,7 @@ async function sceneClient(browser: Browser): Promise<{ context: BrowserContext;
  * the way first.
  */
 async function sceneReplan(browser: Browser, clientRun: Promise<unknown>): Promise<void> {
-  const page = await openDesk(browser);
+  const page = await startDay(browser);
   await resetBoard(page);
   const { recorder, pointer } = await take(
     page,
@@ -789,15 +932,28 @@ async function sceneReplan(browser: Browser, clientRun: Promise<unknown>): Promi
     at(DESK_VIEWPORT, 0.62, 0.56),
   );
   recorder.mark('board');
+  // The roads stay as they were until the customer's emergency has been planned in, and
+  // then the rebuild is drawn as one visible change. It has to be that rebuild and not a
+  // later one: the stand's clock runs fast, and a minute on, the crews without an app
+  // have drifted to «не вышел» and the next plan is nearly empty.
+  const holding = await holdRoutes(page);
   await clientRun;
   recorder.mark('requestSent');
 
   const toast = page.locator('[data-toast-card]').filter({ hasText: /перестро|Подробнее/ });
   if (await appears(toast, 45_000)) {
     recorder.mark('toast');
-    await page.waitForTimeout(2400);
+    await page.waitForTimeout(1200);
   } else {
     console.log('  no rebuild notice arrived in time');
+  }
+  if (holding) {
+    await dismissToasts(page);
+    await pointer.moveTo(DESK_VIEWPORT.width * 0.95, DESK_VIEWPORT.height * 0.94, 700);
+    await page.waitForTimeout(400);
+    const moved = await playRouteChange(page, recorder);
+    console.log(`  route change on the map: ${moved ? 'new roads' : 'same roads'}`);
+    await page.waitForTimeout(1800);
   }
 
   const more = page
@@ -907,6 +1063,9 @@ async function sceneAiChat(browser: Browser): Promise<void> {
   if (!(await pressable(page, composer, 30_000))) {
     console.log('  the assistant will not take a message — filming the page as it stands');
   }
+  // The pane scrolls itself to the bottom as tokens arrive, which parks the answer
+  // above the fold. Pinning the scroller keeps the stream growing down from the top.
+  await pinAiTranscript(page);
 
   const { recorder, pointer } = await take(
     page,
@@ -1394,6 +1553,7 @@ async function main() {
     }
     if (wanted('engineer')) {
       console.log('scene: engineer');
+      if (!wanted('open')) await startDay(browser);
       engineer = await sceneEngineerLogin(browser);
       await sceneEngineerDay(engineer.page);
     } else if (wanted('engineer-day')) {

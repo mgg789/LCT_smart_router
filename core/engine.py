@@ -357,7 +357,7 @@ def _solve_prepared(
     search_snapshot = _without_optional_lunches(snapshot)
     policy: PolicySpec = compile_policy(search_snapshot.policy)
     context_version = context_version or default_context_version
-    base = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings), travel, settings)
+    base = _rescue_equipment_handoffs(snapshot, _rescue_office_pickups(snapshot, baseline(snapshot, travel), travel, settings), travel, settings)
     validate_plan(snapshot, base, travel)
     priority_seed = baseline(snapshot, travel, prioritized=True)
     compatible = (
@@ -470,7 +470,7 @@ def _solve_prepared(
         main = _project(snapshot, search_main, travel)
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
-    main = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, main, travel, settings), travel, settings)
+    main = _rescue_equipment_handoffs(snapshot, _rescue_office_pickups(snapshot, main, travel, settings), travel, settings)
     validate_plan(snapshot, main, travel)
     main = main.model_copy(
         update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}

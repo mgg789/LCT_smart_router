@@ -7,7 +7,7 @@ import {
   equipmentCapacity,
   readEquipmentSettings,
 } from '../../orchestrator/equipment/equipment-policy';
-import { handoffView } from '../../orchestrator/equipment/handoffs';
+import { handoffView, isUnconfirmedOfficeMeeting } from '../../orchestrator/equipment/handoffs';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
 import { readRequestPriority } from '../../orchestrator/policy/request-priority';
 import { findWorkType, findWorkTypeByTitle } from '../../orchestrator/requests/work-type.catalog';
@@ -266,6 +266,7 @@ export class SnapshotBuilder {
       });
     }
 
+    const depotRows = await tx.depot.findMany({ orderBy: { id: 'asc' } });
     const snapshot: RouterTaskSnapshot = {
       ...(decisions.length
         ? {
@@ -280,7 +281,7 @@ export class SnapshotBuilder {
             })),
           }
         : {}),
-      depots: (await tx.depot.findMany({ orderBy: { id: 'asc' } })).flatMap((depot) =>
+      depots: depotRows.flatMap((depot) =>
         depot.lat === null || depot.lon === null
           ? []
           : [
@@ -320,17 +321,20 @@ export class SnapshotBuilder {
           where: { workDate, completedAt: null },
           orderBy: { id: 'asc' },
         })
-      ).map((row) => {
+      ).flatMap((row) => {
+        if (isUnconfirmedOfficeMeeting(row, depotRows)) return [];
         const h = handoffView(row);
-        return {
-          handoff_id: h.id,
-          donor_engineer_id: h.donorEngineerId,
-          receiver_engineer_id: h.receiverEngineerId,
-          request_id: h.requestId,
-          items: h.items,
-          location: { lat: h.lat, lon: h.lon },
-          meeting_at: h.meetingAt,
-        };
+        return [
+          {
+            handoff_id: h.id,
+            donor_engineer_id: h.donorEngineerId,
+            receiver_engineer_id: h.receiverEngineerId,
+            request_id: h.requestId,
+            items: h.items,
+            location: { lat: h.lat, lon: h.lon },
+            meeting_at: h.meetingAt,
+          },
+        ];
       }),
       schema_version: SNAPSHOT_SCHEMA_VERSION,
       planning_as_of: planningAsOf,

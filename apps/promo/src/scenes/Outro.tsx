@@ -118,7 +118,7 @@ export function Outro({ deskScene, deskFrom = 0 }: OutroProps) {
    * change of what is on the laptop rather than a cut in the film.
    */
   const rebuild = hasShot('replan') ? 'replan' : null;
-  const cross = ease(Math.min(1, Math.max(0, (frame - 150) / 34)));
+  const cross = ease(Math.min(1, Math.max(0, (frame - 70) / 26)));
 
   // The pull back: the board fills the frame exactly, and settles onto the desk.
   const pull = ease(Math.min(1, frame / 88));
@@ -213,7 +213,7 @@ export function Outro({ deskScene, deskFrom = 0 }: OutroProps) {
           {rebuild && cross > 0.001 ? (
             <Screen
               scene={rebuild}
-              from={Math.max(0, mark('replan', 'policyPicked', 0) - 150 / fps)}
+              from={Math.max(0, mark('replan', 'policyPicked', 0) + 8)}
               width={screenW}
               height={screenH}
               opacity={cross}

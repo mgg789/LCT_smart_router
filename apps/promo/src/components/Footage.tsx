@@ -132,7 +132,7 @@ export function PhoneFootage({
   x = WIDTH / 2,
   y = HEIGHT / 2,
   tilt = 0,
-  glow = true,
+  glow = false,
   backdrop,
   children,
 }: PhoneFootageProps) {
