@@ -20,9 +20,7 @@ function message(seq: number, author: AiMessage['author'], text = 'x'): AiMessag
 
 describe('resumedHandoffStatus', () => {
   it('says nothing about a handover while the assistant still owns the dialogue', () => {
-    expect(resumedHandoffStatus('assistant', [message(1, 'user'), message(2, 'assistant')])).toBe(
-      null,
-    );
+    expect(resumedHandoffStatus('ai', [message(1, 'user'), message(2, 'assistant')])).toBe(null);
   });
 
   /** The reason this exists: the mode flips when the handover is queued, so mode alone

@@ -11793,10 +11793,14 @@
                           "cancelledAt"
                         ]
                       }
+                    },
+                    "nowAt": {
+                      "type": "number"
                     }
                   },
                   "required": [
-                    "requests"
+                    "requests",
+                    "nowAt"
                   ]
                 }
               }

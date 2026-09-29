@@ -1171,7 +1171,7 @@ export function MainDashboardPage() {
                       focusChatId={focusedChatId}
                       focusEngineerId={focusedEngineerChatId}
                       snapshot={visibleSnapshot}
-                      workday={dash.liveWorkday ?? null}
+                      workday={dash.liveWorkday?.workday ?? null}
                       onOpenEngineer={async (engineerId, text) => {
                         if (!dash.token) {
                           throw new Error(t('figma-dashboard.DashboardAssist.df8d670234'));
@@ -1223,7 +1223,7 @@ export function MainDashboardPage() {
                   {stackViewKey(stackNav) === 'policy' ? (
                     <PolicyComparisonView
                       snapshot={dash.snapshot}
-                      workday={dash.liveWorkday ?? null}
+                      workday={dash.liveWorkday?.workday ?? null}
                       comparison={dash.policyComparison}
                       loading={dash.policyComparisonLoading}
                       error={dash.policyComparisonError}
@@ -1397,7 +1397,7 @@ export function MainDashboardPage() {
                                 : () =>
                                     openChatWith({
                                       kind: 'engineer',
-                                      engineerId: dash.selectedEngineer.id,
+                                      engineerId: dash.selectedEngineer?.id ?? '',
                                     })
                             }
                             request={dash.selectedRequest}

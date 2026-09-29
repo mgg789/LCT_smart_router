@@ -113,6 +113,7 @@ it('makes the support entry reachable from the client menu', () => {
       onClose={() => {}}
       onNavigate={() => {}}
       onNewRequest={() => {}}
+      onSignOut={() => {}}
     />,
   );
   expect(html).toContain('Поддержка');

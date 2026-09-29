@@ -181,6 +181,8 @@ it('folds a run of identical notices into the newest card', () => {
     createdAt,
     seenAt: null,
     resolvedAt: null,
+    severity: 'info' as const,
+    restoreOption: null,
     reasons: ['Маршруты обновлены'],
     requestIds: [],
     engineerIds: [],
