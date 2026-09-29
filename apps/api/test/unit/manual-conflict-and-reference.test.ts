@@ -51,6 +51,8 @@ it('blocks dispatcher edits with every decision, permits recovery and LIVE facts
   );
   for (const action of [
     'manual.priorities',
+    'manual.delete',
+    'manual.decision.remove',
     'control.auto',
     'live.engineer.online',
     'request.fact.completed',

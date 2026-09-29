@@ -3,6 +3,8 @@
 Rules for any AI agent (Claude Code, Codex, Cursor, ZCode) and human contributor working in this repository.
 Team language is Russian; **code, comments, identifiers, commits, and PRs are written in English; user- and judge-facing documentation (root `README.md` and `docs/`) is written in Russian** (decided 2026-09-17 before v0).
 
+The `context/` pack was removed from the tree on 2026-09-29. Citations below point at that history; restore a file with git if you need it. Do not recreate the directory.
+
 ## Team memory (RAGConnect) — read first
 
 Shared cloud memory of the team: `project_label="lct"`; connect guide and details: `docs/ragconnect.md`.

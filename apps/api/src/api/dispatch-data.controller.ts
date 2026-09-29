@@ -11,6 +11,7 @@ import {
   DATASET_REGIONS,
   DatasetImportService,
   ImportPreparationService,
+  ReadyPacksService,
   TabularImportService,
   UploadImportService,
 } from '../orchestrator/imports';
@@ -51,6 +52,7 @@ export class DispatchDataController {
     private readonly importPreparations: ImportPreparationService,
     private readonly uploadImports: UploadImportService,
     private readonly tabularImports: TabularImportService,
+    private readonly readyPacks: ReadyPacksService,
     private readonly roadImports: RoadImportService,
     private readonly resetService: ResetService,
     private readonly demoStand: DemoStandService,
@@ -68,6 +70,38 @@ export class DispatchDataController {
   @ApiOperation({ summary: 'Convert a reviewed tabular upload into the standard upload package' })
   async convertTabular(@Body(zodBody(tabularConvertSchema)) dto: TabularConvertDto) {
     return this.tabularImports.convert(dto);
+  }
+
+  @Get('data/packs')
+  @ApiOperation({ summary: 'Named datasets that can be loaded onto the current day' })
+  listReadyPacks() {
+    return this.readyPacks.list();
+  }
+
+  @Post('data/packs/:id')
+  @ApiOperation({ summary: 'Load one ready dataset onto the running day; a repeat adds nothing' })
+  async applyReadyPack(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(importPreparationActionSchema)) dto: ImportPreparationActionDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.import',
+        targetRef: id,
+        payload: { packId: id },
+      },
+      (context) =>
+        this.readyPacks.apply(
+          context,
+          id,
+          this.config.get('DATASET_ROOT'),
+          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
+        ),
+    );
+    return outcome.result;
   }
 
   @Get('data/state')

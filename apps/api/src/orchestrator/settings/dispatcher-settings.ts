@@ -7,12 +7,18 @@ const seconds = z.number().int().min(0).max(86_400);
 const secret = z.string().max(200).nullable().optional();
 
 /** Defaults match the previous hardcoded alert timers and a typical field shift. */
+export type ShiftPattern = 'two_two' | 'five_two';
+
 export const DEFAULT_DISPATCHER_SETTINGS = {
   equipmentCapacityWalk: 5,
   equipmentCapacityBike: 12,
   equipmentCapacityCar: 30,
-  dayStartMin: 9 * 60,
-  dayEndMin: 21 * 60,
+  dayStartMin: 10 * 60,
+  dayEndMin: 22 * 60,
+  fiveTwoStartMin: 9 * 60,
+  fiveTwoEndMin: 18 * 60,
+  twoTwoStartMin: 10 * 60,
+  twoTwoEndMin: 22 * 60,
   noShowSec: 30 * 60,
   overdueSec: 5 * 60,
   timeRiskSec: 5 * 60,
@@ -27,6 +33,10 @@ export type DispatcherSettings = {
   readonly equipmentCapacityCar: number;
   readonly dayStartMin: number;
   readonly dayEndMin: number;
+  readonly fiveTwoStartMin: number;
+  readonly fiveTwoEndMin: number;
+  readonly twoTwoStartMin: number;
+  readonly twoTwoEndMin: number;
   readonly noShowSec: number;
   readonly overdueSec: number;
   readonly timeRiskSec: number;
@@ -42,6 +52,10 @@ export const dispatcherSettingsPatchSchema = z
     equipmentCapacityCar: z.number().int().min(0).max(1000).optional(),
     dayStartMin: minuteOfDay.optional(),
     dayEndMin: minuteOfDay.optional(),
+    fiveTwoStartMin: minuteOfDay.optional(),
+    fiveTwoEndMin: minuteOfDay.optional(),
+    twoTwoStartMin: minuteOfDay.optional(),
+    twoTwoEndMin: minuteOfDay.optional(),
     noShowSec: seconds.optional(),
     overdueSec: seconds.optional(),
     timeRiskSec: seconds.optional(),
@@ -51,9 +65,15 @@ export const dispatcherSettingsPatchSchema = z
   })
   .refine(
     (value) =>
-      value.dayStartMin === undefined ||
-      value.dayEndMin === undefined ||
-      value.dayEndMin > value.dayStartMin,
+      (value.dayStartMin === undefined ||
+        value.dayEndMin === undefined ||
+        value.dayEndMin > value.dayStartMin) &&
+      (value.fiveTwoStartMin === undefined ||
+        value.fiveTwoEndMin === undefined ||
+        value.fiveTwoEndMin > value.fiveTwoStartMin) &&
+      (value.twoTwoStartMin === undefined ||
+        value.twoTwoEndMin === undefined ||
+        value.twoTwoEndMin > value.twoTwoStartMin),
     { message: 'The working day must end after it starts' },
   );
 
@@ -65,6 +85,10 @@ export interface DispatcherSettingsView {
   readonly equipmentCapacityCar: number;
   readonly dayStartMin: number;
   readonly dayEndMin: number;
+  readonly fiveTwoStartMin: number;
+  readonly fiveTwoEndMin: number;
+  readonly twoTwoStartMin: number;
+  readonly twoTwoEndMin: number;
   readonly noShowSec: number;
   readonly overdueSec: number;
   readonly timeRiskSec: number;
@@ -81,6 +105,10 @@ const storedSchema = z.object({
   equipmentCapacityCar: z.number().int().min(0).max(1000).default(30),
   dayStartMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.dayStartMin),
   dayEndMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.dayEndMin),
+  fiveTwoStartMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.fiveTwoStartMin),
+  fiveTwoEndMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.fiveTwoEndMin),
+  twoTwoStartMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.twoTwoStartMin),
+  twoTwoEndMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.twoTwoEndMin),
   noShowSec: seconds.default(DEFAULT_DISPATCHER_SETTINGS.noShowSec),
   overdueSec: seconds.default(DEFAULT_DISPATCHER_SETTINGS.overdueSec),
   timeRiskSec: seconds.default(DEFAULT_DISPATCHER_SETTINGS.timeRiskSec),
@@ -96,14 +124,25 @@ export function parseDispatcherSettings(value: unknown): DispatcherSettings {
     return { ...DEFAULT_DISPATCHER_SETTINGS };
   }
   const next = parsed.data;
-  if (next.dayEndMin <= next.dayStartMin) {
+  const raw =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  // The single day clock predates the two patterns. A stored document that never
+  // set 2/2 keeps that clock as the 2/2 window instead of jumping to 10:00–22:00.
+  const inherited = {
+    ...next,
+    twoTwoStartMin: 'twoTwoStartMin' in raw ? next.twoTwoStartMin : next.dayStartMin,
+    twoTwoEndMin: 'twoTwoEndMin' in raw ? next.twoTwoEndMin : next.dayEndMin,
+  };
+  if (inherited.dayEndMin <= inherited.dayStartMin) {
     return {
       ...DEFAULT_DISPATCHER_SETTINGS,
-      ...next,
+      ...inherited,
       dayEndMin: DEFAULT_DISPATCHER_SETTINGS.dayEndMin,
     };
   }
-  return next;
+  return inherited;
 }
 
 /** Merges a patch. `null` on a key clears it; omitted keys stay. */
@@ -117,6 +156,10 @@ export function mergeDispatcherSettings(
     equipmentCapacityCar: patch.equipmentCapacityCar ?? current.equipmentCapacityCar,
     dayStartMin: patch.dayStartMin ?? current.dayStartMin,
     dayEndMin: patch.dayEndMin ?? current.dayEndMin,
+    fiveTwoStartMin: patch.fiveTwoStartMin ?? current.fiveTwoStartMin,
+    fiveTwoEndMin: patch.fiveTwoEndMin ?? current.fiveTwoEndMin,
+    twoTwoStartMin: patch.twoTwoStartMin ?? current.twoTwoStartMin,
+    twoTwoEndMin: patch.twoTwoEndMin ?? current.twoTwoEndMin,
     noShowSec: patch.noShowSec ?? current.noShowSec,
     overdueSec: patch.overdueSec ?? current.overdueSec,
     timeRiskSec: patch.timeRiskSec ?? current.timeRiskSec,
@@ -126,7 +169,11 @@ export function mergeDispatcherSettings(
     yandexApiKey:
       patch.yandexApiKey === undefined ? current.yandexApiKey : normalizeSecret(patch.yandexApiKey),
   };
-  if (next.dayEndMin <= next.dayStartMin) {
+  if (
+    next.dayEndMin <= next.dayStartMin ||
+    next.fiveTwoEndMin <= next.fiveTwoStartMin ||
+    next.twoTwoEndMin <= next.twoTwoStartMin
+  ) {
     throw new Error('The working day must end after it starts');
   }
   return next;
@@ -140,6 +187,10 @@ export function toDispatcherSettingsView(settings: DispatcherSettings): Dispatch
     equipmentCapacityCar: settings.equipmentCapacityCar,
     dayStartMin: settings.dayStartMin,
     dayEndMin: settings.dayEndMin,
+    fiveTwoStartMin: settings.fiveTwoStartMin,
+    fiveTwoEndMin: settings.fiveTwoEndMin,
+    twoTwoStartMin: settings.twoTwoStartMin,
+    twoTwoEndMin: settings.twoTwoEndMin,
     noShowSec: settings.noShowSec,
     overdueSec: settings.overdueSec,
     timeRiskSec: settings.timeRiskSec,
@@ -149,6 +200,16 @@ export function toDispatcherSettingsView(settings: DispatcherSettings): Dispatch
     yandexApiKeySet: settings.yandexApiKey !== null,
     yandexApiKeyLast4: last4(settings.yandexApiKey),
   };
+}
+
+/** Start and end minutes of one shift pattern. 2/2 is the default field graph. */
+export function shiftWindowMinutes(
+  settings: DispatcherSettings,
+  pattern: ShiftPattern,
+): { startMin: number; endMin: number } {
+  return pattern === 'five_two'
+    ? { startMin: settings.fiveTwoStartMin, endMin: settings.fiveTwoEndMin }
+    : { startMin: settings.twoTwoStartMin, endMin: settings.twoTwoEndMin };
 }
 
 /** Unix seconds for a Moscow civil clock given as minutes from midnight. */

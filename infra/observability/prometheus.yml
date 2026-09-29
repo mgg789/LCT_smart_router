@@ -3,8 +3,12 @@ global:
   scrape_timeout: 5s
 scrape_configs:
   - job_name: api
+    authorization:
+      credentials_file: /run/metrics/credentials/api-token
     static_configs:
       - targets: ['api:8000']
   - job_name: router
+    authorization:
+      credentials_file: /run/metrics/credentials/router-token
     static_configs:
       - targets: ['router:8100']

@@ -9,6 +9,13 @@
       "title": "Access Buffer Sec",
       "type": "integer"
     },
+    "comparison_time_limit_ms": {
+      "default": 6000,
+      "maximum": 120000,
+      "minimum": 1,
+      "title": "Comparison Time Limit Ms",
+      "type": "integer"
+    },
     "departure_lateness_tolerance_sec": {
       "default": 0,
       "maximum": 86400,
@@ -50,8 +57,15 @@
       "title": "Metro Enabled",
       "type": "boolean"
     },
+    "solve_time_limit_ms": {
+      "default": 6000,
+      "maximum": 120000,
+      "minimum": 1,
+      "title": "Solve Time Limit Ms",
+      "type": "integer"
+    },
     "strict_time_windows": {
-      "default": false,
+      "default": true,
       "title": "Strict Time Windows",
       "type": "boolean"
     },
@@ -82,6 +96,13 @@
       ],
       "title": "Travel Time Mode",
       "type": "string"
+    },
+    "verify_time_limit_ms": {
+      "default": 6000,
+      "maximum": 120000,
+      "minimum": 1,
+      "title": "Verify Time Limit Ms",
+      "type": "integer"
     },
     "window_lateness_tolerance_sec": {
       "default": 600,

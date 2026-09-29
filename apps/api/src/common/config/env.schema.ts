@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { observabilityEnv } from '../observability/observability';
+import { observabilityEnv, validateMetricsConfiguration } from '../observability/observability';
 
 /**
  * Environment contract of the System Layer.
@@ -216,6 +216,7 @@ export function validateEnv(raw: Record<string, unknown>): Env {
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
+  validateMetricsConfiguration(parsed.data);
   if (parsed.data.NODE_ENV === 'production' && parsed.data.AUTH_DEV_EXPOSE_CODES) {
     throw new Error(
       'Invalid environment configuration: AUTH_DEV_EXPOSE_CODES must not be enabled in ' +

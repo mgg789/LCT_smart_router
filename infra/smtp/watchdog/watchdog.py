@@ -11,6 +11,7 @@ This process never claims that a message reached a mailbox.
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import subprocess
@@ -150,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         if not TOKEN:
             return False
         header = self.headers.get("Authorization", "")
-        return header == f"Bearer {TOKEN}"
+        return hmac.compare_digest(header.encode(), f"Bearer {TOKEN}".encode())
 
     def _send(self, code: int, payload: dict[str, Any]) -> None:
         raw = json.dumps(payload).encode("utf-8")

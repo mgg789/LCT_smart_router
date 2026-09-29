@@ -1,0 +1,116 @@
+[
+  {
+    "dataset": "east-14",
+    "requests": 14,
+    "engineers": 12,
+    "transport_mix": {
+      "car": 7,
+      "bike": 2,
+      "transit": 2,
+      "walk": 1
+    },
+    "straight": {
+      "solve_s": 0.262,
+      "assigned": 14,
+      "travel_time_sec": 18782
+    },
+    "hybrid": {
+      "total_s": 0.334,
+      "verified_legs": 14,
+      "window_breaches": 0,
+      "metro_legs": 2,
+      "re_solved": false,
+      "assigned": 14,
+      "travel_time_sec": 18782
+    },
+    "full_v3": {
+      "prep_cold_s": 0.063,
+      "prep_warm_s": 0.001,
+      "solve_s": 0.209,
+      "total_cold_s": 0.272,
+      "assigned": 14,
+      "travel_time_sec": 21061,
+      "profiles": [
+        "bike",
+        "car",
+        "walk"
+      ]
+    }
+  },
+  {
+    "dataset": "east-35",
+    "requests": 35,
+    "engineers": 12,
+    "transport_mix": {
+      "car": 7,
+      "bike": 2,
+      "transit": 2,
+      "walk": 1
+    },
+    "straight": {
+      "solve_s": 1.342,
+      "assigned": 35,
+      "travel_time_sec": 45567
+    },
+    "hybrid": {
+      "total_s": 1.611,
+      "verified_legs": 35,
+      "window_breaches": 0,
+      "metro_legs": 2,
+      "re_solved": false,
+      "assigned": 35,
+      "travel_time_sec": 45567
+    },
+    "full_v3": {
+      "prep_cold_s": 0.134,
+      "prep_warm_s": 0.003,
+      "solve_s": 1.138,
+      "total_cold_s": 1.271,
+      "assigned": 35,
+      "travel_time_sec": 45132,
+      "profiles": [
+        "bike",
+        "car",
+        "walk"
+      ]
+    }
+  },
+  {
+    "dataset": "southeast-75",
+    "requests": 75,
+    "engineers": 12,
+    "transport_mix": {
+      "car": 7,
+      "bike": 2,
+      "transit": 2,
+      "walk": 1
+    },
+    "straight": {
+      "solve_s": 2.88,
+      "assigned": 43,
+      "travel_time_sec": 152181
+    },
+    "hybrid": {
+      "total_s": 5.996,
+      "verified_legs": 42,
+      "window_breaches": 1,
+      "metro_legs": 0,
+      "re_solved": true,
+      "assigned": 56,
+      "travel_time_sec": 78652
+    },
+    "full_v3": {
+      "prep_cold_s": 0.265,
+      "prep_warm_s": 0.012,
+      "solve_s": 1.933,
+      "total_cold_s": 2.198,
+      "assigned": 51,
+      "travel_time_sec": 79706,
+      "profiles": [
+        "bike",
+        "car",
+        "walk"
+      ]
+    }
+  }
+]

@@ -101,7 +101,7 @@ def test_official_import_emits_regions_and_optional_lunch_window():
 def test_south_central_official_golden():
     """Run the second official region through the same strict importer and Engine."""
     scenario = load_official_region(DATASET, "south_central")
-    settings = SearchSettings(**GOLDEN["settings"])
+    settings = SearchSettings(**GOLDEN["settings"], strict_time_windows=False)
     travel = configure_travel(
         GraphTravel(scenario.graph), settings.technical(), scenario.snapshot.planning_as_of
     )
@@ -114,7 +114,12 @@ def test_south_central_official_golden():
     assert len(scenario.snapshot.requests) == GOLDEN["source"]["requests"]
     assert len(scenario.snapshot.engineers) == GOLDEN["source"]["engineers"]
     assert sum(request.priority == "urgent" for request in scenario.snapshot.requests) == 16
-    assert scenario.geocode_quality == {"district_centroid_projection": 56}
+    assert scenario.geocode_quality == {
+        "building:apartments": 53,
+        "building:yes": 1,
+        "landuse:construction": 1,
+        "building:retail": 1,
+    }
     assert _plan_hash(output.baseline) == GOLDEN["baseline"]["plan_sha256"]
     assert _plan_hash(output.main) == GOLDEN["main"]["plan_sha256"]
     assert output.main.summary.assigned_count == GOLDEN["main"]["assigned_count"]
@@ -135,7 +140,12 @@ def test_southeast_official_region_is_complete_and_solvable():
     assert len(scenario.graph.nodes) == 76
     assert len(scenario.graph.edges) == 5700
     assert sum(request.priority == "urgent" for request in scenario.snapshot.requests) == 31
-    assert scenario.geocode_quality == {"district_centroid_projection": 83}
+    assert scenario.geocode_quality == {
+        "highway:residential": 1,
+        "building:apartments": 70,
+        "building:yes": 11,
+        "highway:tertiary": 1,
+    }
     assert scenario.snapshot.policy.policy_id == "compact"
 
     settings = SearchSettings(time_limit_ms=3000, solution_limit=8)

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="142" font-family="-apple-system,Segoe UI,sans-serif" font-size="13">
+<text x="12" y="22" font-weight="600">Пересчёт плана после срочной заявки в 15:00, мс</text>
+<text x="232" y="55" text-anchor="end">M5 Pro (48 GB, macOS)</text><rect x="240" y="40" width="188" height="20" rx="4" fill="#10b981"/><text x="434" y="55">144.7 мс</text>
+<text x="232" y="89" text-anchor="end">MGG server (drj-1, 12c, Linux)</text><rect x="240" y="74" width="310" height="20" rx="4" fill="#10b981"/><text x="556" y="89">238.4 мс</text>
+</svg>

@@ -274,7 +274,7 @@ def schedule_steps(
     """
     # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
     # client package: static SSRF rules flag that shape even though no network call exists.
-    strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
+    strict = getattr(getattr(travel, "settings", None), "strict_time_windows", True)
     request_map = {r.request_id: r for r in snapshot.requests}
     job_steps = [item for item in steps if isinstance(item, str)]
     terminal_candidate = len(job_steps) == 1 and len(steps) == 1
@@ -1025,6 +1025,7 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
     observed: dict[str, tuple[str, str]] = {}
     handoffs: dict[str, list[tuple[str, RouteStop]]] = {}
     logistics_stops: dict[str, RouteStop] = {}
+    logistics_requests: set[str] = set()
     for route in plan.routes:
         engineer = engineers[route.engineer_id]
         steps: list[ScheduleStep] = []
@@ -1032,7 +1033,12 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             if stop.logistics is not None:
                 identifier = stop.logistics.logistics_id
                 require(identifier not in logistics_stops, "duplicate logistics action")
+                require(
+                    stop.logistics.request_id not in logistics_requests,
+                    "duplicate logistics request",
+                )
                 logistics_stops[identifier] = stop
+                logistics_requests.add(stop.logistics.request_id)
             if stop.kind == "job":
                 if stop.request_id is None:
                     raise ValueError("RESULT_INVALID: job stop missing request")

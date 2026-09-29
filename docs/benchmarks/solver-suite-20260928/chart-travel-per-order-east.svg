@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="244" font-family="-apple-system,Segoe UI,sans-serif" font-size="13">
+<text x="12" y="22" font-weight="600">Дорога на заявку: Восток, секунд</text>
+<text x="232" y="55" text-anchor="end">FIFO-диспетчер</text><rect x="240" y="40" width="279" height="20" rx="4" fill="#94a3b8"/><text x="525" y="55">2023 с</text>
+<text x="232" y="89" text-anchor="end">Жадный «ближайший»</text><rect x="240" y="74" width="310" height="20" rx="4" fill="#60a5fa"/><text x="556" y="89">2248 с</text>
+<text x="232" y="123" text-anchor="end">Жадный «срочность+ближайший»</text><rect x="240" y="108" width="234" height="20" rx="4" fill="#f59e0b"/><text x="480" y="123">1697 с</text>
+<text x="232" y="157" text-anchor="end">Router (прогноз трафика)</text><rect x="240" y="142" width="202" height="20" rx="4" fill="#10b981"/><text x="448" y="157">1463 с</text>
+<text x="232" y="191" text-anchor="end">Router по статичной матрице</text><rect x="240" y="176" width="188" height="20" rx="4" fill="#059669"/><text x="434" y="191">1362 с</text>
+</svg>

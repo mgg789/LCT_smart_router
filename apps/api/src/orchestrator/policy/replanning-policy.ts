@@ -1,3 +1,4 @@
+import { zonedDayEnd } from '../../common/time/zone';
 import type { Tx } from '../../persistence';
 
 export const ORDINARY_REPLANNING_KEY = 'policy.ordinary-replanning-disabled';
@@ -17,6 +18,6 @@ export async function ordinaryArrivalHoldUntil(
   if (category === 'emergency' || !(await ordinaryReplanningDisabled(tx))) return null;
   if (!(await tx.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } }))) return null;
   const day = await tx.liveWorkday.findFirst({ where: { status: 'running' } });
-  const dayEnd = (Math.floor((now + 10800) / 86400) + 1) * 86400 - 10800;
+  const dayEnd = zonedDayEnd(now);
   return BigInt(Math.max(dayEnd, Number(day?.logicalEndAt ?? 0)));
 }

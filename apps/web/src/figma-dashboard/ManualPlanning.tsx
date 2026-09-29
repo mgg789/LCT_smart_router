@@ -10,6 +10,7 @@ import {
   saveManualPriorities,
 } from '../api/manual';
 import type { DashboardSnapshot } from '../api/types';
+import { openModalCount } from '../components/useModalFocus';
 import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { ModalLayer, ModalScrim } from './modalLayer';
@@ -39,9 +40,20 @@ type Context = {
   edit: (editor: Editor) => void;
 };
 const ManualContext = createContext<Context | null>(null);
-/** Opens the shared manual mode or priorities dialog from dashboard menu controls. */
-export function openManualPlanning(panel: 'mode' | 'priorities'): void {
-  window.dispatchEvent(new CustomEvent('manual-planning-open', { detail: panel }));
+/**
+ * Opens the shared manual mode or priorities dialog from dashboard menu controls.
+ *
+ * `resume` is the action the dispatcher was already performing when the gate appeared.
+ * Without it their first «Назначить» was simply swallowed: the reassignment opened the
+ * mode dialog, the confirmation and the introduction took the two clicks that followed,
+ * and the request kept its old engineer with nothing on screen to say so — they had to
+ * work out for themselves that the whole thing needed doing again.
+ */
+export function openManualPlanning(
+  panel: 'mode' | 'priorities',
+  resume?: () => void | Promise<void>,
+): void {
+  window.dispatchEvent(new CustomEvent('manual-planning-open', { detail: { panel, resume } }));
 }
 /** Owns versioned manual state, confirmation dialogs and conflict review across dashboard tabs. */
 export function ManualPlanningProvider({
@@ -64,11 +76,25 @@ export function ManualPlanningProvider({
   const [ordered, setOrdered] = useState<string[]>([]);
   const orderDirty = useRef(false);
   const seenConflict = useRef<string | null>(null);
+  /** Read by the conflict poll, which must not restart its timer on every dialog change. */
+  const ownModalOpen = useRef(false);
+  /** The action the gate interrupted; run once manual mode is really on. */
+  const resumeRef = useRef<(() => void | Promise<void>) | null>(null);
   const active = snapshot?.plan.mode === 'manual';
+  ownModalOpen.current = panel !== null || editor !== null;
   useEffect(() => {
     const open = (event: Event) => {
-      const requested = (event as CustomEvent<'mode' | 'priorities' | 'request-manual'>).detail;
+      const detail = (
+        event as CustomEvent<
+          | 'mode'
+          | 'priorities'
+          | 'request-manual'
+          | { panel: 'mode' | 'priorities'; resume?: () => void | Promise<void> }
+        >
+      ).detail;
+      const requested = typeof detail === 'string' ? detail : detail.panel;
       if (requested === 'request-manual' && active) return;
+      resumeRef.current = typeof detail === 'string' ? null : (detail.resume ?? null);
       setEditor(null);
       setPanel(requested === 'request-manual' ? 'mode' : requested);
       setError(null);
@@ -94,7 +120,13 @@ export function ManualPlanningProvider({
         if (cancelled) return;
         setState((current) => (current && current.version > next.version ? current : next));
         const key = `${next.version}:${next.resolution?.inputHash}`;
+        // Nobody asked for this dialog -- the solver did -- so it waits for a clear screen.
+        // Raised over a modal the dispatcher opened themselves it buried their work, and
+        // the scrim behind it made the one underneath unreachable. The key stays unclaimed,
+        // so the next poll offers the same conflict again once that dialog is gone.
+        const mine = ownModalOpen.current ? 1 : 0;
         if (active && next.needsReview && seenConflict.current !== key) {
+          if (openModalCount() > mine) return;
           seenConflict.current = key;
           setPanel((current) => (current === 'intro' ? current : 'priorities'));
         }
@@ -140,6 +172,12 @@ export function ManualPlanningProvider({
     } finally {
       setBusy(false);
     }
+  };
+  /** Carries out the interrupted action once, whatever happens to the dialog next. */
+  const runResume = async () => {
+    const pending = resumeRef.current;
+    resumeRef.current = null;
+    if (pending) await pending();
   };
   const save = async (input: ManualDecisionInput) => {
     if (!token || !state || !active || busy) return;
@@ -220,6 +258,7 @@ export function ManualPlanningProvider({
                     }
                     setPanel(showIntroduction ? 'intro' : null);
                     setState(await loadManualState(token));
+                    if (!active) await runResume();
                   });
                 }}
               >

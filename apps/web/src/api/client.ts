@@ -137,6 +137,7 @@ const engineerSchema = z.object({
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
   transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
+  shiftPattern: z.enum(['two_two', 'five_two']).default('two_two'),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
   hasAccount: z.boolean().optional().default(false),
@@ -478,7 +479,7 @@ const technicalSettingsSchema = z.object({
   metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
-  strictTimeWindows: z.boolean().default(false),
+  strictTimeWindows: z.boolean().default(true),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
@@ -488,6 +489,9 @@ const technicalSettingsSchema = z.object({
   fixedTravelTimeSec: z.number().int().positive(),
   earlyFinishReplanThresholdSec: z.number().int().nonnegative(),
   taskOverrunToleranceSec: z.number().int().nonnegative(),
+  solveTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  verifyTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  comparisonTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
   routerContextVersion: z.string().min(1),
 });
 
@@ -517,7 +521,7 @@ const policyComparisonSchema = z.object({
   inputHash: z.string().min(1),
   routerContextVersion: z.string().min(1),
   computedAt: z.number().int(),
-  searchBudgetMs: z.number().int().positive().max(8_000),
+  searchBudgetMs: z.number().int().positive().max(120_000),
   rows: z
     .array(
       z.object({
@@ -526,6 +530,7 @@ const policyComparisonSchema = z.object({
         additionalEngineers: z.number().int().nonnegative().default(0),
         isUsable: z.boolean(),
         calculationMs: z.number().nonnegative(),
+        jobEnds: z.array(z.number().int().nonnegative()).default([]),
         metrics: z.object({
           requestsTotal: z.number().int().nonnegative(),
           assignedCount: z.number().int().nonnegative(),
@@ -809,6 +814,22 @@ const engineerProfileSchema = engineerSchema.omit({ day: true });
 const dispatcherSettingsSchema = z.object({
   dayStartMin: z.number().int(),
   dayEndMin: z.number().int(),
+  fiveTwoStartMin: z
+    .number()
+    .int()
+    .default(9 * 60),
+  fiveTwoEndMin: z
+    .number()
+    .int()
+    .default(18 * 60),
+  twoTwoStartMin: z
+    .number()
+    .int()
+    .default(10 * 60),
+  twoTwoEndMin: z
+    .number()
+    .int()
+    .default(22 * 60),
   noShowSec: z.number().int(),
   overdueSec: z.number().int(),
   timeRiskSec: z.number().int(),
@@ -881,6 +902,50 @@ export async function geocodeAddress(
   return result.hits;
 }
 
+export interface DatasetGeocodePoint {
+  readonly address: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly level: 'house' | 'street' | 'approximate';
+}
+
+/** LocationIQ dataset geocode. `available: false` means the contour has no token. */
+export function geocodeDataset(
+  token: string,
+  addresses: readonly string[],
+  timeoutMs: number,
+): Promise<{
+  available: boolean;
+  house: number;
+  street: number;
+  approximate: number;
+  points: DatasetGeocodePoint[];
+}> {
+  return requestJson(
+    '/api/v1/dispatch/geocode/dataset',
+    z.object({
+      available: z.boolean(),
+      house: z.number().int().nonnegative(),
+      street: z.number().int().nonnegative(),
+      approximate: z.number().int().nonnegative(),
+      points: z.array(
+        z.object({
+          address: z.string(),
+          lat: z.number(),
+          lon: z.number(),
+          level: z.enum(['house', 'street', 'approximate']),
+        }),
+      ),
+    }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ addresses }),
+    },
+    timeoutMs,
+  );
+}
+
 /** Cancels a visit that has not started. */
 export function cancelDispatchRequest(
   token: string,
@@ -947,11 +1012,18 @@ export function updateDispatchEngineerProfile(
   token: string,
   engineerId: string,
   expectedVersion: number,
-  patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
-): Promise<unknown> {
+  patch: {
+    region?: string;
+    transportType?: 'car' | 'walk' | 'bike' | 'transit';
+    shiftPattern?: 'two_two' | 'five_two';
+  },
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema>; scheduleDeferred?: boolean }> {
   return requestJson(
     `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
-    z.object({ engineer: engineerProfileSchema }),
+    z.object({
+      engineer: engineerProfileSchema,
+      scheduleDeferred: z.boolean().optional(),
+    }),
     token,
     {
       method: 'PATCH',
@@ -1101,6 +1173,47 @@ export async function selectRoutingPolicy(token: string, policyId: PolicyId): Pr
   return selected.publication.inputHash;
 }
 
+const routeCacheSchema = z.object({
+  beta: z.literal(true),
+  enabled: z.boolean(),
+  available: z.boolean(),
+  memorySource: z.enum(['redis', 'disk', 'none']),
+  usedBytes: z.number().int().nonnegative(),
+  routePayloadBytes: z.number().int().nonnegative(),
+  keys: z.number().int().nonnegative(),
+  normalBytesPerSec: z.number().nullable(),
+  observedBytesPerSec: z.number().nullable(),
+  leak: z
+    .object({
+      code: z.literal('CACHE_MEMORY_LEAK'),
+      normalBytesPerSec: z.number(),
+      observedBytesPerSec: z.number(),
+      windowSec: z.number(),
+    })
+    .nullable(),
+});
+export type RouteCacheStatus = z.infer<typeof routeCacheSchema>;
+
+/** Reads the route-response cache: size, memory source and the growth check. */
+export function getRouteCache(token: string): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache', routeCacheSchema, token);
+}
+
+/** Deletes cached route-engine3 responses and returns the emptied status. */
+export function clearRouteCache(token: string): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache/clear', routeCacheSchema, token, {
+    method: 'POST',
+  });
+}
+
+/** Turns the route-response cache on or off. Redis itself is left running. */
+export function setRouteCacheEnabled(token: string, enabled: boolean): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache', routeCacheSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 /** Reads Router-owned technical settings through the backend boundary. */
 export function getRouterTechnicalSettings(token: string): Promise<RouterTechnicalSettings> {
   return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);
@@ -1120,7 +1233,7 @@ export async function updateRouterTechnicalSettings(
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
-        strictTimeWindows: settings.strictTimeWindows ?? false,
+        strictTimeWindows: settings.strictTimeWindows ?? true,
         lunchesEnabled: settings.lunchesEnabled,
         metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
@@ -1134,6 +1247,9 @@ export async function updateRouterTechnicalSettings(
         fixedTravelTimeSec: settings.fixedTravelTimeSec,
         earlyFinishReplanThresholdSec: settings.earlyFinishReplanThresholdSec,
         taskOverrunToleranceSec: settings.taskOverrunToleranceSec,
+        solveTimeLimitMs: settings.solveTimeLimitMs ?? 6000,
+        verifyTimeLimitMs: settings.verifyTimeLimitMs ?? 6000,
+        comparisonTimeLimitMs: settings.comparisonTimeLimitMs ?? 6000,
       }),
     },
   );
@@ -1383,9 +1499,51 @@ const officialImportSummarySchema = z
   })
   .passthrough();
 
-/**
- * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
- */
+const readyPackSchema = z.object({
+  id: z.string(),
+  group: z.enum(['demo', 'official']),
+  title: z.string(),
+  detail: z.string(),
+  requestCount: z.number().int().nonnegative(),
+  engineerCount: z.number().int().nonnegative(),
+});
+
+export type ReadyPack = z.infer<typeof readyPackSchema>;
+
+const readyPackResultSchema = z.object({
+  id: z.string(),
+  applied: z.boolean(),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  alreadyLoaded: z.boolean(),
+});
+
+export type ReadyPackResult = z.infer<typeof readyPackResultSchema>;
+
+/** Named datasets shipped with the installation, short demos first. */
+export function listReadyPacks(token: string): Promise<{ packs: ReadyPack[] }> {
+  return requestJson(
+    '/api/v1/dispatch/data/packs',
+    z.object({ packs: z.array(readyPackSchema) }),
+    token,
+  );
+}
+
+/** Loads one pack onto the running day. The same pack again creates nothing. */
+export function applyReadyPack(token: string, id: string): Promise<ReadyPackResult> {
+  return requestJson(
+    `/api/v1/dispatch/data/packs/${encodeURIComponent(id)}`,
+    readyPackResultSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    180_000,
+  );
+}
+
+/** Loads the official TZ dataset shipped in the repo (`regions: all`) without curl. */
 export async function importOfficialDataset(
   token: string,
   review?: ReviewImportQuality,
@@ -1697,6 +1855,7 @@ const aiViewSchema = z.object({
     llmModel: z.string().nullable(),
     llmApiKeySet: z.boolean(),
     llmApiKeyLast4: z.string().nullable(),
+    llmReasoningEffort: z.enum(['none', 'low', 'medium', 'high']),
     jevApiUrl: z.string().nullable(),
     jevModel: z.string().nullable(),
     jevApiKeySet: z.boolean(),
@@ -1812,6 +1971,7 @@ export function saveAiSettings(
     llmModel?: string | null;
     llmApiKey?: string;
     clearLlmApiKey?: boolean;
+    llmReasoningEffort?: 'none' | 'low' | 'medium' | 'high';
     jevApiUrl?: string | null;
     jevModel?: string | null;
     jevApiKey?: string;

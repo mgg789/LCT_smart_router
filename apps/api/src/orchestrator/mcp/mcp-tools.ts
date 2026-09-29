@@ -30,8 +30,12 @@ import {
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
-import { parsePersonalObjectiveOrder, personalPolicyToolSchema } from '../policy/personal-policy';
-import { applyPersonalPolicyRouterPreset } from '../policy/personal-policy-preset';
+import {
+  parsePersonalObjectiveOrder,
+  personalPolicyPresetSchema,
+  personalPolicyToolSchema,
+} from '../policy/personal-policy';
+import { commitPolicyRouterPreset } from '../policy/personal-policy-preset';
 import { resolveRequestReference } from '../requests/request-reference';
 import { DispatcherSettingsService } from '../settings';
 import {
@@ -191,6 +195,10 @@ const dispatcherSettingsPatchArgs = z
   .object({
     dayStartMin: z.number().int().min(0).max(1440).optional(),
     dayEndMin: z.number().int().min(0).max(1440).optional(),
+    fiveTwoStartMin: z.number().int().min(0).max(1440).optional(),
+    fiveTwoEndMin: z.number().int().min(0).max(1440).optional(),
+    twoTwoStartMin: z.number().int().min(0).max(1440).optional(),
+    twoTwoEndMin: z.number().int().min(0).max(1440).optional(),
     noShowSec: z.number().int().min(0).max(86_400).optional(),
     overdueSec: z.number().int().min(0).max(86_400).optional(),
     timeRiskSec: z.number().int().min(0).max(86_400).optional(),
@@ -960,6 +968,7 @@ export class McpToolsService {
         z.object({ policyId: z.string().min(1).max(64) }),
         async (args, actor) => {
           const operationId = randomUUID();
+          let personalPreset: z.infer<typeof personalPolicyPresetSchema> | null = null;
           if (args.policyId === 'personal') {
             await assertManualConflictResolved(this.prisma, {
               operationId,
@@ -969,7 +978,7 @@ export class McpToolsService {
             });
             const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
             if (!profile) throw SysError.validationFailed('Личная политика не создана');
-            await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+            personalPreset = profile.preset;
           }
           const outcome = await this.operations.execute(
             {
@@ -989,6 +998,15 @@ export class McpToolsService {
               return { ...selected, publication };
             },
           );
+          if (!outcome.replayed) {
+            await commitPolicyRouterPreset({
+              prisma: this.prisma,
+              router: this.router,
+              live: this.live,
+              policyId: args.policyId,
+              preset: personalPreset,
+            });
+          }
           return outcome.result;
         },
       ),
@@ -1010,12 +1028,29 @@ export class McpToolsService {
           title: 'Сменить настройки',
           description:
             'Replace dispatcher-owned operational settings. Omitted keys stay as they are. ' +
-            'Moving the day clock rewrites today engineer shifts.',
+            'fiveTwo and twoTwo clocks rewrite today shifts of dispatcher-created engineers. ' +
+            'dayStartMin and dayEndMin still move the 2/2 window when the pattern clocks are omitted.',
           inputSchema: {
             type: 'object',
             properties: {
-              dayStartMin: { type: 'number', description: 'Minutes from midnight' },
-              dayEndMin: { type: 'number', description: 'Minutes from midnight' },
+              dayStartMin: {
+                type: 'number',
+                description: 'Minutes from midnight, legacy 2/2 start',
+              },
+              dayEndMin: { type: 'number', description: 'Minutes from midnight, legacy 2/2 end' },
+              fiveTwoStartMin: {
+                type: 'number',
+                description: '5/2 shift start, minutes from midnight',
+              },
+              fiveTwoEndMin: {
+                type: 'number',
+                description: '5/2 shift end, minutes from midnight',
+              },
+              twoTwoStartMin: {
+                type: 'number',
+                description: '2/2 shift start, minutes from midnight',
+              },
+              twoTwoEndMin: { type: 'number', description: '2/2 shift end, minutes from midnight' },
               noShowSec: { type: 'number' },
               overdueSec: { type: 'number' },
               timeRiskSec: { type: 'number' },
@@ -1030,14 +1065,19 @@ export class McpToolsService {
         dispatcherSettingsPatchArgs,
         async (args, actor) => {
           const operationId = randomUUID();
+          const patch = {
+            ...args,
+            twoTwoStartMin: args.twoTwoStartMin ?? args.dayStartMin,
+            twoTwoEndMin: args.twoTwoEndMin ?? args.dayEndMin,
+          };
           const outcome = await this.operations.execute(
             {
               operationId,
               actor,
               action: 'dispatch.settings.replace',
-              payload: { operationId, ...args },
+              payload: { operationId, ...patch },
             },
-            async (context) => this.dispatcherSettings.replace(context, args),
+            async (context) => this.dispatcherSettings.replace(context, patch),
           );
           return outcome.result;
         },
@@ -1149,6 +1189,9 @@ export class McpToolsService {
             fixedTravelTimeSec: current.fixedTravelTimeSec,
             earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
             taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+            solveTimeLimitMs: current.solveTimeLimitMs,
+            verifyTimeLimitMs: current.verifyTimeLimitMs,
+            comparisonTimeLimitMs: current.comparisonTimeLimitMs,
           };
           const outcome = await this.operations.executeExternal(
             {

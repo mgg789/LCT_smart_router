@@ -154,7 +154,7 @@ describe('toast stack', () => {
     });
     expect(toast.kind).toBe('alert');
     expect(toast.id).toBe('alert:al-1');
-    expect(toast.title).toContain('Алёрт');
+    expect(toast.title).toContain('Алерт');
     expect(toast.body).toContain('навыком');
     const notice = toastFromAlert({
       id: 'notice',

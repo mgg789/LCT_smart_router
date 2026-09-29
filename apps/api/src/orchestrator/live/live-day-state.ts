@@ -3,6 +3,7 @@ import type { LiveWorkdayView } from '../../api/live-view.types';
 import { toPlanView } from '../../api/plan-view';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
+import { zonedWallUnix } from '../../common/time/zone';
 import type {
   Engineer,
   LiveEngineerState,
@@ -71,7 +72,7 @@ export class LiveDayState {
     const logicalStartAt = starts.length > 0 ? Math.min(...starts) : wallNow;
     const logicalEndAt = Math.max(
       logicalStartAt + 1,
-      Date.parse(`${workDate}T17:00:00+03:00`) / 1000,
+      zonedWallUnix(`${workDate}T17:00:00`),
       ...(ends.length > 0 ? ends : [logicalStartAt + 8 * 3600]),
     );
     if (existing) {

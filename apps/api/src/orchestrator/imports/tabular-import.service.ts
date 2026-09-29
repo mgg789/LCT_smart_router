@@ -52,7 +52,11 @@ export class TabularImportService {
     const parsed = await parseTabular(input.source);
     const issues: ConversionIssue[] = [];
     const notices = [...parsed.notices];
-    const geocodes = loadTabularGeocodes(this.config.get('DATASET_ROOT'));
+    const geocodes = new Map(loadTabularGeocodes(this.config.get('DATASET_ROOT')));
+    for (const [address, point] of Object.entries(input.options.placedPoints ?? {})) {
+      const key = normalizeAddress(address);
+      if (!geocodes.has(key)) geocodes.set(key, point);
+    }
     const rows = parsed.rows.filter((row) => !isBlankRow(row) && !isOfficeRow(row));
     if (parsed.rows.some(isOfficeRow)) {
       notices.push('Офисная строка исключена из заявок и используется только как подсказка депо.');

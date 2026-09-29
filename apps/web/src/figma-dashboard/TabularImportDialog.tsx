@@ -21,6 +21,7 @@ import {
 import { createPortal } from 'react-dom';
 import { analyzeTabular, convertTabular } from '../api/tabular';
 import { t } from '../i18n';
+import { AddressGeocodeDialog, type PlacedPoint } from './AddressGeocodeDialog';
 
 const TABULAR_FIELDS: readonly TabularField[] = [
   'externalId',
@@ -113,6 +114,8 @@ export function TabularImportDialog({
   );
   const [headerRow, setHeaderRow] = useState<number | undefined>(source.headerRow);
   const [columns, setColumns] = useState<Partial<Record<TabularField, number>>>({});
+  const [placedPoints, setPlacedPoints] = useState<Record<string, PlacedPoint> | null>(null);
+  const [geocodeDismissed, setGeocodeDismissed] = useState(false);
   const [defaults, setDefaults] = useState<Record<TabularField, string>>(DEFAULT_VALUES);
   const [mode, setMode] = useState<TabularCompletionOptions['mode']>('new_region');
   const [region, setRegion] = useState(() => suggestRegion(source.fileName, existingRegions));
@@ -160,6 +163,7 @@ export function TabularImportDialog({
         if (next.officeAddress)
           setDepotAddress((current) => (current.trim() ? current : (next.officeAddress ?? '')));
         setColumns(next.columns);
+        setPlacedPoints(null);
         setDurationUnit(next.durationUnit);
         setEdits({});
       } catch (cause) {
@@ -310,6 +314,7 @@ export function TabularImportDialog({
         shiftStart: shiftStart.trim(),
         shiftEnd: shiftEnd.trim(),
       },
+      ...(placedPoints ? { placedPoints } : {}),
       edits: Object.entries(edits).map(([key, value]) => {
         const separator = key.indexOf(':');
         const rowNumber = Number(key.slice(0, separator));
@@ -364,6 +369,22 @@ export function TabularImportDialog({
       }}
       className="fixed inset-0 m-auto max-h-[92dvh] w-[min(96vw,1180px)] max-w-none overflow-hidden rounded-[20px] border-0 bg-white p-0 text-figma-ink backdrop:bg-figma-ink/40"
     >
+      {analysisReady &&
+      analysis.columns.addressText !== undefined &&
+      analysis.columns.lat === undefined &&
+      placedPoints === null &&
+      !geocodeDismissed ? (
+        <AddressGeocodeDialog
+          token={token}
+          addresses={analysis.rows.flatMap((row) => {
+            const index = analysis.columns.addressText;
+            const value = index === undefined ? '' : (row.values[index] ?? '');
+            return value.trim() ? [value.trim()] : [];
+          })}
+          onDone={setPlacedPoints}
+          onCancel={() => setGeocodeDismissed(true)}
+        />
+      ) : null}
       <motion.div
         initial={motionOn ? { opacity: 0, y: 12 } : false}
         animate={{ opacity: 1, y: 0 }}

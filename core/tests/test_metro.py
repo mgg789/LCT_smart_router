@@ -1,7 +1,14 @@
 """Offline metro selection, segment persistence and transport-policy regression tests."""
 
 from core.contracts import GeoPoint, RouterTechnicalSettings
-from core.geo import GraphTravel, RoadGraph, TravelQuote, configure_travel, routing_context_version
+from core.geo import (
+    GraphTravel,
+    RoadGraph,
+    TravelQuote,
+    configure_travel,
+    haversine_m,
+    routing_context_version,
+)
 from core.metro import MetroNetwork, MetroTravel, choose_metro, configured_metro_travel
 from core.schedule import baseline, eligible
 
@@ -66,12 +73,60 @@ def test_metro_shortest_path_includes_transfer_and_composite_segments():
     assert quote is not None
     assert quote.provenance == "metro"
     assert [segment.provenance for segment in quote.segments] == ["road_matrix", "metro", "road_matrix"]
-    # enter + wait + ride + transfer penalty + ride + exit
-    assert quote.segments[1].duration_sec == 180 + 120 + 120 + 90 + 240 + 120 + 120
+    # metro segment: enter + wait + ride + transfer walk (edge) + overhead 60 + ride + exit
+    assert quote.segments[1].duration_sec == 810  # enter+wait+rides+transfer walk+60 s overhead+exit
     assert sum(segment.duration_sec for segment in quote.segments) == quote.duration_sec
     assert len(quote.segments[1].points) >= 2
     assert GeoPoint(lat=55.755, lon=37.620) in quote.segments[1].points
     assert MetroTravel(_WalkingTravel(), _network()).quote(origin, destination, "walk").provenance == "road_matrix"
+
+
+def test_metro_leg_is_one_continuous_line_even_with_reversed_offset_line_geometry():
+    network = _network()
+    # Artifact line stored target→source and ending ~50 m off both platforms.
+    stored = [GeoPoint(lat=55.7555, lon=37.6205), GeoPoint(lat=55.7505, lon=37.6005)]
+    edges = [
+        edge.model_copy(update={"geometry": stored}) if (edge.source, edge.target) == ("a", "b") else edge
+        for edge in network.edges
+    ]
+    network = network.model_copy(update={"edges": edges})
+    origin = GeoPoint(lat=55.7502, lon=37.6001)
+    destination = GeoPoint(lat=55.7601, lon=37.6502)
+
+    class Snapped(_WalkingTravel):
+        """Access routes snap onto the walk graph a few metres off the station."""
+
+        def quote(self, origin, destination, profile):
+            snapped = GeoPoint(lat=destination.lat + 0.0001, lon=destination.lon)
+            if haversine_m(origin, destination) < 500:
+                return TravelQuote(60, 50, (origin, snapped), "road_matrix")
+            return TravelQuote(1_800, 5_000, (origin, snapped), "road_matrix")
+
+    quote = MetroTravel(Snapped(), network).quote(origin, destination, "transit")
+    assert quote is not None and quote.provenance == "metro"
+    segments = quote.segments
+    assert segments[0].points[0] == origin and segments[-1].points[-1] == destination
+    for before, after in zip(segments, segments[1:]):
+        assert before.points[-1] == after.points[0]
+    ride = segments[1].points
+    assert ride[1] == GeoPoint(lat=55.750, lon=37.600)  # starts at the entry platform
+    assert ride.index(stored[1]) < ride.index(stored[0])  # line turned to the travel direction
+
+
+def test_verified_transit_pair_is_final_over_the_offline_composite():
+    from core.route3 import VerifiedRoute3
+
+    origin = GeoPoint(lat=55.750, lon=37.600)
+    destination = GeoPoint(lat=55.760, lon=37.650)
+    verified_walk = TravelQuote(2_400, 4_000, (origin, destination), "route_api", geometry_exact=True)
+    corrections = {
+        (origin.lat, origin.lon, destination.lat, destination.lon, "transit", departure): verified_walk
+        for departure in (None, 1_790_670_000)
+    }
+    travel = MetroTravel(VerifiedRoute3(_WalkingTravel(), corrections), _network())
+    # The offline composite (~20 min) is faster on paper; /route3 said walking wins.
+    assert travel.quote(origin, destination, "transit") is verified_walk
+    assert travel.quote_at(origin, destination, "transit", 1_790_670_000) is verified_walk
 
 
 def test_metro_is_not_used_when_disabled_outside_boundary_or_unreachable():
@@ -208,7 +263,7 @@ def test_default_bundled_moscow_network_is_loaded_without_environment_override(m
     monkeypatch.delenv("ROUTER_METRO_DATA_PATH", raising=False)
     travel = configured_metro_travel(_WalkingTravel())
     assert isinstance(travel, MetroTravel)
-    assert travel.network.version == "moscow-osm-2026-09-22"
+    assert travel.network.version == "moscow-osm-2026-09-22-topology-v2"
     assert len(travel.network.stations) >= 200
 
 
@@ -218,3 +273,81 @@ def test_storm_keeps_a_modest_metro_detour_and_clear_weather_does_not():
     assert choose_metro(100, 150, shelter=True) is True
     assert choose_metro(100, 176, shelter=True) is False
     assert choose_metro(100, None, shelter=True) is False
+
+
+class _SnappedWalkingTravel:
+    """Pedestrian provider whose geometry stops short of the platform, as a graph does.
+
+    A real foot route ends on the nearest routable node, not on the station point the
+    metro geometry starts from -- the case the segment join has to survive.
+    """
+
+    version = "snapped-walking-fixture"
+
+    def quote(self, origin, destination, profile):
+        if origin == destination:
+            return TravelQuote(0, 0, (origin, destination), "road_matrix")
+        snapped = GeoPoint(lat=destination.lat + 0.0004, lon=destination.lon - 0.0004)
+        return TravelQuote(1_800, 5_000, (origin, snapped), "road_matrix")
+
+
+def _reversed_geometry_network() -> MetroNetwork:
+    """One ride whose stored line runs target-to-source, as half the real artifact does."""
+    line = [{"lat": 55.750, "lon": 37.600}, {"lat": 55.752, "lon": 37.610}, {"lat": 55.755, "lon": 37.620}]
+    return MetroNetwork.model_validate(
+        {
+            "version": "fixture-reversed",
+            "source": "test reviewed graph",
+            "boundary_geojson": {"type": "MultiPolygon", "coordinates": [[[
+                [37.50, 55.70], [37.80, 55.70], [37.80, 55.90], [37.50, 55.90],
+            ]]]},
+            "stations": [
+                {"station_id": "a", "name": "a", "line_id": "1", "location": {"lat": 55.750, "lon": 37.600}},
+                {"station_id": "b", "name": "b", "line_id": "1", "location": {"lat": 55.755, "lon": 37.620}},
+            ],
+            "edges": [
+                {"source": "a", "target": "b", "duration_sec": 120, "distance_m": 1500,
+                 "geometry": [[point["lat"], point["lon"]] for point in line]},
+                # Same physical track, stored without being turned round -- the defect.
+                {"source": "b", "target": "a", "duration_sec": 120, "distance_m": 1500,
+                 "geometry": [[point["lat"], point["lon"]] for point in line]},
+            ],
+            "enter_sec": 180,
+            "exit_sec": 120,
+            "wait_sec": 120,
+            "transfer_sec": 240,
+        }
+    )
+
+
+def test_ride_geometry_is_turned_to_face_its_own_direction():
+    """A back-to-front stored line must not make the ride start at the wrong station."""
+    network = _reversed_geometry_network()
+    there = MetroTravel(_WalkingTravel(), network).quote(
+        GeoPoint(lat=55.750, lon=37.600), GeoPoint(lat=55.755, lon=37.620), "transit"
+    )
+    back = MetroTravel(_WalkingTravel(), network).quote(
+        GeoPoint(lat=55.755, lon=37.620), GeoPoint(lat=55.750, lon=37.600), "transit"
+    )
+
+    assert there is not None and back is not None
+    assert there.segments[1].points[0] == GeoPoint(lat=55.750, lon=37.600)
+    assert there.segments[1].points[-1] == GeoPoint(lat=55.755, lon=37.620)
+    # The opposite direction reads the very same stored line and must run the other way.
+    assert back.segments[1].points[0] == GeoPoint(lat=55.755, lon=37.620)
+    assert back.segments[1].points[-1] == GeoPoint(lat=55.750, lon=37.600)
+
+
+def test_composite_segments_join_at_their_endpoints():
+    """The System Layer rejects a leg whose segments leave a gap (result.types.ts)."""
+    quote = MetroTravel(_SnappedWalkingTravel(), _network()).quote(
+        GeoPoint(lat=55.750, lon=37.600), GeoPoint(lat=55.760, lon=37.650), "transit"
+    )
+
+    assert quote is not None
+    assert len(quote.segments) == 3
+    for before, after in zip(quote.segments, quote.segments[1:]):
+        assert before.points[-1] == after.points[0]
+    # Stitching adds the connector only; the costs stay exactly what was quoted.
+    assert sum(segment.duration_sec for segment in quote.segments) == quote.duration_sec
+    assert sum(segment.distance_m for segment in quote.segments) == quote.distance_m

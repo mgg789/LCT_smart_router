@@ -11793,10 +11793,14 @@
                           "cancelledAt"
                         ]
                       }
+                    },
+                    "nowAt": {
+                      "type": "number"
                     }
                   },
                   "required": [
-                    "requests"
+                    "requests",
+                    "nowAt"
                   ]
                 }
               }
@@ -21575,254 +21579,269 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "chat": {
+                  "anyOf": [
+                    {
                       "type": "object",
                       "properties": {
-                        "handoff": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "conversationId": {
-                              "type": "string"
-                            },
-                            "requestedByAccountId": {
-                              "type": "string"
-                            },
-                            "actorRole": {
-                              "type": "string"
-                            },
-                            "initiatedBy": {
-                              "type": "string"
-                            },
-                            "requestIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "engineerIds": {
-                              "type": "array",
-                              "items": {
-                                "type": "string"
-                              }
-                            },
-                            "state": {
-                              "type": "string"
-                            },
-                            "startSeq": {
-                              "type": "number"
-                            },
-                            "endSeq": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "createdAt": {
-                              "type": "number"
-                            },
-                            "firstReplyAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "closedAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "conversationId",
-                            "requestedByAccountId",
-                            "actorRole",
-                            "initiatedBy",
-                            "requestIds",
-                            "engineerIds",
-                            "state",
-                            "startSeq",
-                            "endSeq",
-                            "createdAt",
-                            "firstReplyAt",
-                            "closedAt"
-                          ]
-                        },
-                        "conversation": {
-                          "type": "object",
-                          "properties": {
-                            "id": {
-                              "type": "string"
-                            },
-                            "role": {
-                              "type": "string"
-                            },
-                            "mode": {
-                              "type": "string"
-                            },
-                            "assistMode": {
-                              "type": "string"
-                            },
-                            "roleProfile": {
-                              "type": "string"
-                            },
-                            "contextRef": {},
-                            "title": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "string"
-                                }
-                              ]
-                            },
-                            "createdAt": {
-                              "type": "number"
-                            },
-                            "updatedAt": {
-                              "type": "number"
-                            },
-                            "lastMessageAt": {
-                              "type": "number"
-                            },
-                            "closedAt": {
-                              "anyOf": [
-                                {
-                                  "type": "null"
-                                },
-                                {
-                                  "type": "number"
-                                }
-                              ]
-                            },
-                            "version": {
-                              "type": "number"
-                            }
-                          },
-                          "required": [
-                            "id",
-                            "role",
-                            "mode",
-                            "assistMode",
-                            "roleProfile",
-                            "contextRef",
-                            "title",
-                            "createdAt",
-                            "updatedAt",
-                            "lastMessageAt",
-                            "closedAt",
-                            "version"
-                          ]
-                        },
-                        "messages": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "string"
-                              },
-                              "conversationId": {
-                                "type": "string"
-                              },
-                              "seq": {
-                                "type": "number"
-                              },
-                              "author": {
-                                "type": "string"
-                              },
-                              "kind": {
-                                "type": "string"
-                              },
-                              "text": {
-                                "type": "string"
-                              },
-                              "actions": {
-                                "type": "array",
-                                "items": {}
-                              },
-                              "runId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "operationId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "authorAccountId": {
-                                "anyOf": [
-                                  {
-                                    "type": "null"
-                                  },
-                                  {
-                                    "type": "string"
-                                  }
-                                ]
-                              },
-                              "createdAt": {
-                                "type": "number"
-                              }
-                            },
-                            "required": [
-                              "id",
-                              "conversationId",
-                              "seq",
-                              "author",
-                              "kind",
-                              "text",
-                              "actions",
-                              "runId",
-                              "operationId",
-                              "authorAccountId",
-                              "createdAt"
-                            ]
-                          }
-                        },
-                        "unreadCount": {
-                          "type": "number"
+                        "chat": {
+                          "type": "null"
                         }
                       },
                       "required": [
-                        "handoff",
-                        "conversation",
-                        "messages",
-                        "unreadCount"
+                        "chat"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "chat": {
+                          "type": "object",
+                          "properties": {
+                            "handoff": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "conversationId": {
+                                  "type": "string"
+                                },
+                                "requestedByAccountId": {
+                                  "type": "string"
+                                },
+                                "actorRole": {
+                                  "type": "string"
+                                },
+                                "initiatedBy": {
+                                  "type": "string"
+                                },
+                                "requestIds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "engineerIds": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "state": {
+                                  "type": "string"
+                                },
+                                "startSeq": {
+                                  "type": "number"
+                                },
+                                "endSeq": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": "number"
+                                },
+                                "firstReplyAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "closedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "conversationId",
+                                "requestedByAccountId",
+                                "actorRole",
+                                "initiatedBy",
+                                "requestIds",
+                                "engineerIds",
+                                "state",
+                                "startSeq",
+                                "endSeq",
+                                "createdAt",
+                                "firstReplyAt",
+                                "closedAt"
+                              ]
+                            },
+                            "conversation": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "role": {
+                                  "type": "string"
+                                },
+                                "mode": {
+                                  "type": "string"
+                                },
+                                "assistMode": {
+                                  "type": "string"
+                                },
+                                "roleProfile": {
+                                  "type": "string"
+                                },
+                                "contextRef": {},
+                                "title": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "string"
+                                    }
+                                  ]
+                                },
+                                "createdAt": {
+                                  "type": "number"
+                                },
+                                "updatedAt": {
+                                  "type": "number"
+                                },
+                                "lastMessageAt": {
+                                  "type": "number"
+                                },
+                                "closedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "null"
+                                    },
+                                    {
+                                      "type": "number"
+                                    }
+                                  ]
+                                },
+                                "version": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "role",
+                                "mode",
+                                "assistMode",
+                                "roleProfile",
+                                "contextRef",
+                                "title",
+                                "createdAt",
+                                "updatedAt",
+                                "lastMessageAt",
+                                "closedAt",
+                                "version"
+                              ]
+                            },
+                            "messages": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "conversationId": {
+                                    "type": "string"
+                                  },
+                                  "seq": {
+                                    "type": "number"
+                                  },
+                                  "author": {
+                                    "type": "string"
+                                  },
+                                  "kind": {
+                                    "type": "string"
+                                  },
+                                  "text": {
+                                    "type": "string"
+                                  },
+                                  "actions": {
+                                    "type": "array",
+                                    "items": {}
+                                  },
+                                  "runId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "operationId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "authorAccountId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "null"
+                                      },
+                                      {
+                                        "type": "string"
+                                      }
+                                    ]
+                                  },
+                                  "createdAt": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "conversationId",
+                                  "seq",
+                                  "author",
+                                  "kind",
+                                  "text",
+                                  "actions",
+                                  "runId",
+                                  "operationId",
+                                  "authorAccountId",
+                                  "createdAt"
+                                ]
+                              }
+                            },
+                            "unreadCount": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "handoff",
+                            "conversation",
+                            "messages",
+                            "unreadCount"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "chat"
                       ]
                     }
-                  },
-                  "required": [
-                    "chat"
                   ]
                 }
               }
@@ -26281,6 +26300,34 @@
                         ],
                         "additionalProperties": false
                       },
+                      "placedPoints": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "lat": {
+                              "type": "number",
+                              "minimum": -90,
+                              "maximum": 90
+                            },
+                            "lon": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "lat",
+                            "lon"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
                       "edits": {
                         "maxItems": 20000,
                         "type": "array",
@@ -26342,6 +26389,770 @@
                 "required": [
                   "source",
                   "options"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/data/packs": {
+      "get": {
+        "operationId": "DispatchDataController_listReadyPacks",
+        "summary": "Named datasets that can be loaded onto the current day",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "group": {
+                            "anyOf": [
+                              {
+                                "const": "demo",
+                                "type": "string"
+                              },
+                              {
+                                "const": "official",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "detail": {
+                            "type": "string"
+                          },
+                          "requestCount": {
+                            "type": "number"
+                          },
+                          "engineerCount": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "group",
+                          "title",
+                          "detail",
+                          "requestCount",
+                          "engineerCount"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "packs"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/data/packs/{id}": {
+      "post": {
+        "operationId": "DispatchDataController_applyReadyPack",
+        "summary": "Load one ready dataset onto the running day; a repeat adds nothing",
+        "tags": [
+          "dispatch"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "applied": {
+                      "type": "boolean"
+                    },
+                    "requestsCreated": {
+                      "type": "number"
+                    },
+                    "engineersCreated": {
+                      "type": "number"
+                    },
+                    "alreadyLoaded": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "applied",
+                    "requestsCreated",
+                    "engineersCreated",
+                    "alreadyLoaded"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                },
+                "required": [
+                  "operationId"
                 ],
                 "additionalProperties": false
               }
@@ -33092,6 +33903,18 @@
                                   }
                                 ]
                               },
+                              "shiftPattern": {
+                                "anyOf": [
+                                  {
+                                    "const": "two_two",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "five_two",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
                               "homeLat": {
                                 "anyOf": [
                                   {
@@ -33732,6 +34555,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -34181,6 +35016,14 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "shiftPattern": {
+                    "default": "two_two",
+                    "type": "string",
+                    "enum": [
+                      "two_two",
+                      "five_two"
+                    ]
                   }
                 },
                 "required": [
@@ -34285,6 +35128,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -34767,6 +35622,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -34814,10 +35681,14 @@
                         "hasAccount",
                         "email"
                       ]
+                    },
+                    "scheduleDeferred": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "engineer"
+                    "engineer",
+                    "scheduleDeferred"
                   ]
                 }
               }
@@ -35204,6 +36075,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "shiftPattern": {
+                    "type": "string",
+                    "enum": [
+                      "two_two",
+                      "five_two"
+                    ]
                   }
                 },
                 "required": [
@@ -35295,6 +36173,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -35790,6 +36680,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -36262,6 +37164,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -38420,6 +39334,668 @@
                 "required": [
                   "operationId"
                 ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/data/requests/template.csv": {
+      "get": {
+        "operationId": "DispatchExportsController_template",
+        "summary": "Download the CSV request import template",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "200": {
+            "description": "File download",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/plan/export.xlsx": {
+      "get": {
+        "operationId": "DispatchExportsController_plan",
+        "summary": "Download the current applied plan as a two-sheet XLSX workbook",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "200": {
+            "description": "File download",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -48768,6 +50344,1310 @@
         ]
       }
     },
+    "/api/v1/dispatch/router/cache": {
+      "get": {
+        "operationId": "DispatchController_routeCache",
+        "summary": "Route-response cache size, memory source and growth check",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "beta": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "memorySource": {
+                      "anyOf": [
+                        {
+                          "const": "none",
+                          "type": "string"
+                        },
+                        {
+                          "const": "redis",
+                          "type": "string"
+                        },
+                        {
+                          "const": "disk",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "usedBytes": {
+                      "type": "number"
+                    },
+                    "routePayloadBytes": {
+                      "type": "number"
+                    },
+                    "keys": {
+                      "type": "number"
+                    },
+                    "normalBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "observedBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "leak": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "const": "CACHE_MEMORY_LEAK",
+                              "type": "string"
+                            },
+                            "normalBytesPerSec": {
+                              "type": "number"
+                            },
+                            "observedBytesPerSec": {
+                              "type": "number"
+                            },
+                            "windowSec": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "normalBytesPerSec",
+                            "observedBytesPerSec",
+                            "windowSec"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "beta",
+                    "enabled",
+                    "available",
+                    "memorySource",
+                    "usedBytes",
+                    "routePayloadBytes",
+                    "keys",
+                    "normalBytesPerSec",
+                    "observedBytesPerSec",
+                    "leak"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      },
+      "put": {
+        "operationId": "DispatchController_setRouteCache",
+        "summary": "Enable or disable the route-response cache",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "200": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "beta": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "memorySource": {
+                      "anyOf": [
+                        {
+                          "const": "none",
+                          "type": "string"
+                        },
+                        {
+                          "const": "redis",
+                          "type": "string"
+                        },
+                        {
+                          "const": "disk",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "usedBytes": {
+                      "type": "number"
+                    },
+                    "routePayloadBytes": {
+                      "type": "number"
+                    },
+                    "keys": {
+                      "type": "number"
+                    },
+                    "normalBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "observedBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "leak": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "const": "CACHE_MEMORY_LEAK",
+                              "type": "string"
+                            },
+                            "normalBytesPerSec": {
+                              "type": "number"
+                            },
+                            "observedBytesPerSec": {
+                              "type": "number"
+                            },
+                            "windowSec": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "normalBytesPerSec",
+                            "observedBytesPerSec",
+                            "windowSec"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "beta",
+                    "enabled",
+                    "available",
+                    "memorySource",
+                    "usedBytes",
+                    "routePayloadBytes",
+                    "keys",
+                    "normalBytesPerSec",
+                    "observedBytesPerSec",
+                    "leak"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/router/cache/clear": {
+      "post": {
+        "operationId": "DispatchController_clearRouteCache",
+        "summary": "Delete cached route-engine3 responses",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "beta": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "memorySource": {
+                      "anyOf": [
+                        {
+                          "const": "none",
+                          "type": "string"
+                        },
+                        {
+                          "const": "redis",
+                          "type": "string"
+                        },
+                        {
+                          "const": "disk",
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "usedBytes": {
+                      "type": "number"
+                    },
+                    "routePayloadBytes": {
+                      "type": "number"
+                    },
+                    "keys": {
+                      "type": "number"
+                    },
+                    "normalBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "observedBytesPerSec": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "number"
+                        }
+                      ]
+                    },
+                    "leak": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "const": "CACHE_MEMORY_LEAK",
+                              "type": "string"
+                            },
+                            "normalBytesPerSec": {
+                              "type": "number"
+                            },
+                            "observedBytesPerSec": {
+                              "type": "number"
+                            },
+                            "windowSec": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "normalBytesPerSec",
+                            "observedBytesPerSec",
+                            "windowSec"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "beta",
+                    "enabled",
+                    "available",
+                    "memorySource",
+                    "usedBytes",
+                    "routePayloadBytes",
+                    "keys",
+                    "normalBytesPerSec",
+                    "observedBytesPerSec",
+                    "leak"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
     "/api/v1/dispatch/router/technical-settings": {
       "get": {
         "operationId": "DispatchController_routerTechnicalSettings",
@@ -48870,6 +51750,15 @@
                       "type": "number"
                     },
                     "taskOverrunToleranceSec": {
+                      "type": "number"
+                    },
+                    "solveTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "verifyTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "comparisonTimeLimitMs": {
                       "type": "number"
                     }
                   },
@@ -49308,6 +52197,15 @@
                     },
                     "taskOverrunToleranceSec": {
                       "type": "number"
+                    },
+                    "solveTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "verifyTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "comparisonTimeLimitMs": {
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -49705,6 +52603,24 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 86400
+                  },
+                  "solveTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
+                  },
+                  "verifyTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
+                  },
+                  "comparisonTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
                   }
                 },
                 "required": [
@@ -52552,6 +55468,12 @@
                           "calculationMs": {
                             "type": "number"
                           },
+                          "jobEnds": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
                           "metrics": {
                             "type": "object",
                             "properties": {
@@ -52636,6 +55558,7 @@
                           "kind",
                           "isUsable",
                           "calculationMs",
+                          "jobEnds",
                           "metrics"
                         ]
                       }
@@ -61005,6 +63928,26 @@
                             }
                           ]
                         },
+                        "llmReasoningEffort": {
+                          "anyOf": [
+                            {
+                              "const": "none",
+                              "type": "string"
+                            },
+                            {
+                              "const": "low",
+                              "type": "string"
+                            },
+                            {
+                              "const": "medium",
+                              "type": "string"
+                            },
+                            {
+                              "const": "high",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "jevApiUrl": {
                           "anyOf": [
                             {
@@ -61046,6 +63989,7 @@
                         "llmModel",
                         "llmApiKeySet",
                         "llmApiKeyLast4",
+                        "llmReasoningEffort",
                         "jevApiUrl",
                         "jevModel",
                         "jevApiKeySet",
@@ -61582,6 +64526,26 @@
                             }
                           ]
                         },
+                        "llmReasoningEffort": {
+                          "anyOf": [
+                            {
+                              "const": "none",
+                              "type": "string"
+                            },
+                            {
+                              "const": "low",
+                              "type": "string"
+                            },
+                            {
+                              "const": "medium",
+                              "type": "string"
+                            },
+                            {
+                              "const": "high",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "jevApiUrl": {
                           "anyOf": [
                             {
@@ -61623,6 +64587,7 @@
                         "llmModel",
                         "llmApiKeySet",
                         "llmApiKeyLast4",
+                        "llmReasoningEffort",
                         "jevApiUrl",
                         "jevModel",
                         "jevApiKeySet",
@@ -62122,6 +65087,15 @@
                       }
                     ]
                   },
+                  "llmReasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "low",
+                      "medium",
+                      "high"
+                    ]
+                  },
                   "llmApiKey": {
                     "type": "string",
                     "maxLength": 200
@@ -62206,6 +65180,18 @@
                     "dayEndMin": {
                       "type": "number"
                     },
+                    "fiveTwoStartMin": {
+                      "type": "number"
+                    },
+                    "fiveTwoEndMin": {
+                      "type": "number"
+                    },
+                    "twoTwoStartMin": {
+                      "type": "number"
+                    },
+                    "twoTwoEndMin": {
+                      "type": "number"
+                    },
                     "noShowSec": {
                       "type": "number"
                     },
@@ -62251,6 +65237,10 @@
                     "equipmentCapacityCar",
                     "dayStartMin",
                     "dayEndMin",
+                    "fiveTwoStartMin",
+                    "fiveTwoEndMin",
+                    "twoTwoStartMin",
+                    "twoTwoEndMin",
                     "noShowSec",
                     "overdueSec",
                     "timeRiskSec",
@@ -62604,6 +65594,18 @@
                     "dayEndMin": {
                       "type": "number"
                     },
+                    "fiveTwoStartMin": {
+                      "type": "number"
+                    },
+                    "fiveTwoEndMin": {
+                      "type": "number"
+                    },
+                    "twoTwoStartMin": {
+                      "type": "number"
+                    },
+                    "twoTwoEndMin": {
+                      "type": "number"
+                    },
                     "noShowSec": {
                       "type": "number"
                     },
@@ -62649,6 +65651,10 @@
                     "equipmentCapacityCar",
                     "dayStartMin",
                     "dayEndMin",
+                    "fiveTwoStartMin",
+                    "fiveTwoEndMin",
+                    "twoTwoStartMin",
+                    "twoTwoEndMin",
                     "noShowSec",
                     "overdueSec",
                     "timeRiskSec",
@@ -63003,6 +66009,26 @@
                     "maximum": 1440
                   },
                   "dayEndMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "fiveTwoStartMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "fiveTwoEndMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "twoTwoStartMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "twoTwoEndMin": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 1440
@@ -63490,6 +66516,422 @@
                     }
                   }
                 }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/geocode/dataset": {
+      "post": {
+        "operationId": "DispatchController_geocodeDataset",
+        "summary": "Geocode dataset addresses through LocationIQ, bounded to Moscow and Moscow Oblast",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "house": {
+                      "type": "number"
+                    },
+                    "street": {
+                      "type": "number"
+                    },
+                    "approximate": {
+                      "type": "number"
+                    },
+                    "points": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "string"
+                          },
+                          "lat": {
+                            "type": "number"
+                          },
+                          "lon": {
+                            "type": "number"
+                          },
+                          "level": {
+                            "anyOf": [
+                              {
+                                "const": "approximate",
+                                "type": "string"
+                              },
+                              {
+                                "const": "house",
+                                "type": "string"
+                              },
+                              {
+                                "const": "street",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "address",
+                          "lat",
+                          "lon",
+                          "level"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "house",
+                    "street",
+                    "approximate",
+                    "points"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "addresses": {
+                    "minItems": 1,
+                    "maxItems": 400,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 500
+                    }
+                  }
+                },
+                "required": [
+                  "addresses"
+                ]
               }
             }
           }
@@ -69554,6 +72996,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -69992,6 +73446,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -70883,6 +74349,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -80529,6 +84007,12 @@
                                       },
                                       "calculationMs": {
                                         "type": "number"
+                                      },
+                                      "jobEnds": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "number"
+                                        }
                                       },
                                       "metrics": {
                                         "type": "object",

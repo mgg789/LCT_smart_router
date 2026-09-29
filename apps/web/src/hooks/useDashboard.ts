@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  applyReadyPack,
   cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
@@ -73,6 +74,7 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import { pushToast } from '../figma-dashboard/toasts';
 import { t } from '../i18n';
 
 import { usePlanHistory } from './usePlanHistory';
@@ -1105,12 +1107,29 @@ export function useDashboard() {
   const updateEngineerProfile = useCallback(
     (
       engineerId: string,
-      patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+      patch: {
+        region?: string;
+        transportType?: 'car' | 'walk' | 'bike' | 'transit';
+        shiftPattern?: 'two_two' | 'five_two';
+      },
     ) =>
       performEntityMutation(async (session) => {
         const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
         if (!engineer) throw new Error(t('hooks.useDashboard.3d944f689c'));
-        await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+        const updated = await updateDispatchEngineerProfile(
+          session,
+          engineerId,
+          engineer.version,
+          patch,
+        );
+        if (updated.scheduleDeferred) {
+          pushToast({
+            id: `schedule:${engineerId}`,
+            kind: 'system',
+            title: t('hooks.useDashboard.scheduleDeferredTitle'),
+            body: t('hooks.useDashboard.scheduleDeferredBody'),
+          });
+        }
       }, t('hooks.useDashboard.2950b62d94')),
     [performEntityMutation],
   );
@@ -1397,6 +1416,33 @@ export function useDashboard() {
     ],
   );
 
+  const applyReadyPackToDay = useCallback(
+    async (id: string) => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error(t('hooks.useDashboard.356cfc8bbe'));
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await applyReadyPack(token, id);
+        if (generation !== readGeneration.current) return summary;
+        const next = await loadDashboardSnapshot(token);
+        if (generation === readGeneration.current) {
+          setSnapshot(next);
+          setFocus({ engineerId: null, requestId: null });
+          setPolicyComparison(null);
+          await refreshLive();
+        }
+        return summary;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, refreshLive, setSnapshot, token, uploadingData],
+  );
+
   const displaySnapshot = useMemo(
     () =>
       snapshot && liveWorkday?.workday.status === 'running'
@@ -1487,6 +1533,7 @@ export function useDashboard() {
     uploadDataset,
     importRoadResource,
     importOfficialTzDataset,
+    applyReadyPackToDay,
     resolveAlert,
     setAttendanceOptOut,
     markNoticeSeen,
@@ -1509,7 +1556,7 @@ function sameRouterSettings(
     left.lunchesEnabled === right.lunchesEnabled &&
     left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
-    (left.strictTimeWindows ?? false) === (right.strictTimeWindows ?? false) &&
+    (left.strictTimeWindows ?? true) === (right.strictTimeWindows ?? true) &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&
@@ -1519,7 +1566,10 @@ function sameRouterSettings(
     left.accessBufferSec === right.accessBufferSec &&
     left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
     left.earlyFinishReplanThresholdSec === right.earlyFinishReplanThresholdSec &&
-    left.taskOverrunToleranceSec === right.taskOverrunToleranceSec
+    left.taskOverrunToleranceSec === right.taskOverrunToleranceSec &&
+    (left.solveTimeLimitMs ?? 6000) === (right.solveTimeLimitMs ?? 6000) &&
+    (left.verifyTimeLimitMs ?? 6000) === (right.verifyTimeLimitMs ?? 6000) &&
+    (left.comparisonTimeLimitMs ?? 6000) === (right.comparisonTimeLimitMs ?? 6000)
   );
 }
 
@@ -1539,6 +1589,9 @@ function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSett
     fixedTravelTimeSec: 1_200,
     earlyFinishReplanThresholdSec: 900,
     taskOverrunToleranceSec: 600,
+    solveTimeLimitMs: 6000,
+    verifyTimeLimitMs: 6000,
+    comparisonTimeLimitMs: 6000,
     routerContextVersion: snapshot.routerContextVersion,
   };
 }

@@ -110,7 +110,10 @@ export const CLIENT_PROFILE = {
 } as const;
 
 export const EMPTY_CLIENT_DRAFT: ClientRequestDraft = {
-  problem: t('figma-client.clientPreview.8cee3a62c8'),
+  // No problem chosen for them. Seeding «Нет линка» meant a customer who never opened
+  // the list filed one of the sixteen types by default, and the picker showed a
+  // confident answer to a question nobody had asked.
+  problem: '',
   contactName: '',
   address: '',
   windowStart: '12:00',

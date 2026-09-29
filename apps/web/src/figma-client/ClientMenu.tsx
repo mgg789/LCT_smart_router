@@ -18,21 +18,26 @@ export function ClientMenu({
   open,
   motionOn,
   email,
+  chatUnread = false,
   active,
   onClose,
   docked,
   onNavigate,
   onNewRequest,
+  onSignOut,
 }: {
   open: boolean;
   motionOn: boolean;
   email: string | null;
+  chatUnread?: boolean;
   active: ClientScreenId;
   onClose: () => void;
   /** Docked in the desk's rail: always open, no backdrop, no way to close. */
   docked?: boolean;
   onNavigate: (id: ClientScreenId) => void;
   onNewRequest: () => void;
+  /** The engineer's menu has always had this; the customer's had no way out at all. */
+  onSignOut: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   useModalFocus(dialog, open && !docked, onClose);
@@ -84,6 +89,7 @@ export function ClientMenu({
               active={active === 'support'}
               disabled={isNavixOffline()}
               onClick={() => onNavigate('support')}
+              dot={chatUnread && active !== 'support'}
             />
           </nav>
           <div
@@ -105,6 +111,14 @@ export function ClientMenu({
             >
               {t('figma-client.ClientMenu.ee5790e7f4')}
             </motion.button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="self-start bg-white font-semibold text-figma-muted"
+              style={{ fontSize: eu(20), borderRadius: eu(999), padding: `${eu(10)} ${eu(22)}` }}
+            >
+              {t('figma-client.ClientMenu.5690c2e63b')}
+            </button>
           </div>
         </div>
       </aside>
@@ -189,6 +203,7 @@ export function ClientMenu({
                   active={active === 'support'}
                   disabled={isNavixOffline()}
                   onClick={() => onNavigate('support')}
+                  dot={chatUnread && active !== 'support'}
                 />
               </nav>
               <div
@@ -210,6 +225,18 @@ export function ClientMenu({
                 >
                   {t('figma-client.ClientMenu.ee5790e7f4')}
                 </motion.button>
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="self-start bg-white font-semibold text-figma-muted"
+                  style={{
+                    fontSize: eu(20),
+                    borderRadius: eu(999),
+                    padding: `${eu(10)} ${eu(22)}`,
+                  }}
+                >
+                  {t('figma-client.ClientMenu.5690c2e63b')}
+                </button>
               </div>
             </div>
           </motion.aside>
@@ -227,6 +254,7 @@ function MenuItem({
   active,
   disabled = false,
   onClick,
+  dot = false,
 }: {
   label: string;
   icon: string;
@@ -235,6 +263,7 @@ function MenuItem({
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
+  dot?: boolean;
 }) {
   return (
     <button
@@ -272,6 +301,13 @@ function MenuItem({
       >
         {label}
       </span>
+      {dot ? (
+        <span
+          aria-hidden
+          className="ml-auto shrink-0 rounded-full bg-figma-bee"
+          style={{ width: eu(12), height: eu(12) }}
+        />
+      ) : null}
     </button>
   );
 }

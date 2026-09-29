@@ -4,6 +4,11 @@
 (`context/32` §13, `context/35` §10). Sys формирует письмо; SMTP-gateway передаёт
 его; Postfix держит очередь. Статуса `delivered` в приложении нет.
 
+Файлы настройки — в `infra/smtp/`, интеграция API — в `apps/api/src/notifications`.
+Описание хостов и прежних эксплуатационных проверок ниже не заменяет проверку
+конкретного развёртывания. Публичные DNS-записи повторно прочитаны 29.09.2026;
+отправка писем и состояние серверов в этом проходе не проверялись.
+
 ## Хосты
 
 | Роль | Адрес | Что слушает |
@@ -44,12 +49,12 @@ curl -sS http://127.0.0.1:8587/health
 Health отдаёт `postfix`, `accepts_mail`, `queue_depth`, `access_mode`,
 `last_errors`. Это не доказательство доставки в ящик.
 
-## DNS, которые ещё должен выставить владелец зоны
+## DNS отправителя
 
-A и PTR уже сходятся: `mail.droidje.com` ↔ `194.87.202.172`. MX `droidje.com`
-указывает на `mail.droidje.com`. Сейчас SPF — Timeweb `include:_spf.timeweb.ru`,
-поэтому Gmail отвечает `550 5.7.26` (SPF/DKIM не проходят). В панели Timeweb
-нужны записи:
+На 29.09.2026 запрос TXT через `Resolve-DnsName -DnsOnly` вернул опубликованные
+SPF для `mail.droidje.com`, DKIM селектора `navix` и DMARC. Требование добавить
+эти записи и сообщение о прежнем отказе Gmail больше не описывают текущий DNS.
+Ожидаемые значения для сверки:
 
 ```
 mail.droidje.com.                TXT  "v=spf1 ip4:194.87.202.172 -all"
@@ -58,7 +63,10 @@ _dmarc.mail.droidje.com.        TXT  "v=DMARC1; p=quarantine; adkim=s; aspf=s;"
 ```
 
 Публичный ключ также лежит на хосте в `/etc/navix-smtp/dkim-navix.txt`.
-После публикации TXT повторить отправку на Gmail/Yandex/Mail.ru.
+Наличие TXT не доказывает корректную подпись конкретного письма и доставку в ящик.
+При проверке разрешённой отправки сверяйте `Authentication-Results` (SPF/DKIM/DMARC)
+и фактический приём Gmail/Yandex/Mail.ru. A, PTR и MX следует проверять отдельно;
+их прежний результат приведён в историческом перечне проверок ниже.
 
 ## Sys: SMTP-gateway
 
@@ -67,7 +75,10 @@ _dmarc.mail.droidje.com.        TXT  "v=DMARC1; p=quarantine; adkim=s; aspf=s;"
 уже прописаны `host.docker.internal`, fallback и health URL.
 
 Каталог писем: `account_login_code`, `request_received`, `engineer_assigned`,
-`visit_change_required`. UI ввода кода — карточка DRO-39.
+`engineer_confirmed`, `request_rescheduled`, `visit_change_required`,
+`request_completed`, `request_cancelled`, `engineer_day_summary`, месячные отчёты.
+Переходы и получатели — [API: почтовый каталог](api.md#почтовый-каталог-переходов-заявки-2026-09-20).
+UI ввода кода реализован в приложениях клиента, инженера и диспетчера.
 
 HTML писем — карточка 578×363 из Figma (`32:2931` светлая, `32:2930` тёмная).
 Логотип в письме — 64×64 в обеих темах (исходник обрезан по контуру знака).
@@ -93,4 +104,5 @@ HTML писем — карточка 578×363 из Figma (`32:2931` светла
 - Публичный 587 в `VPN_ONLY` не принимается (timeout снаружи).
 - Submission через Hysteria с MGG (`127.0.0.1:2525`) принят сервером.
 - Watchdog переключает `VPN_PLUS_DIRECT_TLS` ↔ `VPN_ONLY` по битам.
-- Конечная доставка в Gmail **не** подтверждена, пока нет SPF/DKIM в DNS.
+- Конечная доставка в Gmail этим перечнем не подтверждена. SPF/DKIM/DMARC уже
+  опубликованы (DNS-проверка 29.09.2026); нужна отдельная проверка письма в ящике.

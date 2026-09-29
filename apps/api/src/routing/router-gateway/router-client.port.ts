@@ -123,6 +123,31 @@ export interface RouterTechnicalSettings {
   readonly earlyFinishReplanThresholdSec: number;
   /** Allowed on-site overrun before the engineer is removed from free capacity. */
   readonly taskOverrunToleranceSec: number;
+  /** Main search budget, milliseconds. */
+  readonly solveTimeLimitMs?: number;
+  /** One hybrid route re-check, milliseconds. */
+  readonly verifyTimeLimitMs?: number;
+  /** Policy comparison budget, milliseconds. */
+  readonly comparisonTimeLimitMs?: number;
+}
+
+/** Dispatcher view of the Redis-beta route-response cache. */
+export interface RouteCacheStatus {
+  readonly beta: true;
+  readonly enabled: boolean;
+  readonly available: boolean;
+  readonly memorySource: 'redis' | 'disk' | 'none';
+  readonly usedBytes: number;
+  readonly routePayloadBytes: number;
+  readonly keys: number;
+  readonly normalBytesPerSec: number | null;
+  readonly observedBytesPerSec: number | null;
+  readonly leak: {
+    readonly code: 'CACHE_MEMORY_LEAK';
+    readonly normalBytesPerSec: number;
+    readonly observedBytesPerSec: number;
+    readonly windowSec: number;
+  } | null;
 }
 
 export interface RouterTechnicalSettingsState extends RouterTechnicalSettings {
@@ -247,6 +272,7 @@ export interface PolicyComparison {
     readonly additionalEngineers?: number;
     readonly isUsable: boolean;
     readonly calculationMs: number;
+    readonly jobEnds: readonly number[];
     readonly metrics: PolicyComparisonMetrics;
   }>;
 }
@@ -306,6 +332,21 @@ export abstract class RouterClient {
    * version (context/33 section 7).
    */
   abstract getActiveContextVersion(): Promise<string | null>;
+
+  /** Route-response cache size, memory source and the learned growth check. */
+  getRouteCache(): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
+
+  /** Deletes cached route-engine3 bodies. The policy catalog stays. */
+  clearRouteCache(): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
+
+  /** Turns the route-response cache on or off. Redis itself keeps running. */
+  setRouteCacheEnabled(_enabled: boolean): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
 
   /** Reads the complete Router-owned technical settings revision. */
   getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {

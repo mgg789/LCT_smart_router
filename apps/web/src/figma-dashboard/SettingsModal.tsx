@@ -3,15 +3,19 @@ import { Copy, KeyRound, Plus, Wand2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   type AiView,
+  clearRouteCache,
   createApiToken,
   getAiSettings,
   getDispatcherSettings,
   getMapProvidersStatus,
   getMcpSettings,
+  getRouteCache,
   listApiTokens,
+  type RouteCacheStatus,
   revokeApiToken,
   saveAiSettings,
   saveMcpSettings,
+  setRouteCacheEnabled,
 } from '../api/client';
 import type {
   ApiTokenCategory,
@@ -25,6 +29,7 @@ import type {
 import { isNavixOffline } from '../domain/mapAvailability';
 import { t } from '../i18n';
 import { formatMoscowDate, moscowAt } from '../lib/time';
+import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
 import { downloadMcpSetupMd, generateMcpPin } from './mcpSetup';
@@ -32,7 +37,6 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
-const CAPSULE_SPRING = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.72 };
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
@@ -52,8 +56,13 @@ const CATEGORY_LABELS: Record<ApiTokenCategory, string> = {
 };
 
 type GeneralDraft = {
-  shiftStart: string;
-  shiftEnd: string;
+  fiveTwoStart: string;
+  fiveTwoEnd: string;
+  twoTwoStart: string;
+  twoTwoEnd: string;
+  solveTimeLimitMs: number;
+  verifyTimeLimitMs: number;
+  comparisonTimeLimitMs: number;
   latenessMin: number;
   accessBufferMin: number;
   earlyFinishReplanMin: number;
@@ -98,6 +107,10 @@ export function SettingsModal({
     dispatcher: {
       dayStartMin: number;
       dayEndMin: number;
+      fiveTwoStartMin: number;
+      fiveTwoEndMin: number;
+      twoTwoStartMin: number;
+      twoTwoEndMin: number;
       noShowSec: number;
       overdueSec: number;
       timeRiskSec: number;
@@ -225,7 +238,9 @@ export function SettingsModal({
               {t('figma-dashboard.SettingsModal.a709de0bac')}
             </p>
           ) : null}
-          {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
+          {tab === 'general' ? (
+            <GeneralForm draft={draft} setField={setField} token={token} />
+          ) : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
           {tab === 'ai' ? (
             offline ? (
@@ -276,15 +291,22 @@ export function SettingsModal({
             disabled={submitting || loading || !token || !routerSettings}
             onClick={() => {
               if (!routerSettings) return;
-              if (minutesFromClock(draft.shiftEnd) <= minutesFromClock(draft.shiftStart)) {
+              if (
+                minutesFromClock(draft.fiveTwoEnd) <= minutesFromClock(draft.fiveTwoStart) ||
+                minutesFromClock(draft.twoTwoEnd) <= minutesFromClock(draft.twoTwoStart)
+              ) {
                 setError(t('figma-dashboard.SettingsModal.da8f0a2fd2'));
                 return;
               }
               setError(null);
               void onSave({
                 dispatcher: {
-                  dayStartMin: minutesFromClock(draft.shiftStart),
-                  dayEndMin: minutesFromClock(draft.shiftEnd),
+                  dayStartMin: minutesFromClock(draft.twoTwoStart),
+                  dayEndMin: minutesFromClock(draft.twoTwoEnd),
+                  fiveTwoStartMin: minutesFromClock(draft.fiveTwoStart),
+                  fiveTwoEndMin: minutesFromClock(draft.fiveTwoEnd),
+                  twoTwoStartMin: minutesFromClock(draft.twoTwoStart),
+                  twoTwoEndMin: minutesFromClock(draft.twoTwoEnd),
                   noShowSec: draft.noShowMin * 60,
                   overdueSec: draft.overdueMin * 60,
                   timeRiskSec: draft.timeRiskMin * 60,
@@ -316,6 +338,9 @@ export function SettingsModal({
                   equipmentEnabled: draft.equipmentEnabled,
                   equipmentTransfersEnabled: draft.equipmentTransfersEnabled,
                   trafficEnabled: draft.trafficEnabled,
+                  solveTimeLimitMs: draft.solveTimeLimitMs,
+                  verifyTimeLimitMs: draft.verifyTimeLimitMs,
+                  comparisonTimeLimitMs: draft.comparisonTimeLimitMs,
                 },
               }).catch((cause: unknown) => {
                 setError(
@@ -346,8 +371,13 @@ function generalFrom(
   router: RouterTechnicalSettings | undefined,
 ): GeneralDraft {
   return {
-    shiftStart: clockFromMinutes(settings?.dayStartMin ?? 9 * 60),
-    shiftEnd: clockFromMinutes(settings?.dayEndMin ?? 21 * 60),
+    fiveTwoStart: clockFromMinutes(settings?.fiveTwoStartMin ?? 9 * 60),
+    fiveTwoEnd: clockFromMinutes(settings?.fiveTwoEndMin ?? 18 * 60),
+    twoTwoStart: clockFromMinutes(settings?.twoTwoStartMin ?? 10 * 60),
+    twoTwoEnd: clockFromMinutes(settings?.twoTwoEndMin ?? 22 * 60),
+    solveTimeLimitMs: router?.solveTimeLimitMs ?? 6000,
+    verifyTimeLimitMs: router?.verifyTimeLimitMs ?? 6000,
+    comparisonTimeLimitMs: router?.comparisonTimeLimitMs ?? 6000,
     latenessMin: Math.round((router?.windowLatenessToleranceSec ?? 0) / 60),
     accessBufferMin: Math.round((router?.accessBufferSec ?? 600) / 60),
     earlyFinishReplanMin: Math.round((router?.earlyFinishReplanThresholdSec ?? 900) / 60),
@@ -378,71 +408,284 @@ function TabSwitch({
   onChange: (tab: SettingsTab) => void;
   offline: boolean;
 }) {
-  const index = TABS.findIndex((item) => item.id === tab);
   return (
-    <div className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
-      <div className="relative grid h-full grid-cols-4">
-        <motion.span
-          aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/4 rounded-full bg-figma-ink"
-          initial={false}
-          animate={{ x: `${index * 100}%` }}
-          transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
-        />
-        {TABS.map((item) => {
-          const active = item.id === tab;
-          const disabled = offline && (item.id === 'ai' || item.id === 'maps');
-          return (
-            <button
-              key={item.id}
-              type="button"
-              disabled={disabled}
-              title={disabled ? t('common.offlineContour') : undefined}
-              onClick={() => {
-                if (!disabled) onChange(item.id);
-              }}
-              className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <span
-                className={`font-semibold text-[16px] tracking-[-0.3px] ${
-                  active ? 'text-white' : 'text-figma-ink'
-                }`}
-              >
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
+    <AnimatedCapsuleTabs
+      items={TABS.map((item) => ({
+        ...item,
+        disabled: offline && (item.id === 'ai' || item.id === 'maps'),
+        title:
+          offline && (item.id === 'ai' || item.id === 'maps')
+            ? t('common.offlineContour')
+            : undefined,
+      }))}
+      value={tab}
+      onChange={onChange}
+      motionOn={motionOn}
+      label={t('figma-dashboard.SettingsModal.985b5e0f2c')}
+      className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]"
+      textClassName="font-semibold text-[16px] tracking-[-0.3px]"
+    />
+  );
+}
+
+function formatCacheBytes(bytes: number): string {
+  if (bytes < 1024) return t('figma-dashboard.SettingsModal.cacheBytes', { value0: bytes });
+  if (bytes < 1024 * 1024) {
+    return t('figma-dashboard.SettingsModal.cacheKilobytes', { value0: (bytes / 1024).toFixed(1) });
+  }
+  return t('figma-dashboard.SettingsModal.cacheMegabytes', {
+    value0: (bytes / (1024 * 1024)).toFixed(1),
+  });
+}
+
+function formatCacheRate(bytesPerSec: number | null): string {
+  if (bytesPerSec === null) return t('figma-dashboard.SettingsModal.routeCacheRateUnknown');
+  return t('figma-dashboard.SettingsModal.routeCacheRate', {
+    value0: formatCacheBytes(Math.abs(bytesPerSec)),
+  });
+}
+
+/** First block of the general tab: route-cache size, where the memory lives, clear and disable. */
+function RouteCacheBlock({ token }: { token: string | null }) {
+  const [status, setStatus] = useState<RouteCacheStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!token) return;
+    void getRouteCache(token)
+      .then((next) => {
+        setStatus(next);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t('figma-dashboard.SettingsModal.routeCacheLoadFailed'),
+        );
+      });
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+    if (!token) return;
+    const timer = window.setInterval(reload, 15_000);
+    return () => window.clearInterval(timer);
+  }, [reload, token]);
+
+  const run = (action: () => Promise<RouteCacheStatus>) => {
+    if (!token || busy) return;
+    setBusy(true);
+    void action()
+      .then((next) => {
+        setStatus(next);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t('figma-dashboard.SettingsModal.routeCacheActionFailed'),
+        );
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const source =
+    status?.memorySource === 'redis'
+      ? t('figma-dashboard.SettingsModal.routeCacheSourceRedis')
+      : status?.memorySource === 'disk'
+        ? t('figma-dashboard.SettingsModal.routeCacheSourceDisk')
+        : t('figma-dashboard.SettingsModal.routeCacheSourceNone');
+
+  return (
+    <section className="mb-[20px] rounded-[24px] bg-figma-canvas px-[18px] py-[16px]">
+      <div className="flex items-center gap-[8px]">
+        <p className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">
+          {t('figma-dashboard.SettingsModal.routeCacheTitle')}
+        </p>
+        <span className="rounded-full bg-figma-ink/10 px-[8px] py-[2px] font-semibold text-[12px] text-figma-muted">
+          {t('figma-dashboard.SettingsModal.routeCacheBeta')}
+        </span>
       </div>
-    </div>
+      <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+        {t('figma-dashboard.SettingsModal.routeCacheHint')}
+      </p>
+      {status ? (
+        <dl className="mt-[12px] grid grid-cols-2 gap-[12px]">
+          <div>
+            <dt className="font-medium text-[13px] text-figma-hint">
+              {t('figma-dashboard.SettingsModal.routeCacheSize')}
+            </dt>
+            <dd className="font-semibold text-[16px] text-figma-ink">
+              {formatCacheBytes(
+                status.memorySource === 'redis' ? status.routePayloadBytes : status.usedBytes,
+              )}
+              <span className="ml-[8px] font-medium text-[13px] text-figma-muted">
+                {t('figma-dashboard.SettingsModal.routeCacheEntries', { value0: status.keys })}
+                {status.memorySource === 'redis'
+                  ? t('figma-dashboard.SettingsModal.routeCacheRedisProcess', {
+                      value0: formatCacheBytes(status.usedBytes),
+                    })
+                  : null}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-[13px] text-figma-hint">
+              {t('figma-dashboard.SettingsModal.routeCacheSource')}
+            </dt>
+            <dd className="font-semibold text-[16px] text-figma-ink">{source}</dd>
+          </div>
+          <div className="col-span-2 font-medium text-[13px] text-figma-muted">
+            {t('figma-dashboard.SettingsModal.routeCacheNormal', {
+              value0: formatCacheRate(status.normalBytesPerSec),
+            })}
+            {status.observedBytesPerSec !== null
+              ? t('figma-dashboard.SettingsModal.routeCacheObserved', {
+                  value0: formatCacheRate(status.observedBytesPerSec),
+                })
+              : null}
+          </div>
+        </dl>
+      ) : (
+        <p className="mt-[12px] font-medium text-[14px] text-figma-muted">
+          {t('figma-dashboard.SettingsModal.a709de0bac')}
+        </p>
+      )}
+      {status?.leak ? (
+        <p role="alert" className="mt-[12px] font-medium text-[14px] text-figma-danger">
+          {t('figma-dashboard.SettingsModal.routeCacheLeak', {
+            value0: formatCacheRate(status.leak.observedBytesPerSec),
+            value1: formatCacheRate(status.leak.normalBytesPerSec),
+          })}
+        </p>
+      ) : null}
+      <div className="mt-[12px] flex flex-wrap gap-[10px]">
+        <button
+          type="button"
+          disabled={busy || !token || status?.memorySource !== 'redis'}
+          onClick={() => token && run(() => clearRouteCache(token))}
+          className="flex h-[44px] items-center rounded-full border border-figma-ink/15 px-[16px] font-semibold text-[15px] text-figma-ink disabled:opacity-50"
+        >
+          {t('figma-dashboard.SettingsModal.routeCacheClear')}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !token || status?.memorySource !== 'redis'}
+          onClick={() => token && status && run(() => setRouteCacheEnabled(token, !status.enabled))}
+          className="flex h-[44px] items-center rounded-full bg-figma-ink px-[16px] font-semibold text-[15px] text-white disabled:opacity-50"
+        >
+          {status?.enabled
+            ? t('figma-dashboard.SettingsModal.routeCacheDisable')
+            : t('figma-dashboard.SettingsModal.routeCacheEnable')}
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[14px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
 function GeneralForm({
   draft,
   setField,
+  token,
 }: {
   draft: GeneralDraft;
   setField: <K extends keyof GeneralDraft>(key: K, value: GeneralDraft[K]) => void;
+  token: string | null;
 }) {
   return (
     <div className="pb-[8px]">
+      <RouteCacheBlock token={token} />
+      <p className="font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.schedule52')}
+      </p>
       <div className="grid grid-cols-2 gap-[16px]">
-        <Field label={t('figma-dashboard.SettingsModal.cf1dfa079c')} htmlFor="settings-shift-start">
+        <Field label={t('figma-dashboard.SettingsModal.fiveTwoStart')} htmlFor="settings-52-start">
           <input
-            id="settings-shift-start"
+            id="settings-52-start"
             type="time"
-            value={draft.shiftStart}
-            onChange={(event) => setField('shiftStart', event.target.value)}
+            value={draft.fiveTwoStart}
+            onChange={(event) => setField('fiveTwoStart', event.target.value)}
             className={FIELD}
           />
         </Field>
-        <Field label={t('figma-dashboard.SettingsModal.9046545750')} htmlFor="settings-shift-end">
+        <Field label={t('figma-dashboard.SettingsModal.fiveTwoEnd')} htmlFor="settings-52-end">
           <input
-            id="settings-shift-end"
+            id="settings-52-end"
             type="time"
-            value={draft.shiftEnd}
-            onChange={(event) => setField('shiftEnd', event.target.value)}
+            value={draft.fiveTwoEnd}
+            onChange={(event) => setField('fiveTwoEnd', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.twoTwoStart')} htmlFor="settings-22-start">
+          <input
+            id="settings-22-start"
+            type="time"
+            value={draft.twoTwoStart}
+            onChange={(event) => setField('twoTwoStart', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.twoTwoEnd')} htmlFor="settings-22-end">
+          <input
+            id="settings-22-end"
+            type="time"
+            value={draft.twoTwoEnd}
+            onChange={(event) => setField('twoTwoEnd', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+      </div>
+      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.solverBudgets')}
+      </p>
+      <div className="grid grid-cols-3 gap-[16px]">
+        <Field label={t('figma-dashboard.SettingsModal.solveBudget')} htmlFor="settings-solve-ms">
+          <input
+            id="settings-solve-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.solveTimeLimitMs}
+            onChange={(event) => setField('solveTimeLimitMs', Number(event.target.value) || 6000)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.verifyBudget')} htmlFor="settings-verify-ms">
+          <input
+            id="settings-verify-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.verifyTimeLimitMs}
+            onChange={(event) => setField('verifyTimeLimitMs', Number(event.target.value) || 6000)}
+            className={FIELD}
+          />
+        </Field>
+        <Field
+          label={t('figma-dashboard.SettingsModal.comparisonBudget')}
+          htmlFor="settings-comparison-ms"
+        >
+          <input
+            id="settings-comparison-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.comparisonTimeLimitMs}
+            onChange={(event) =>
+              setField('comparisonTimeLimitMs', Number(event.target.value) || 6000)
+            }
             className={FIELD}
           />
         </Field>
@@ -1274,6 +1517,7 @@ function AiForm({ token }: { token: string | null }) {
   const [enabled, setEnabled] = useState(false);
   const [llmUrl, setLlmUrl] = useState('');
   const [llmModel, setLlmModel] = useState('');
+  const [llmReasoning, setLlmReasoning] = useState<'none' | 'low' | 'medium' | 'high'>('none');
   const [llmKey, setLlmKey] = useState('');
   const [jevUrl, setJevUrl] = useState('');
   const [jevModel, setJevModel] = useState('');
@@ -1290,6 +1534,7 @@ function AiForm({ token }: { token: string | null }) {
         setEnabled(next.settings.planCalibrationEnabled);
         setLlmUrl(next.settings.llmApiUrl ?? '');
         setLlmModel(next.settings.llmModel ?? '');
+        setLlmReasoning(next.settings.llmReasoningEffort);
         setJevUrl(next.settings.jevApiUrl ?? '');
         setJevModel(next.settings.jevModel ?? '');
       })
@@ -1317,6 +1562,7 @@ function AiForm({ token }: { token: string | null }) {
         setEnabled(next.settings.planCalibrationEnabled);
         setLlmUrl(next.settings.llmApiUrl ?? '');
         setLlmModel(next.settings.llmModel ?? '');
+        setLlmReasoning(next.settings.llmReasoningEffort);
         setJevUrl(next.settings.jevApiUrl ?? '');
         setJevModel(next.settings.jevModel ?? '');
         setLlmKey('');
@@ -1337,6 +1583,7 @@ function AiForm({ token }: { token: string | null }) {
     enabled !== (view?.settings.planCalibrationEnabled ?? false) ||
     llmUrl !== (view?.settings.llmApiUrl ?? '') ||
     llmModel !== (view?.settings.llmModel ?? '') ||
+    llmReasoning !== (view?.settings.llmReasoningEffort ?? 'none') ||
     llmKey.length > 0 ||
     jevUrl !== (view?.settings.jevApiUrl ?? '') ||
     jevModel !== (view?.settings.jevModel ?? '') ||
@@ -1453,6 +1700,24 @@ function AiForm({ token }: { token: string | null }) {
               className={FIELD}
             />
           </Field>
+          <Field label={t('figma-dashboard.SettingsModal.reasoning')} htmlFor="ai-llm-reasoning">
+            <select
+              id="ai-llm-reasoning"
+              value={llmReasoning}
+              onChange={(event) =>
+                setLlmReasoning(event.target.value as 'none' | 'low' | 'medium' | 'high')
+              }
+              className={FIELD}
+            >
+              <option value="none">{t('figma-dashboard.SettingsModal.reasoningNone')}</option>
+              <option value="low">{t('figma-dashboard.SettingsModal.reasoningLow')}</option>
+              <option value="medium">{t('figma-dashboard.SettingsModal.reasoningMedium')}</option>
+              <option value="high">{t('figma-dashboard.SettingsModal.reasoningHigh')}</option>
+            </select>
+            <p className="mt-[6px] font-medium text-[13px] text-figma-muted">
+              {t('figma-dashboard.SettingsModal.reasoningHint')}
+            </p>
+          </Field>
           <Field
             label={
               view?.settings.llmApiKeySet
@@ -1539,6 +1804,9 @@ function AiForm({ token }: { token: string | null }) {
             planCalibrationEnabled: enabled,
             ...(llmUrl !== (view?.settings.llmApiUrl ?? '') ? { llmApiUrl: llmUrl || null } : {}),
             ...(llmModel !== (view?.settings.llmModel ?? '') ? { llmModel: llmModel || null } : {}),
+            ...(llmReasoning !== (view?.settings.llmReasoningEffort ?? 'none')
+              ? { llmReasoningEffort: llmReasoning }
+              : {}),
             ...(llmKey ? { llmApiKey: llmKey } : {}),
             ...(jevUrl !== (view?.settings.jevApiUrl ?? '') ? { jevApiUrl: jevUrl || null } : {}),
             ...(jevModel !== (view?.settings.jevModel ?? '') ? { jevModel: jevModel || null } : {}),

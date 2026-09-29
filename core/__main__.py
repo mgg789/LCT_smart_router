@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import platform
 from pathlib import Path
 
 from core.engine import SearchSettings
@@ -75,6 +76,24 @@ def main() -> None:
     benchmark.add_argument("--skip-events", action="store_true")
     benchmark.add_argument("--event-budget-ms", type=int, default=1000)
     benchmark.add_argument("--output", type=Path)
+    suite = commands.add_parser("bench-suite")
+    suite.add_argument("--label", default=platform.node())
+    suite.add_argument(
+        "--regions",
+        nargs="+",
+        choices=("east", "southeast", "south_central", "all"),
+        default=("east", "southeast", "south_central", "all"),
+    )
+    suite.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
+    suite.add_argument("--budget-ms", type=int, default=30000)
+    suite.add_argument("--solution-limit", type=int, default=32)
+    suite.add_argument("--policy-budget-ms", type=int, default=2000)
+    suite.add_argument("--event-budget-ms", type=int, default=3000)
+    suite.add_argument("--exact-max-route-builds", type=int, default=1_500_000)
+    suite.add_argument("--robustness-simulations", type=int, default=300)
+    suite.add_argument("--determinism-repeats", type=int, default=3)
+    suite.add_argument("--skip-exact", action="store_true")
+    suite.add_argument("--output", type=Path, required=True)
     prepare_2gis = commands.add_parser("prepare-2gis")
     prepare_2gis.add_argument("--snapshot", type=Path, required=True)
     prepare_2gis.add_argument("--config", type=Path, required=True)
@@ -153,6 +172,25 @@ def main() -> None:
             args.output.write_text(payload + "\n", encoding="utf-8")
         else:
             print(payload)
+        return
+    if args.command == "bench-suite":
+        from core.bench_suite import run_suite, write_suite_report
+
+        payload = run_suite(
+            label=args.label,
+            regions=tuple(args.regions),
+            dataset_dir=args.dataset_dir,
+            budget_ms=args.budget_ms,
+            solution_limit=args.solution_limit,
+            policy_budget_ms=args.policy_budget_ms,
+            event_budget_ms=args.event_budget_ms,
+            exact_max_route_builds=args.exact_max_route_builds,
+            robustness_simulations=args.robustness_simulations,
+            determinism_repeats=args.determinism_repeats,
+            exact_instances=() if args.skip_exact else None,
+        )
+        write_suite_report(payload, args.output)
+        print(f"[suite] written {args.output}", flush=True)
         return
     if args.command == "prepare-2gis":
         from core.runtime import parse_snapshot

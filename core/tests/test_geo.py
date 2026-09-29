@@ -1,5 +1,6 @@
 """Road direction, fallback, traffic context and address ambiguity."""
 
+import math
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -16,6 +17,7 @@ from core.geo import (
     configure_forecast_traffic,
     configure_travel,
     forecast_traffic_factor,
+    haversine_m,
     quote_at,
     routing_context_version,
 )
@@ -139,17 +141,20 @@ def test_common_profile_policy_covers_unknown_fallback_overlay_and_traffic(graph
     origin = GeoPoint(lat=55.7501, lon=37.6001)
     destination = GeoPoint(lat=55.7501, lon=37.6020)
     fallback = ProfilePolicyTravel(GraphTravel(graph))
-    assert fallback.quote(origin, destination, "car").duration_sec == fallback.quote(
-        origin, destination, "walk"
-    ).duration_sec
+    assert (
+        fallback.quote(origin, destination, "car").duration_sec
+        == fallback.quote(origin, destination, "walk").duration_sec
+    )
 
     overlay = ProfilePolicyTravel(MixedTravel(GraphTravel(graph), _ProfileTravel()))
-    assert overlay.quote(origin, destination, "car").duration_sec == overlay.quote(
-        origin, destination, "walk"
-    ).duration_sec
-    assert overlay.quote(origin, destination, "bike").duration_sec < overlay.quote(
-        origin, destination, "walk"
-    ).duration_sec
+    assert (
+        overlay.quote(origin, destination, "car").duration_sec
+        == overlay.quote(origin, destination, "walk").duration_sec
+    )
+    assert (
+        overlay.quote(origin, destination, "bike").duration_sec
+        < overlay.quote(origin, destination, "walk").duration_sec
+    )
 
     morning = int(datetime(2026, 8, 17, 8, 0, tzinfo=ZoneInfo("Europe/Moscow")).timestamp())
     traffic = configure_forecast_traffic(_ProfileTravel(), morning)
@@ -159,7 +164,9 @@ def test_common_profile_policy_covers_unknown_fallback_overlay_and_traffic(graph
 
 def test_construction_quote_is_a_straight_line():
     """A solve quotes the chord. Exact roads are not part of construction."""
-    quote = StraightTravel().quote(GeoPoint(lat=55.75, lon=37.62), GeoPoint(lat=55.76, lon=37.64), "car")
+    quote = StraightTravel().quote(
+        GeoPoint(lat=55.75, lon=37.62), GeoPoint(lat=55.76, lon=37.64), "car"
+    )
     assert quote is not None
     assert quote.provenance == "approximate"
     assert quote.points == (
@@ -167,3 +174,47 @@ def test_construction_quote_is_a_straight_line():
         GeoPoint(lat=55.76, lon=37.64),
     )
     assert quote.duration_sec > 0
+
+
+def test_straight_travel_walk_factor_is_calibrated():
+    """Foot-graph calibration (2026-09-28): walking detour ~1.36x, not 1.25x."""
+    origin = GeoPoint(lat=55.75, lon=37.62)
+    destination = GeoPoint(lat=55.76, lon=37.64)
+    walk = StraightTravel().quote(origin, destination, "walk")
+    assert walk is not None
+    assert walk.distance_m == math.ceil(haversine_m(origin, destination) * 1.35)
+    assert StraightTravel.version == "straight-v2"
+
+
+def test_grid_nearest_matches_whole_grid_scan():
+    """The bucket grid must reproduce the naive nearest scan, ties included."""
+    nodes = [
+        {
+            "node_id": f"n{i}",
+            "location": {"lat": 55.70 + (i % 40) * 0.004, "lon": 37.40 + (i // 40) * 0.004},
+        }
+        for i in range(400)
+    ]
+    edges = [
+        {
+            "source": f"n{i}",
+            "target": f"n{i + 1}",
+            "distance_m": 100,
+            "duration_sec": {"car": 10, "walk": 60, "bike": 30, "transit": 50},
+        }
+        for i in range(399)
+    ]
+    travel = GraphTravel(
+        RoadGraph.model_validate(
+            {"version": "grid-v1", "source": "test", "nodes": nodes, "edges": edges}
+        )
+    )
+    probes = [GeoPoint(lat=55.71 + k * 0.0031, lon=37.41 + k * 0.0037) for k in range(12)]
+    naive_nodes = list(travel.nodes.items())
+    for probe in probes:
+        expected = min((haversine_m(probe, p), key) for key, p in naive_nodes)
+        candidate = travel.nearest(probe, 2000.0)
+        assert candidate is not None
+        key, _point, distance = candidate
+        assert (round(distance, 9), key) == (round(expected[0], 9), expected[1])
+    assert travel.nearest(GeoPoint(lat=56.5, lon=39.0), 100.0) is None

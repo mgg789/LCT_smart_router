@@ -54,3 +54,15 @@ test('OpenAPI keeps auth, SSE, PDF, MCP and prefix exceptions explicit', () => {
     ['message', 'state'].sort(),
   );
 });
+
+test('OpenAPI exposes the actual media types of dispatcher downloads', () => {
+  assert.ok(
+    document.paths['/api/v1/dispatch/plan/export.xlsx']?.get?.responses?.['200']?.content?.[
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ],
+  );
+  assert.ok(
+    document.paths['/api/v1/dispatch/data/requests/template.csv']?.get?.responses?.['200']
+      ?.content?.['text/csv'],
+  );
+});

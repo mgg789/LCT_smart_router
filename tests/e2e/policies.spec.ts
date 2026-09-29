@@ -58,7 +58,9 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   await calculate.click();
   const coverage = page.getByRole('region', { name: 'Сколько заявок удаётся назначить' });
   await expect(coverage).toBeVisible({ timeout: 30_000 });
-  await expect(coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовое' })).toBeVisible();
+  await expect(
+    coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовая из ТЗ' }),
+  ).toBeVisible();
   await expect(page.getByRole('region', { name: 'Дорога на назначение' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Доля опозданий' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Задействованные инженеры' })).toBeVisible();
@@ -204,6 +206,8 @@ test('ordinary-replanning switch persists without changing the working plan', as
   await expect(toggle.getByRole('tooltip')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(toggle.getByRole('tooltip')).not.toBeVisible();
+  // Escape closes the panel as well as its hint; reopen before the next action.
+  await open();
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
   expect((await readPlan(live.api)).revision).toBe(before.revision);

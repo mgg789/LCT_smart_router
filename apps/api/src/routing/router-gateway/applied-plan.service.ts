@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
 import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
+import { reserveNameFor } from '../../common/reserve-name';
+import { configuredTimeZone } from '../../common/time/zone';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
@@ -68,14 +70,20 @@ export class AppliedPlanService {
     );
     if (usesCoveringExtras) {
       await this.ensureCoveringEngineers(tx, now, main);
+      await this.archiveIdleCoveringEngineers(tx, now, main);
     } else {
       await this.archiveCoveringEngineers(tx, now);
     }
-    await persistHandoffs(tx, main, workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'), now);
+    await persistHandoffs(
+      tx,
+      main,
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
+      now,
+    );
     await persistLogistics(
       tx,
       main,
-      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
       now,
     );
     await this.materialise(tx, plan.id, main);
@@ -87,7 +95,7 @@ export class AppliedPlanService {
       now,
       main,
       result.result_id,
-      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+      workDateOf(result.planning_as_of ?? now, configuredTimeZone()),
     );
     await this.alerts.invalidateOtherRouterConditions(tx, now, result.result_id);
     await this.alerts.recordPlanRebuilt(tx, now, result.result_id);
@@ -456,7 +464,7 @@ export class AppliedPlanService {
         },
         alerts: [],
       },
-      workDateOf(Number(source.planAsOf), 'Europe/Moscow'),
+      workDateOf(Number(source.planAsOf), configuredTimeZone()),
       now,
     );
   }
@@ -808,6 +816,32 @@ export class AppliedPlanService {
   }
 
   /**
+   * A reserve with no jobs this shift is not on the roster. The solver already
+   * prefers a free base engineer; this drops the leftover row so the board
+   * does not keep an empty «Резерв».
+   */
+  private async archiveIdleCoveringEngineers(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+    const busy = plan.routes
+      .filter(
+        (route) =>
+          route.engineer_id.startsWith('covering-') &&
+          route.stops.some((stop) => stop.kind === 'job' && stop.request_id),
+      )
+      .map((route) => route.engineer_id);
+    const archived = await tx.engineer.updateMany({
+      where: {
+        archivedAt: null,
+        AND: [{ id: { startsWith: 'covering-' } }, { id: { notIn: busy } }],
+      },
+      data: { archivedAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+    if (archived.count === 0) {
+      return;
+    }
+    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED);
+  }
+
+  /**
    * Persist synthesized covering-policy engineers so their routes stay visible
    * while covering is the active policy.
    */
@@ -828,6 +862,13 @@ export class AppliedPlanService {
     });
     const known = new Set(existing.map((row) => row.id));
     const missing = coveringIds.filter((engineerId) => !known.has(engineerId));
+    const restored = await tx.engineer.updateMany({
+      where: { id: { in: coveringIds }, archivedAt: { not: null } },
+      data: { archivedAt: null, updatedAt: BigInt(now) },
+    });
+    if (restored.count > 0) {
+      await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED);
+    }
     if (missing.length === 0) {
       return;
     }
@@ -855,7 +896,7 @@ export class AppliedPlanService {
       await tx.engineer.create({
         data: {
           id: engineerId,
-          displayName: `Резерв ${region} ${index || engineerId}`,
+          displayName: reserveNameFor(region, index || engineerId),
           inputOrder: 10_000 + index,
           skills: ['local', 'connection', 'emergency'],
           transportType: 'car',

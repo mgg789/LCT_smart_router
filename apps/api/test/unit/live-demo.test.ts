@@ -32,13 +32,10 @@ test('LIVE fixture supplies 14 valid requests and three crews over an eleven-hou
   const walkingEngineer = input.engineers?.[2];
   assert.ok(walkingEngineer);
   assert.equal(walkingEngineer.transportType, 'walk');
-  assert.deepEqual(
-    walkingEngineer.start,
-    input.requests[6] && {
-      lat: input.requests[6].lat,
-      lon: input.requests[6].lon,
-    },
-  );
+  // A shift start on a request pin gives that visit a zero-length leg with nothing to draw.
+  assert.ok(walkingEngineer.start);
+  const { lat, lon } = walkingEngineer.start;
+  assert.ok(input.requests.every((request) => request.lat !== lat || request.lon !== lon));
   assert.deepEqual(
     input.requests.slice(0, 2).map((request) => request.requiredTransport),
     ['walk', 'walk'],

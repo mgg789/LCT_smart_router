@@ -9,6 +9,7 @@ import { t } from '../i18n';
 import { AlertActions } from './AlertActions';
 import { runAlertSweep } from './alertSweep';
 import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaText } from './primitives';
@@ -78,6 +79,7 @@ export function AlertsView({
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
   const offline = isNavixOffline();
+  const { dx } = useArtboardStretch();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 5_000);
@@ -248,8 +250,11 @@ export function AlertsView({
       <div
         ref={listRef}
         onScroll={rememberScroll}
-        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        style={{ top: LIST_TOP, bottom: 28 }}
+        className="absolute left-[180px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        // Spare board width goes to the list, the way the day and the requests table
+        // already take it; pinned at 1710 the cards left a widening empty strip down
+        // the right of anything past 16:9.
+        style={{ top: LIST_TOP, bottom: 28, width: 1710 + dx }}
       >
         <div className="pt-[64px]">
           {inbox.alerts.length === 0 && visibleNotices.length === 0 && parked.length === 0 ? (
@@ -349,8 +354,11 @@ export function AlertsView({
                     dismissAllToasts();
                     void Promise.all(
                       cards
-                        .map((card) => card.sourceNoticeId)
-                        .filter((id): id is string => id !== null)
+                        .flatMap<string | null>((card) => [
+                          ...(card.repeatedNoticeIds ?? []),
+                          card.sourceNoticeId,
+                        ])
+                        .filter((id): id is string => id != null)
                         .map((id) => onMarkNoticeSeen(id)),
                     );
                     setClearing(false);
@@ -405,8 +413,9 @@ export function AlertsView({
       </div>
       <div
         aria-hidden
-        className="pointer-events-none absolute left-[180px] z-10 w-[1710px]"
-        style={{ top: LIST_TOP - FADE_TUCK, height: FADE_TUCK + FADE_HEIGHT }}
+        className="pointer-events-none absolute left-[180px] z-10"
+        // Matches the list it masks; see the note there.
+        style={{ top: LIST_TOP - FADE_TUCK, height: FADE_TUCK + FADE_HEIGHT, width: 1710 + dx }}
       >
         <div
           className="absolute inset-x-0 top-0 bg-figma-canvas"
@@ -444,7 +453,11 @@ function NoticeCard({
       icon={NOTICE_ICON[card.toastKind]}
       onHide={() => {
         void (async () => {
-          if (card.sourceNoticeId) await onMarkSeen(card.sourceNoticeId);
+          // Hiding the card hides every notice folded into it, not just the newest.
+          const ids = (card.repeatedNoticeIds ?? [card.sourceNoticeId]).filter(
+            (id): id is string => id != null,
+          );
+          await Promise.all(ids.map((id) => onMarkSeen(id)));
           dismissToast(card.id);
         })().catch(() => undefined);
       }}

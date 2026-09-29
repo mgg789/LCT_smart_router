@@ -13,6 +13,7 @@ const base: UseAssistantChatResult = {
   runState: null,
   quota: null,
   handoffStatus: null,
+  handoffMark: null,
   activity: null,
   loading: false,
   sending: false,
@@ -112,6 +113,7 @@ it('makes the support entry reachable from the client menu', () => {
       onClose={() => {}}
       onNavigate={() => {}}
       onNewRequest={() => {}}
+      onSignOut={() => {}}
     />,
   );
   expect(html).toContain('Поддержка');

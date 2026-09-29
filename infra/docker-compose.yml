@@ -87,7 +87,12 @@ services:
       ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_ROAD_API_CACHE: /app/state/road-api-cache
       ROUTER_ROAD_API_MAP_VERSION: moscow-mkad
+      # Universal route engine v3 (/route3, /matrix3, /metro3): car matrix with
+      # traffic, pedestrian/cyclist graph and metro paths as pluggable graphs.
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
+      ROUTER_HYBRID: ${ROUTER_HYBRID:-false}
       ROUTER_METRICS_ENABLED: ${ROUTER_METRICS_ENABLED:-false}
+      ROUTER_METRICS_TOKEN: ${ROUTER_METRICS_TOKEN:-}
       ROUTER_OTEL_ENABLED: ${ROUTER_OTEL_ENABLED:-false}
       ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${ROUTER_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}
       ROUTER_OTEL_TRACE_SAMPLE_RATIO: ${ROUTER_OTEL_TRACE_SAMPLE_RATIO:-0.1}
@@ -95,6 +100,11 @@ services:
       ROUTER_SENTRY_DSN: ${ROUTER_SENTRY_DSN:-}
       ROUTER_SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-development}
       ROUTER_SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # Optional read-only catalog cache. No dependency: Router keeps working if Redis is down.
+      ROUTER_REDIS_BETA: ${ROUTER_REDIS_BETA:-false}
+      ROUTER_REDIS_URL: ${ROUTER_REDIS_URL:-}
+      ROUTER_REDIS_NAMESPACE: ${ROUTER_REDIS_NAMESPACE:-lct-smart-router}
+      ROUTER_REDIS_TTL_SEC: ${ROUTER_REDIS_TTL_SEC:-600}
     command:
       - serve
       - --official-regions
@@ -108,7 +118,7 @@ services:
       - --port
       - '8100'
       - --budget-ms
-      - '${ROUTER_BUDGET_MS:-8000}'
+      - '${ROUTER_BUDGET_MS:-6000}'
       - --settings
       - /app/state/settings.json
     volumes:
@@ -119,6 +129,32 @@ services:
         condition: service_completed_successfully
     ports:
       - '127.0.0.1:${ROUTER_PORT:-8100}:8100'
+
+  redis:
+    image: redis:8.2-alpine@sha256:b51665e66f00759be7c3152ad5ac3c66fb2f619c13ef62dea7cc1f9914524635
+    profiles: [redis-beta]
+    restart: unless-stopped
+    user: redis
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 192m
+    pids_limit: 64
+    tmpfs: ['/data:mode=1777,size=16m']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        test -n "$${REDIS_PASSWORD}" || { echo 'Redis beta password is required' >&2; exit 1; };
+        exec redis-server --requirepass "$${REDIS_PASSWORD}" --save '' --appendonly no
+        --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$${REDIS_PASSWORD}" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 2s
+      retries: 3
 
   api:
     build:
@@ -141,8 +177,11 @@ services:
     # contour runs production mode with SMTP and must never return them over HTTP.
     environment:
       PORT: 8000
+      # Use the same shell/.env precedence as the Prometheus credential file.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       # This local contour is the feature demo: today's walking engineer, passports
-      # and the rewind action. Unset DEMO_STAND in the shell env to keep a plain day.
+      # and the rewind action. The jury launcher sets DEMO_STAND=false so a
+      # fresh volume opens empty. A plain compose up keeps the seeded demo.
       DEMO_STAND: ${DEMO_STAND:-true}
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
       DATASET_ROOT: /app/data/dataset/anonymized
@@ -152,12 +191,14 @@ services:
       # The API borrows selected-leg polylines. Router prepares costs separately
       # from the same road service before searching; it never queries each move.
       API_ROAD_API_URL: ${API_ROAD_API_URL:-http://road-api:8123}
+      ROUTE3_URL: ${ROUTE3_URL:-http://route-engine3:8124}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:
       # Read-only bind mount rather than a copy into the image: the dataset is data, not
       # code, and the geocode sidecar the data zone will add must appear without a rebuild.
       - ../data/dataset:/app/data/dataset:ro
+      - ../data/samples:/app/data/samples:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -189,7 +230,8 @@ services:
       timeout: 5s
       retries: 3
 
-  # MKAD road graph (OSRM MLD, vendored under services/road-api/osrm). Serves road
+  # MKAD road graph (OSRM MLD, vendored under services/route-engine3/graphs/car —
+  # one vendored copy shared by road-api and route-engine3). Serves road
   # geometry and travel times to the road-api below; graph pages are copied into a
   # tmpfs so cold queries stay in milliseconds (services/road-api/README.md).
   osrm:
@@ -201,7 +243,7 @@ services:
       sh -c 'cp /src/moscow-mkad.osrm* /graph/ &&
       osrm-routed --algorithm mld --max-table-size 4096 /graph/moscow-mkad.osrm'
     volumes:
-      - ../services/road-api/osrm:/src:ro
+      - ../services/route-engine3/graphs/car:/src:ro
     tmpfs:
       - /graph:size=768m
 
@@ -226,6 +268,31 @@ services:
       retries: 10
       start_period: 60s
 
+  # Universal route engine v3 (docs/route3.md): a self-contained unit that
+  # supervises one osrm-routed per graph folder (graphs/car, graphs/foot — drop
+  # a folder to add a graph) and serves /route3, /matrix3, /metro3. Walk/bike
+  # costs are flat average speeds; traffic forecasting applies to car only.
+  route-engine3:
+    build:
+      context: ../services/route-engine3
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      METRO_DATA_PATH: /srv/metro/moscow.json
+    volumes:
+      - ../services/route-engine3/graphs:/srv/graphs:ro
+      - ../core/resources/metro:/srv/metro:ro
+    tmpfs:
+      # Both vendored graphs are copied here before osrm-routed starts so that
+      # every query stays in memory rather than faulting over the bind mount.
+      - /graph-pages:size=1024m
+    healthcheck:
+      test: ['CMD-SHELL', 'python3 -c "import json,urllib.request; assert json.load(urllib.request.urlopen(\"http://127.0.0.1:8124/health\", timeout=25))[\"ready\"]"']
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 90s
+
   web:
     build:
       context: ..
@@ -246,6 +313,23 @@ services:
     image: prom/prometheus:v3.5.0
     profiles: [observability]
     restart: unless-stopped
+    # Keep credentials out of the YAML and support a tracing-only profile with
+    # metrics disabled. The unprivileged process owns its private tmpfs files.
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      ROUTER_METRICS_TOKEN: ${ROUTER_METRICS_TOKEN:-}
+    tmpfs: ['/run/metrics:mode=1777,size=64k']
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        mkdir -p /run/metrics/credentials
+        printf '%s' "$${METRICS_TOKEN}" > /run/metrics/credentials/api-token
+        printf '%s' "$${ROUTER_METRICS_TOKEN}" > /run/metrics/credentials/router-token
+        unset METRICS_TOKEN ROUTER_METRICS_TOKEN
+        exec /bin/prometheus "$$@"
+      - --
     command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=7d', '--storage.tsdb.retention.size=1GB']
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro

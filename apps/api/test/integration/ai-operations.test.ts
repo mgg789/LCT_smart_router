@@ -327,6 +327,10 @@ describe('AI operation prepare/confirm spine', () => {
   });
 
   it('a dispatcher fix -> help flip after preparing blocks the write at confirm time', async () => {
+    // This scenario is specifically about the profile changing between prepare and
+    // confirm. Keep the optional external System one guard from applying the card
+    // before that transition, regardless of which local/CI provider happens to answer.
+    mock.method(context.get(ActionGuardService), 'allows', async () => false);
     const now = Math.floor(Date.now() / 1000);
     const email = `${unique('ai-op-dispatcher')}@example.test`;
     const account = await prisma.account.create({

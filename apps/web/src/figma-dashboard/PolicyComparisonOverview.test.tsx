@@ -93,6 +93,7 @@ describe('honest policy comparisons', () => {
     );
     expect(html).toContain('10 из 20');
     expect(html).toContain('+5 к FIFO');
+    expect(html).toContain('назначено 10 заявок против 5 у FIFO');
     expect(html).toContain('-20%');
     expect(html).toContain('резервных инженеров');
     expect(html).toContain('Показатель расходов');
@@ -107,6 +108,22 @@ describe('honest policy comparisons', () => {
     expect(comparisonValue(row('fast', 0, 0), 'waitingPerJob')).toBeNull();
     expect(comparisonValue(row('fast', 0, 0), 'latenessPerJob')).toBeNull();
     expect(html).not.toContain('20 из 20');
+  });
+
+  it('draws the completion chart across the card at the taller smoothed size', () => {
+    const start = 1_700_000_000;
+    const html = renderToStaticMarkup(
+      <PolicyComparisonOverview
+        rows={[
+          { ...row('baseline', 2, 10), jobEnds: [start, start + 3600] },
+          { ...row('fast', 3, 12), jobEnds: [start + 600, start + 1800, start + 4000] },
+        ]}
+      />,
+    );
+    expect(html).toContain('h-[450px]');
+    expect(html).toContain('w-full');
+    expect(html).toContain('<polyline');
+    expect(html).not.toMatch(/NaN|Infinity/);
   });
 
   it('renders zero-work data without fabricated percentages or invalid bar lengths', () => {

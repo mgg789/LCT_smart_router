@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
+import { zonedWallUnix } from '../../common/time/zone';
 import { assertEmergencyWindowUnchanged } from '../requests/requests.service';
 import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
@@ -785,7 +786,7 @@ export class AlertsService {
         request.assignmentState === 'unassigned' &&
         assignedStop === null &&
         liveOwnership === null &&
-        start >= Date.parse(`${liveDay.workDate}T00:00:00+03:00`) / 1000 + 86_400;
+        start >= zonedWallUnix(`${liveDay.workDate}T00:00:00`) + 86_400;
       await context.tx.requestConditionHistory.create({
         data: {
           requestId,

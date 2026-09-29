@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
+import { configuredTimeZone } from '../common/time/zone';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { assertManualConflictResolved } from '../operations/manual-conflict-guard';
@@ -17,8 +18,9 @@ import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestra
 import { McpService } from '../orchestrator/mcp/mcp.service';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PolicyService } from '../orchestrator/policy';
+import type { personalPolicyPresetSchema } from '../orchestrator/policy/personal-policy';
 import { personalPolicyUpdateSchema } from '../orchestrator/policy/personal-policy';
-import { applyPersonalPolicyRouterPreset } from '../orchestrator/policy/personal-policy-preset';
+import { commitPolicyRouterPreset } from '../orchestrator/policy/personal-policy-preset';
 import {
   DispatcherSettingsService,
   GeocodingService,
@@ -71,10 +73,14 @@ import {
 } from './dto/policy.dto';
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
+  type RouteCacheSwitchDto,
+  routeCacheSwitchSchema,
   type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
+  type GeocodeDatasetDto,
+  geocodeDatasetSchema,
   type UpdateDispatcherSettingsDto,
   updateDispatcherSettingsSchema,
 } from './dto/settings.dto';
@@ -118,6 +124,27 @@ export class DispatchController {
     private readonly mcp: McpService,
   ) {}
 
+  @Get('router/cache')
+  @ApiOperation({ summary: 'Route-response cache size, memory source and growth check' })
+  routeCache() {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.getRouteCache();
+  }
+
+  @Post('router/cache/clear')
+  @ApiOperation({ summary: 'Delete cached route-engine3 responses' })
+  clearRouteCache() {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.clearRouteCache();
+  }
+
+  @Put('router/cache')
+  @ApiOperation({ summary: 'Enable or disable the route-response cache' })
+  setRouteCache(@Body(zodBody(routeCacheSwitchSchema)) dto: RouteCacheSwitchDto) {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.setRouteCacheEnabled(dto.enabled);
+  }
+
   @Get('router/technical-settings')
   @ApiOperation({ summary: 'Read Router-owned routing and execution controls' })
   async routerTechnicalSettings() {
@@ -149,6 +176,9 @@ export class DispatchController {
       fixedTravelTimeSec: dto.fixedTravelTimeSec,
       earlyFinishReplanThresholdSec: dto.earlyFinishReplanThresholdSec,
       taskOverrunToleranceSec: dto.taskOverrunToleranceSec,
+      solveTimeLimitMs: dto.solveTimeLimitMs,
+      verifyTimeLimitMs: dto.verifyTimeLimitMs,
+      comparisonTimeLimitMs: dto.comparisonTimeLimitMs,
     };
     const outcome = await this.operations.executeExternal(
       {
@@ -370,7 +400,7 @@ export class DispatchController {
           continue;
         const stop = route.stops.find((candidate) => candidate.requestId === requestId);
         if (!stop) continue;
-        const workDate = workDateOf(Number(stop.arrivalAt), 'Europe/Moscow');
+        const workDate = workDateOf(Number(stop.arrivalAt), configuredTimeZone());
         const terminalTolerance =
           !settings?.strictTimeWindows && index === order.length - 1 ? 1200 : 0;
         const allowedLateness = settings?.strictTimeWindows
@@ -594,6 +624,7 @@ export class DispatchController {
     @Body(zodBody(selectPolicySchema)) dto: SelectPolicyDto,
   ) {
     // A retry must replay its operation without resetting switches edited after selection.
+    let personalPreset: z.infer<typeof personalPolicyPresetSchema> | null = null;
     if (
       dto.policyId === 'personal' &&
       !(await this.prisma.operation.findUnique({ where: { operationId: dto.operationId } }))
@@ -606,7 +637,7 @@ export class DispatchController {
       });
       const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
       if (!profile) throw SysError.validationFailed('Личная политика не создана');
-      await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+      personalPreset = profile.preset;
     }
     const outcome = await this.operations.execute(
       {
@@ -626,6 +657,15 @@ export class DispatchController {
         return { ...selected, publication };
       },
     );
+    if (!outcome.replayed) {
+      await commitPolicyRouterPreset({
+        prisma: this.prisma,
+        router: this.router,
+        live: this.live,
+        policyId: dto.policyId,
+        preset: personalPreset,
+      });
+    }
     return outcome.result;
   }
 
@@ -857,6 +897,9 @@ export class DispatchController {
         fixedTravelTimeSec: current.fixedTravelTimeSec,
         earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
         taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+        solveTimeLimitMs: current.solveTimeLimitMs,
+        verifyTimeLimitMs: current.verifyTimeLimitMs,
+        comparisonTimeLimitMs: current.comparisonTimeLimitMs,
       };
       await this.operations.executeExternal(
         {
@@ -950,6 +993,14 @@ export class DispatchController {
   @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
   async mapStatus() {
     return this.mapRouting.probe();
+  }
+
+  @Post('geocode/dataset')
+  @ApiOperation({
+    summary: 'Geocode dataset addresses through LocationIQ, bounded to Moscow and Moscow Oblast',
+  })
+  async geocodeDataset(@Body(zodBody(geocodeDatasetSchema)) dto: GeocodeDatasetDto) {
+    return this.geocoding.placeAddresses(dto.addresses);
   }
 
   @Get('geocode')

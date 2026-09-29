@@ -33,6 +33,7 @@ def main() -> None:
         solution_limit=64,
         access_buffer_sec=args.access_buffer_sec,
         traffic_enabled=not args.no_traffic,
+        strict_time_windows=args.lateness_minutes == 0,
         window_lateness_tolerance_sec=args.lateness_minutes * 60,
     )
     names = ("east", "southeast", "south_central")

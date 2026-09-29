@@ -1,7 +1,7 @@
 import type { StyleSpecification } from 'maplibre-gl';
 
-/** Offline OSM coverage for the three official regions and outlying towns, west/south/east/north in WGS84. */
-export const LOCAL_MAP_BOUNDS = [37.5, 54.8, 38.2, 55.81] as const;
+/** Offline OSM coverage for the whole MKAD interior and the three official regions, west/south/east/north in WGS84. */
+export const LOCAL_MAP_BOUNDS = [37.35, 54.8, 38.51, 55.93] as const;
 
 /** Local street/water/park layers below route overlays; never needs remote tiles or glyphs. */
 export function localMapStyle(): StyleSpecification {

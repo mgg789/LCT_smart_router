@@ -10,6 +10,7 @@ import {
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
+  type RouteCacheStatus,
   RouterClient,
   type RouterPredictCalibration,
   type RouterResultStatus,
@@ -27,6 +28,26 @@ import {
   type WindowProposal,
   type WindowProposalInput,
 } from './router-client.port';
+
+const routeCacheSchema = z.object({
+  beta: z.literal(true),
+  enabled: z.boolean(),
+  available: z.boolean(),
+  memory_source: z.enum(['redis', 'disk', 'none']),
+  used_bytes: z.number().int().nonnegative(),
+  route_payload_bytes: z.number().int().nonnegative(),
+  keys: z.number().int().nonnegative(),
+  normal_bytes_per_sec: z.number().nullable(),
+  observed_bytes_per_sec: z.number().nullable(),
+  leak: z
+    .object({
+      code: z.literal('CACHE_MEMORY_LEAK'),
+      normal_bytes_per_sec: z.number(),
+      observed_bytes_per_sec: z.number(),
+      window_sec: z.number(),
+    })
+    .nullable(),
+});
 
 const predictCalibrationSchema = z.object({
   version: z.string().min(1),
@@ -130,7 +151,7 @@ const policyComparisonSchema = z.object({
   input_hash: z.string().length(64),
   router_context_version: z.string().min(1),
   computed_at: z.number().int().nonnegative(),
-  search_budget_ms: z.number().int().positive().max(8_000),
+  search_budget_ms: z.number().int().positive().max(120_000),
   rows: z.array(
     z.object({
       strategy_id: z.enum(COMPARISON_STRATEGIES),
@@ -138,6 +159,7 @@ const policyComparisonSchema = z.object({
       additional_engineers: z.number().int().nonnegative().default(0),
       is_usable: z.boolean(),
       calculation_ms: z.number().int().nonnegative(),
+      job_end_at: z.array(z.number().int().nonnegative()).default([]),
       summary: comparisonMetricsSchema,
     }),
   ),
@@ -198,7 +220,7 @@ const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
-  strict_time_windows: z.boolean().default(false),
+  strict_time_windows: z.boolean().default(true),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
@@ -209,6 +231,9 @@ const technicalSettingsSchema = z.object({
   fixed_travel_time_sec: z.number().int().positive().max(86_400),
   early_finish_replan_threshold_sec: z.number().int().nonnegative().max(86_400),
   task_overrun_tolerance_sec: z.number().int().nonnegative().max(86_400),
+  solve_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
+  verify_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
+  comparison_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
 });
 
 const routerContextSchema = z.looseObject({
@@ -392,7 +417,9 @@ export class HttpRouterClient extends RouterClient {
   override getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
     const cached = this.settingsCache;
     const fresh = cached !== null && Date.now() - cached.at < 30_000;
-    if (!fresh) this.kickSettingsRefresh();
+    // A stale cached response must not leave the background rejection unobserved
+    // when Router restarts. First reads still await the original pending promise.
+    if (!fresh) void this.kickSettingsRefresh().catch(() => undefined);
     if (cached) return Promise.resolve(cached.value);
     return this.settingsInflight ?? this.kickSettingsRefresh();
   }
@@ -436,7 +463,7 @@ export class HttpRouterClient extends RouterClient {
       body: JSON.stringify({
         operation_id: input.operationId,
         expected_context_version: input.expectedContextVersion,
-        strict_time_windows: input.strictTimeWindows ?? false,
+        strict_time_windows: input.strictTimeWindows ?? true,
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,
@@ -456,6 +483,9 @@ export class HttpRouterClient extends RouterClient {
         fixed_travel_time_sec: input.fixedTravelTimeSec,
         early_finish_replan_threshold_sec: input.earlyFinishReplanThresholdSec,
         task_overrun_tolerance_sec: input.taskOverrunToleranceSec,
+        solve_time_limit_ms: input.solveTimeLimitMs ?? 6000,
+        verify_time_limit_ms: input.verifyTimeLimitMs ?? 6000,
+        comparison_time_limit_ms: input.comparisonTimeLimitMs ?? 6000,
       }),
     });
     const parsed = technicalSettingsUpdateSchema.safeParse(raw);
@@ -507,6 +537,55 @@ export class HttpRouterClient extends RouterClient {
       throw new Error(`Router /v1/situation-predict response is invalid: ${parsed.error.message}`);
     }
     return parsed.data;
+  }
+
+  /** Reads the route-response cache, including a leak notice when growth exceeds the learned rate. */
+  override async getRouteCache(): Promise<RouteCacheStatus> {
+    return this.readRouteCache(await this.fetchJson('/v1/cache/route'));
+  }
+
+  /** Drops cached route-engine3 bodies and returns the emptied status. */
+  override async clearRouteCache(): Promise<RouteCacheStatus> {
+    return this.readRouteCache(await this.fetchJson('/v1/cache/route/clear', { method: 'POST' }));
+  }
+
+  /** Persists the route-cache switch for every router worker. */
+  override async setRouteCacheEnabled(enabled: boolean): Promise<RouteCacheStatus> {
+    return this.readRouteCache(
+      await this.fetchJson('/v1/cache/route', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      }),
+    );
+  }
+
+  private readRouteCache(raw: unknown): RouteCacheStatus {
+    const parsed = routeCacheSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Router /v1/cache/route response is invalid: ${parsed.error.message}`);
+    }
+    const leak = parsed.data.leak;
+    return {
+      beta: true,
+      enabled: parsed.data.enabled,
+      available: parsed.data.available,
+      memorySource: parsed.data.memory_source,
+      usedBytes: parsed.data.used_bytes,
+      routePayloadBytes: parsed.data.route_payload_bytes,
+      keys: parsed.data.keys,
+      normalBytesPerSec: parsed.data.normal_bytes_per_sec,
+      observedBytesPerSec: parsed.data.observed_bytes_per_sec,
+      leak:
+        leak === null
+          ? null
+          : {
+              code: 'CACHE_MEMORY_LEAK',
+              normalBytesPerSec: leak.normal_bytes_per_sec,
+              observedBytesPerSec: leak.observed_bytes_per_sec,
+              windowSec: leak.window_sec,
+            },
+    };
   }
 
   /** Reads Router's active plan-assessment simulator calibration. */
@@ -605,6 +684,7 @@ export class HttpRouterClient extends RouterClient {
         additionalEngineers: row.additional_engineers,
         isUsable: row.is_usable,
         calculationMs: row.calculation_ms,
+        jobEnds: row.job_end_at,
         metrics: {
           requestsTotal: row.summary.requests_total,
           assignedCount: row.summary.assigned_count,
@@ -715,6 +795,9 @@ function toTechnicalSettings(
     fixedTravelTimeSec: settings.fixed_travel_time_sec,
     earlyFinishReplanThresholdSec: settings.early_finish_replan_threshold_sec,
     taskOverrunToleranceSec: settings.task_overrun_tolerance_sec,
+    solveTimeLimitMs: settings.solve_time_limit_ms,
+    verifyTimeLimitMs: settings.verify_time_limit_ms,
+    comparisonTimeLimitMs: settings.comparison_time_limit_ms,
     routerContextVersion,
   };
 }

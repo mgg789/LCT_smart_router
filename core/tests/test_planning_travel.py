@@ -145,6 +145,23 @@ def test_unavailable_road_service_keeps_regional_graph(snapshot, graph, tmp_path
     assert not list(tmp_path.rglob("*.json"))
 
 
+def test_offline_route3_cold_cache_keeps_regional_graph(snapshot, graph, tmp_path, monkeypatch):
+    """An optional route3 source must not break ordinary offline planning on a cold cache."""
+    monkeypatch.setenv("ROUTE3_URL", "http://127.0.0.1:8124")
+    monkeypatch.setenv("ROUTE3_CACHE", str(tmp_path))
+    monkeypatch.setenv("ROUTE3_OFFLINE", "1")
+    monkeypatch.delenv("ROUTER_ROAD_API_URL", raising=False)
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_k: pytest.fail("offline route3 contacted HTTP"))
+    settings = SearchSettings(traffic_enabled=False, access_buffer_sec=0, metro_enabled=False)
+
+    travel = planning_travel(graph, settings, snapshot, offline=True)
+    base = GraphTravel(graph)
+    actual = travel.quote(graph.nodes[0].location, graph.nodes[1].location, "car")
+    expected = base.quote(graph.nodes[0].location, graph.nodes[1].location, "car")
+    assert actual is not None and expected is not None
+    assert (actual.duration_sec, actual.distance_m) == (expected.duration_sec, expected.distance_m)
+
+
 def test_native_osrm_table_is_directed_cached_and_non_mutating(graph, tmp_path, monkeypatch):
     points = [node.location for node in graph.nodes[:2]]
     calls = []
@@ -183,3 +200,23 @@ def test_imported_roads_apply_timing_once(snapshot, graph):
     )
     travel = planning_travel(overlay, settings, snapshot, offline=True)
     assert travel.quote(graph.nodes[0].location, graph.nodes[1].location, "car").duration_sec == 160
+
+
+def test_planning_travel_reuses_prepared_providers_across_replans(
+    snapshot, graph, monkeypatch, tmp_path
+):
+    """The process cache returns the same immutable providers on a replan."""
+    monkeypatch.setenv("ROUTER_ROAD_API_URL", "http://roads.test")
+    monkeypatch.setenv("ROUTER_ROAD_API_CACHE", str(tmp_path))
+    from core import planning_travel as module
+
+    monkeypatch.setattr(module, "_PREPARED_CACHE", {})
+    settings = SearchSettings(traffic_enabled=False, access_buffer_sec=0, metro_enabled=False)
+    first = module._prepared_travel(graph, settings, snapshot, offline=True)
+    second = module._prepared_travel(graph, settings, snapshot, offline=True)
+    assert first is second  # one GraphTravel per graph version per process
+    # A different graph version builds a different provider.
+    rebuilt_graph = graph.model_copy(update={"version": "graph-v2"})
+    third = module._prepared_travel(rebuilt_graph, settings, snapshot, offline=True)
+    assert third is not first
+    module._PREPARED_CACHE.clear()

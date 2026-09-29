@@ -10,12 +10,14 @@
 ## Состав
 
 - `server.py` — HTTP (stdlib-only): `/route`, `/route2` (дорога даже для
-  точек чуть за кольцом + v2-модель пробок), `/matrix2` (пакетная матрица),
+  точек чуть за кольцом при привязке не дальше 250 м; иначе прямая +
+  v2-модель пробок), `/matrix2` (пакетная матрица),
   `/health`, `/model`, демо-UI `/` и `/v2`. Кольцо МКАД — `data/mkad-exact.geojson`.
 - `traffic.py` — детерминированная модель пробок `moscow-radial-v1` с
   демо-расширением (МКАД/ТТК/Садовое в час пик ×2.6, магистрали ×1.8).
-- `osrm/` — готовый граф `moscow-mkad` (вырезка OSM внутри буфера МКАД,
-  167 МБ): `osrm-routed --algorithm mld`.
+- `../route-engine3/graphs/car/` — готовый граф `moscow-mkad` (вырезка OSM
+  внутри буфера МКАД), общий для обоих дорожных сервисов:
+  `osrm-routed --algorithm mld`.
 - `data/` — кольцо МКАД для классификации точек.
 
 `/matrix2?planning=1&points=lat,lon;lat,lon&departure=<epoch>` возвращает дорожные
@@ -31,12 +33,28 @@
 `~/Projects/LCT/moscow-road-graph` (`scripts/pipeline.sh`: mkad → extract →
 graph → serve; тяжёлая обработка OSM — pyosmium на хосте).
 
+> **Преемник:** контракты v3 (`/route3`, `/matrix3`, `/metro3`), пешеходный
+> граф и универсальная загрузка графов — в отдельном юните
+> [`services/route-engine3`](../route-engine3/README.md) (документ
+> `docs/route3.md`); графы обоих сервисов вендорятся в одном месте
+> (`services/route-engine3/graphs/`).
+
 ## Локально
 
 ```bash
-docker compose up -d osrm road-api
-curl 'http://127.0.0.1:8123/route2?a=55.7520,37.6175&b=55.7600,37.6300'
+docker compose -f infra/docker-compose.yml up -d osrm road-api
+docker compose -f infra/docker-compose.yml exec -T road-api python3 -c \
+  'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8123/route2?a=55.7520,37.6175&b=55.7600,37.6300").read().decode())'
 ```
+
+Команды выполняются из корня репозитория. Основной Compose не публикует порт
+`road-api` на хост: `127.0.0.1:8123` внутри приведённой команды — loopback контейнера.
+Контейнер раскладывает код в `/srv/demo`, полигон в `/srv/data` и задаёт
+`OSRM_URL=http://osrm:5000`. Это согласованное дерево из Dockerfile и Compose.
+Для нативного запуска нужно отдельно подготовить такую же относительную раскладку
+`demo/` + `data/`: `server.py` ищет полигон в `../data/` относительно своего файла.
+Прямой запуск нынешнего файла из `services/road-api/` без этой подготовки ищет
+несуществующий `services/data/mkad-exact.geojson` и завершится до старта HTTP.
 
 `/health` отвечает `{"osrm": true}`, когда граф прогрет. После старта
 первые запросы могут быть медленными (прогрев страниц графа) — healthcheck

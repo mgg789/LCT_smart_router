@@ -188,31 +188,33 @@ export function EngineerLogin({
                     }}
                   />
                   <div style={{ marginTop: eu(28) }}>
-                    {hint.kind === 'demo' || hint.kind === 'countdown' ? (
+                    {hint.text ? (
                       <p
                         className="text-center font-medium text-figma-muted"
                         style={{ fontSize: eu(22), lineHeight: eu(28) }}
                       >
                         {hint.text}
                       </p>
-                    ) : (
-                      <motion.button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void requestCode()}
-                        whileTap={{ scale: 0.98 }}
-                        className="mx-auto flex items-center justify-center bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
-                        style={{
-                          width: eu(590),
-                          maxWidth: '100%',
-                          height: eu(76),
-                          borderRadius: 999,
-                          fontSize: eu(28),
-                        }}
-                      >
-                        {t('figma-engineer.EngineerLogin.1a0517bfd5')}
-                      </motion.button>
-                    )}
+                    ) : null}
+                    {/* Always present, so a letter that did not arrive can be asked for
+                        again; only the countdown of a code just sent holds it. */}
+                    <motion.button
+                      type="button"
+                      disabled={busy || !hint.canResend}
+                      onClick={() => void requestCode()}
+                      whileTap={{ scale: 0.98 }}
+                      className="mx-auto flex items-center justify-center bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
+                      style={{
+                        marginTop: hint.text ? eu(20) : 0,
+                        width: eu(590),
+                        maxWidth: '100%',
+                        height: eu(76),
+                        borderRadius: 999,
+                        fontSize: eu(28),
+                      }}
+                    >
+                      {t('figma-engineer.EngineerLogin.1a0517bfd5')}
+                    </motion.button>
                   </div>
                 </motion.div>
               ) : null}

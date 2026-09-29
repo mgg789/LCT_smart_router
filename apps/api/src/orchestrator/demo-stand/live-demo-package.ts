@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { zonedWallUnix } from '../../common/time/zone';
 import type { Skill } from '../../generated/prisma/client';
 import type { UploadDataPackageInput } from '../imports/upload-import.service';
 
@@ -13,7 +14,7 @@ const geocodesSchema = z.object({
         location: z.object({ lat: z.number(), lon: z.number() }),
       }),
     )
-    .min(15),
+    .min(29),
 });
 
 /** Current import-package source for the public 14/3 live-demo seed. */
@@ -51,7 +52,7 @@ export function liveDemoGeocodePath(datasetRoot: string): string {
 /** Builds a deterministic 09:00–20:00 Moscow day using cached real map nodes. */
 export function buildLiveDemo(workDate: string, datasetRoot: string): UploadDataPackageInput {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new Error('Expected YYYY-MM-DD');
-  const start = Date.parse(`${workDate}T09:00:00+03:00`) / 1000;
+  const start = zonedWallUnix(`${workDate}T09:00:00`);
   if (
     !Number.isSafeInteger(start) ||
     new Date(start * 1000).toISOString().slice(0, 10) !== workDate
@@ -64,10 +65,10 @@ export function buildLiveDemo(workDate: string, datasetRoot: string): UploadData
   );
   const depot = geocodes.entries[0];
   if (!depot) throw new Error('Missing cached depot');
-  // This point is an existing geocoded request location near Kuzminki/Okskaya.
-  // It keeps the walking engineer's first edge short while the second required
-  // walking request is in the Taganskaya area, where the offline metro graph can win.
-  const walkingStart = geocodes.entries[7];
+  // A cached address at Kuzminki that is not one of the 14 request pins (those are
+  // entries 1–14): the first walking job stays ~0.7 km away on foot, and the second
+  // one near Taganskaya is where a metro composite can beat walking.
+  const walkingStart = geocodes.entries[28];
   if (!walkingStart) throw new Error('Missing cached walking-engineer start');
   const demoSkills: Skill[] = ['local', 'connection', 'emergency'];
   const digest = createHash('sha256').update(`live-demo-v2-${workDate}`).digest('hex');

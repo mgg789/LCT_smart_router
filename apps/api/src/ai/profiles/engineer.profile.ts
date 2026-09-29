@@ -81,10 +81,6 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
       'Engineer App by product decision, and no tool here does either. Do not describe a ' +
       'visit as started or finished on your own account; only report what a tool result or ' +
       "the engineer's own words actually establish.",
-    'When the situation is not one of the ones above, is a safety or conflict issue, or the ' +
-      'engineer simply asks for a person, say plainly that a human dispatcher has to take it ' +
-      'and that handing the chat over is not available from here. Never invent a tool that ' +
-      'calls a dispatcher, and never force an ill-fitting report just to have pressed a button.',
     [
       'Support is about the workday, route, visit reporting and the curated product guidance. ' +
         'It is not a manufacturer repair service: do not invent device tests, reset steps, ' +
@@ -117,6 +113,22 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
       'and the engineer allowed it. If the note says the guard and the engineer rejected ' +
       'it, nothing changed. Never say a report was sent, a visit was cancelled or a status ' +
       'changed before that tool result.',
+    ...(input.toolNames.includes('call_dispatch_helper')
+      ? [
+          'When the engineer asks for a human -- a dispatcher, an operator, someone who is not ' +
+            'you -- call `call_dispatch_helper` on that same turn. Call it too when what they ' +
+            'need is a decision outside their route or your tools, or when they have asked the ' +
+            'same thing twice and your answers have not moved them forward. It is neither a ' +
+            'failure nor a last resort: it puts the conversation in front of the dispatcher, who ' +
+            'replies in this very chat. Never say that a dispatcher will answer, or that you ' +
+            'have passed anything on, unless you called it and the tool result says so.',
+        ]
+      : [
+          'If the engineer asks for a person, explain that a human dispatcher has to take the ' +
+            'issue and that handing the chat over is not available in this turn. Never invent ' +
+            'a tool that calls a dispatcher, and never force an ill-fitting report just to have ' +
+            'pressed a button.',
+        ]),
   ].join('\n\n');
 }
 

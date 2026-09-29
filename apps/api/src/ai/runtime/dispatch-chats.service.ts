@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import { reserveDisplayName } from '../../common/reserve-name';
 import type {
   AiConversation,
   AiHandoff,
@@ -37,9 +38,10 @@ export type DispatchChatTarget =
   | { readonly kind: 'engineer'; readonly engineerId: string };
 
 /** A chat opened (or re-opened) from the dashboard, with whatever was written into it as
- *  part of opening. `created` is false when a handover was already running. */
+ *  part of opening. `created` is false when a handover was already running. `handoff` is
+ *  null when the dispatcher only looked: a handover starts with the first message. */
 export interface OpenedDispatchChat {
-  readonly handoff: AiHandoff;
+  readonly handoff: AiHandoff | null;
   readonly conversation: AiConversation;
   readonly messages: readonly AiMessage[];
   readonly created: boolean;
@@ -61,12 +63,6 @@ interface ResolvedTarget {
   readonly requestIds: string[];
   readonly engineerIds: string[];
 }
-
-/** Written into the dialogue so the person on the other side sees the turn happen in
- *  their own history, rather than a dispatcher's message appearing out of nowhere. */
-const DISPATCHER_JOINED_TEXT = 'Диспетчер подключился к чату.';
-const DISPATCHER_LEFT_TEXT =
-  'Диспетчер завершил чат. Дальше отвечает ассистент — напишите, если понадобится помощь.';
 
 /** How many finished chats the list carries. They are kept so the dispatcher can look
  *  back at what was agreed, not so the page can grow without limit. */
@@ -105,14 +101,13 @@ export class DispatchChatsService {
   ) {}
 
   /**
-   * The dispatcher's chat list: live handovers first, ordered by whichever spoke last,
-   * then the most recently finished ones.
+   * One row per person. A live handover wins over a finished episode of the same
+   * dialogue; otherwise the latest finished episode stands in, so ending a chat does
+   * not invent a second row and does not drop the person out of the list.
    *
-   * Closed episodes are included because ending a chat is not deleting it (context/36
-   * section 9.3): the dispatcher must still be able to read what was agreed. They are
-   * capped, and they show the dialogue as it stood when they were closed -- see
-   * `AiHandoff.endSeq` -- so a chat finished this morning does not silently accumulate
-   * this afternoon's messages under a row that says "завершён".
+   * Closed episodes stay because ending a chat is not deleting it (context/36
+   * section 9.3). The cap applies to how many finished conversations are loaded, not
+   * to how the page sorts them: the screen orders by the last message.
    */
   async list(options: { readonly closedLimit?: number } = {}): Promise<DispatchChatRow[]> {
     const [open, closed] = await Promise.all([
@@ -128,7 +123,14 @@ export class DispatchChatsService {
         take: options.closedLimit ?? DEFAULT_CLOSED_LIMIT,
       }),
     ]);
-    return this.hydrate([...open, ...closed]);
+    const byConversation = new Map<string, (typeof open)[number]>();
+    for (const handoff of open) byConversation.set(handoff.conversationId, handoff);
+    for (const handoff of closed) {
+      if (!byConversation.has(handoff.conversationId)) {
+        byConversation.set(handoff.conversationId, handoff);
+      }
+    }
+    return this.hydrate([...byConversation.values()]);
   }
 
   /** One chat episode by its handover id, for the response to a write that just changed
@@ -179,6 +181,11 @@ export class DispatchChatsService {
       where: { conversationId: conversation.id, state: { not: 'closed' } },
     });
     const created = handoff === null;
+    // Looking is not joining. The handover, and the switch that silences the assistant,
+    // start only when the dispatcher actually sends a message.
+    if (!handoff && (text === undefined || text.length === 0)) {
+      return { handoff: null, conversation, messages: written, created: false };
+    }
 
     if (!handoff) {
       const last = await tx.aiMessage.aggregate({
@@ -210,13 +217,6 @@ export class DispatchChatsService {
         where: { id: conversation.id, mode: 'ai' },
         data: { mode: 'dispatcher', updatedAt: BigInt(now), version: { increment: 1 } },
       });
-      written.push(
-        await this.conversations.appendMessage(tx, conversation.id, now, {
-          author: 'system',
-          kind: 'text',
-          text: DISPATCHER_JOINED_TEXT,
-        }),
-      );
     }
 
     if (text !== undefined && text.length > 0) {
@@ -261,7 +261,7 @@ export class DispatchChatsService {
     dispatcherAccountId: string,
     text: string,
   ): Promise<DispatchChatWrite> {
-    const open = await this.lockOpenHandoff(tx, conversationId);
+    const open = await this.ensureOpenHandoff(tx, now, conversationId, dispatcherAccountId);
     const message = await this.conversations.appendMessage(tx, conversationId, now, {
       author: 'dispatcher',
       kind: 'text',
@@ -281,35 +281,33 @@ export class DispatchChatsService {
   }
 
   /**
-   * Ends the handover: the chat closes, the assistant takes the dialogue back, and
-   * nothing else moves.
+   * Ends the handover: the assistant takes the dialogue back, and the same conversation
+   * stays the person's one chat. No closing bubble is written -- the turn is a divider
+   * on the client and engineer screens, not a message in the stream.
    *
    * Message history is untouched and no domain write this dispatcher already applied is
-   * reverted (context/36 section 9.3) -- this method writes to no table but `ai_handoffs`,
-   * `ai_conversations` and `ai_messages`. The closing note is written into the dialogue so
-   * the person on the other side sees the turn happen instead of finding the assistant
-   * answering them again with no explanation.
+   * reverted (context/36 section 9.3).
    */
   async finish(
     tx: Tx,
     now: number,
     conversationId: string,
     dispatcherAccountId: string,
-  ): Promise<DispatchChatWrite> {
+  ): Promise<{ handoff: AiHandoff; conversation: AiConversation }> {
     const open = await this.lockOpenHandoff(tx, conversationId);
-    const message = await this.conversations.appendMessage(tx, conversationId, now, {
-      author: 'system',
-      kind: 'text',
-      text: DISPATCHER_LEFT_TEXT,
+    const last = await tx.aiMessage.aggregate({
+      where: { conversationId },
+      _max: { seq: true },
     });
+    const endSeq = last._max.seq ?? open.startSeq;
     await tx.aiHandoff.update({
       where: { id: open.id },
       data: {
         state: 'closed',
         closedAt: BigInt(now),
         closedByAccountId: dispatcherAccountId,
-        endSeq: message.seq,
-        dispatcherLastReadSeq: message.seq,
+        endSeq,
+        dispatcherLastReadSeq: endSeq,
         version: { increment: 1 },
       },
     });
@@ -317,7 +315,7 @@ export class DispatchChatsService {
       where: { id: conversationId },
       data: { mode: 'ai', updatedAt: BigInt(now), version: { increment: 1 } },
     });
-    return { ...(await this.reread(tx, open.id, conversationId)), message };
+    return this.reread(tx, open.id, conversationId);
   }
 
   /**
@@ -365,11 +363,61 @@ export class DispatchChatsService {
   }
 
   /**
+   * The handover a dispatcher message needs. An open one is reused. A finished dialogue,
+   * or one that was never handed over, starts a new episode at the current end of the
+   * history: sending is what joins the chat, and it joins the same conversation.
+   */
+  private async ensureOpenHandoff(
+    tx: Tx,
+    now: number,
+    conversationId: string,
+    dispatcherAccountId: string,
+  ): Promise<AiHandoff> {
+    await tx.$queryRaw`SELECT id FROM ai_conversations WHERE id = ${conversationId} FOR UPDATE`;
+    const conversation = await tx.aiConversation.findUnique({ where: { id: conversationId } });
+    if (!conversation) {
+      throw SysError.notFound('Conversation', { conversationId });
+    }
+    const open = await tx.aiHandoff.findFirst({
+      where: { conversationId, state: { not: 'closed' } },
+    });
+    if (open && conversation.mode === 'dispatcher') return open;
+
+    const previous = await tx.aiHandoff.findFirst({
+      where: { conversationId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const last = await tx.aiMessage.aggregate({
+      where: { conversationId },
+      _max: { seq: true },
+    });
+    const startSeq = last._max.seq ?? 0;
+    const created = await tx.aiHandoff.create({
+      data: {
+        conversationId,
+        requestedByAccountId: dispatcherAccountId,
+        actorRole: previous?.actorRole ?? conversation.role,
+        initiatedBy: 'dispatcher',
+        requestIds: previous?.requestIds ?? [],
+        engineerIds: previous?.engineerIds ?? [],
+        state: 'answered',
+        dispatcherLastReadSeq: startSeq,
+        startSeq,
+        createdAt: BigInt(now),
+      },
+    });
+    await tx.aiConversation.update({
+      where: { id: conversationId },
+      data: { mode: 'dispatcher', updatedAt: BigInt(now), version: { increment: 1 } },
+    });
+    return created;
+  }
+
+  /**
    * Locks the conversation row, then returns its open handover. Throws
-   * `AI_HANDOFF_NOT_ACTIVE` for a conversation that was never escalated, or whose chat
-   * already ended -- the one refusal `reply` and `finish` share, so a late write from a
-   * stale dispatcher tab is refused rather than quietly reopening a finished chat or
-   * writing into an ordinary assistant conversation.
+   * `AI_HANDOFF_NOT_ACTIVE` when the dialogue is not currently with a dispatcher.
+   * `finish` uses this so a second close is refused. A reply does not: sending is
+   * how a dispatcher joins, including after the assistant has taken the chat back.
    */
   private async lockOpenHandoff(tx: Tx, conversationId: string): Promise<AiHandoff> {
     await tx.$queryRaw`SELECT id FROM ai_conversations WHERE id = ${conversationId} FOR UPDATE`;
@@ -408,9 +456,11 @@ export class DispatchChatsService {
         throw SysError.notFound('Engineer', { engineerId: target.engineerId });
       }
       if (!engineer.accountId) {
+        // Reaches the dispatcher's screen verbatim, so it is written for them: the UI
+        // shows `message` as-is and the whole product speaks Russian.
         throw new SysError(
           'CHAT_TARGET_UNREACHABLE',
-          'This engineer has no application login, so there is no chat to write into',
+          'У инженера нет входа в приложение — привяжите почту, чтобы открыть чат',
           { details: { engineerId: engineer.id } },
         );
       }
@@ -419,7 +469,7 @@ export class DispatchChatsService {
         accountId: engineer.accountId,
         role: 'engineer',
         roleProfile: 'engineer',
-        title: `Инженер · ${engineer.displayName}`,
+        title: `Инженер · ${reserveDisplayName(engineer.displayName)}`,
         contextRef: { engineerId: engineer.id },
         requestIds: [],
         engineerIds: [engineer.id],
@@ -433,7 +483,7 @@ export class DispatchChatsService {
     if (!request.clientAccountId) {
       throw new SysError(
         'CHAT_TARGET_UNREACHABLE',
-        'This request has no customer account, so there is no chat to write into',
+        'У этой заявки нет личного кабинета клиента — писать некуда',
         { details: { requestId: request.id } },
       );
     }
@@ -461,7 +511,7 @@ export class DispatchChatsService {
     if (!granted) {
       throw new SysError(
         'CHAT_TARGET_UNREACHABLE',
-        `This account has no ${role} role, so it cannot hold a ${role} dialogue`,
+        'У этого аккаунта нет нужной роли, диалог в этой ветке невозможен',
         { details: { ...details, accountId } },
       );
     }
@@ -485,10 +535,10 @@ export class DispatchChatsService {
    * Attaches each episode's messages and unread count in two queries rather than two per
    * row.
    *
-   * The window is "everything said up to where this episode ended": a live chat shows the
-   * dialogue's whole history, including what was said to the assistant before the handover
-   * -- that context is the point of handing over at all -- and a closed one stops at
-   * `endSeq`.
+   * Every row shows the dialogue's whole history. Finishing a handover hands the same
+   * chat back to the assistant; later messages stay on this row rather than starting
+   * another one. Unread counts only the other person's messages that arrived after the
+   * episode started and after the dispatcher last looked -- earlier history is context.
    */
   private async hydrate(
     handoffs: Array<AiHandoff & { conversation: AiConversation }>,
@@ -511,19 +561,17 @@ export class DispatchChatsService {
     }
     return handoffs.map(({ conversation, ...handoff }) => {
       const all = byConversation.get(handoff.conversationId) ?? [];
-      const endSeq = handoff.endSeq;
-      const within = endSeq === null ? all : all.filter((m) => m.seq <= endSeq);
+      const readFloor = Math.max(handoff.dispatcherLastReadSeq, handoff.startSeq);
       return {
         handoff,
         conversation,
-        messages: within,
-        // A finished chat never badges: there is nothing left for the dispatcher to do
-        // about it, whatever the cursor happens to say.
+        messages: all,
+        // A finished chat never badges: the assistant holds it, and only a live handover
+        // is the dispatcher's to answer. History from before this episode is not unread.
         unreadCount:
           handoff.state === 'closed'
             ? 0
-            : within.filter((m) => m.author === 'user' && m.seq > handoff.dispatcherLastReadSeq)
-                .length,
+            : all.filter((m) => m.author === 'user' && m.seq > readFloor).length,
       };
     });
   }

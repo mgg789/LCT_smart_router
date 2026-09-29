@@ -1,3 +1,5 @@
+import { configuredTimeZone, zonedWallUnix } from '../../common/time/zone';
+
 const STALE_AFTER_SEC = 45 * 24 * 60 * 60;
 
 /** True only after the agreed 45 full days have elapsed. */
@@ -8,7 +10,7 @@ export function isStale(updatedAt: number, now: number): boolean {
 /** Moscow civil month rendered independently of the host time zone. */
 export function moscowMonth(now: number): string {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Europe/Moscow',
+    timeZone: configuredTimeZone(),
     year: 'numeric',
     month: '2-digit',
   }).formatToParts(new Date(now * 1000));
@@ -18,15 +20,15 @@ export function moscowMonth(now: number): string {
 /** Half-open Unix range for the Moscow civil month containing `now`. */
 export function moscowMonthBounds(now: number): readonly [number, number] {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Europe/Moscow',
+    timeZone: configuredTimeZone(),
     year: 'numeric',
     month: 'numeric',
   }).formatToParts(new Date(now * 1000));
   const year = Number(parts.find((part) => part.type === 'year')?.value);
   const month = Number(parts.find((part) => part.type === 'month')?.value);
-  const start = Date.parse(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+03:00`) / 1000;
+  const start = zonedWallUnix(`${year}-${String(month).padStart(2, '0')}-01T00:00:00`);
   const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, '0')}`;
-  return [start, Date.parse(`${next}-01T00:00:00+03:00`) / 1000];
+  return [start, zonedWallUnix(`${next}-01T00:00:00`)];
 }
 
 /** Builds a building identity from provider address components. POI names and flat-like

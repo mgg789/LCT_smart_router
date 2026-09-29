@@ -42,6 +42,7 @@ export const createEngineerSchema = operationEnvelopeSchema.extend({
   region: z.string().max(120).nullish(),
   homeLat: latitude.nullish(),
   homeLon: longitude.nullish(),
+  shiftPattern: z.enum(['two_two', 'five_two']).default('two_two'),
 });
 export type CreateEngineerDto = z.infer<typeof createEngineerSchema>;
 
@@ -83,6 +84,7 @@ export const updateEngineerSchema = operationEnvelopeSchema.extend({
   region: z.string().max(120).nullish(),
   homeLat: latitude.nullish(),
   homeLon: longitude.nullish(),
+  shiftPattern: z.enum(['two_two', 'five_two']).optional(),
 });
 export type UpdateEngineerDto = z.infer<typeof updateEngineerSchema>;
 

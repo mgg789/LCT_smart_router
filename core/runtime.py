@@ -6,13 +6,14 @@ import os
 import threading
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from pydantic import ValidationError
 
+from core.catalog_cache import configured_catalog_cache
 from core.contracts import (
     Diagnostic,
     Plan,
@@ -35,6 +36,7 @@ from core.engine import (
 )
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
+from core.hybrid import HybridVerificationError, hybrid_enabled, hybrid_plan
 from core.osrm import OSRMTravel
 from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
@@ -45,6 +47,7 @@ from core.predict_calibration import (
     factory_calibration,
 )
 from core.roadimport import ImportedRoadOverlay
+from core.route3 import route3_from_env
 from core.route_search import RouteEvaluator, improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
@@ -269,10 +272,27 @@ def calculate(
             learned_weather=learned_weather,
             learned_weather_enabled=learned_weather_enabled,
         )
-        output = solve(snapshot, provider, settings, memory, context_version)
+        verification = None
+        if hybrid_enabled():
+            # Publication requires verified geometry and costs at each chosen
+            # departure. A failed or exhausted verification rejects the result.
+            run = hybrid_plan(
+                snapshot,
+                provider,
+                settings,
+                memory,
+                context_version,
+                client=route3_from_env(),
+            )
+            output = run.output
+            evidence_provider = run.provider
+            verification = run.verification
+        else:
+            output = solve(snapshot, provider, settings, memory, context_version)
+            evidence_provider = provider
         effective_snapshot = output.memory.snapshot
-        main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
-        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, provider)
+        main_evidence = build_plan_evidence(effective_snapshot, output.main, evidence_provider)
+        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, evidence_provider)
     except Exception as exc:
         return RouterResult(
             status="error",
@@ -283,7 +303,13 @@ def calculate(
             router_context_version=context_version,
             policy_id=snapshot.policy.policy_id,
             technical_settings=settings.technical(),
-            errors=[Diagnostic(code="CALCULATION_FAILED", message=type(exc).__name__)],
+            errors=[Diagnostic(
+                code=exc.code if isinstance(exc, HybridVerificationError) else "CALCULATION_FAILED",
+                message=(
+                    "Route verification did not complete; no new plan was produced."
+                    if isinstance(exc, HybridVerificationError) else type(exc).__name__
+                ),
+            )],
         ), None
     result = RouterResult(
         status="ready",
@@ -301,8 +327,16 @@ def calculate(
         baseline=output.baseline,
         main_evidence=main_evidence,
         baseline_evidence=baseline_evidence,
+        verification=verification,
     )
     return result, output
+
+
+def _job_end_at(plan: Plan) -> list[int]:
+    """Completion instants of assigned jobs, earliest first."""
+    return sorted(
+        stop.end_at for route in plan.routes for stop in route.stops if stop.kind == "job"
+    )
 
 
 def calculate_policy_catalog(
@@ -311,7 +345,7 @@ def calculate_policy_catalog(
     graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 8000,
+    search_budget_ms: int = 6000,
     *,
     offline: bool = False,
 ) -> tuple[PolicyComparison, dict[str, Plan]]:
@@ -325,7 +359,7 @@ def calculate_policy_catalog(
     once per policy. The selected plan for each strategy is returned with the
     summary. Nothing here is published.
     """
-    if not 1 <= search_budget_ms <= 8000:
+    if not 1 <= search_budget_ms <= 120_000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
     provider = planning_travel(graph, settings, snapshot, offline=offline)
@@ -432,6 +466,10 @@ def calculate_policy_catalog(
     )
     rows.append(baseline_row)
     selected["covering"] = covering.main
+    rows = [
+        row.model_copy(update={"job_end_at": _job_end_at(selected[row.strategy_id])})
+        for row in rows
+    ]
     comparison = PolicyComparison(
         input_publication_id=publication_id,
         input_hash=content_hash(raw),
@@ -449,7 +487,7 @@ def calculate_policy_comparison(
     graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 8000,
+    search_budget_ms: int = 6000,
     *,
     offline: bool = False,
 ) -> PolicyComparison:
@@ -517,6 +555,9 @@ class RouterRuntime:
                 fixed_travel_time_sec=saved.fixed_travel_time_sec,
                 early_finish_replan_threshold_sec=saved.early_finish_replan_threshold_sec,
                 task_overrun_tolerance_sec=saved.task_overrun_tolerance_sec,
+                time_limit_ms=saved.solve_time_limit_ms,
+                verify_time_limit_ms=saved.verify_time_limit_ms,
+                comparison_time_limit_ms=saved.comparison_time_limit_ms,
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
@@ -541,6 +582,7 @@ class RouterRuntime:
         self._comparison_cache: dict[tuple[str, str], PolicyComparison] = {}
         self._comparison_plans: dict[tuple[str, str], dict[str, Plan]] = {}
         self._comparison_lock = threading.Lock()
+        self._catalog_cache = configured_catalog_cache()
         self._sim_lock = threading.Lock()
         self._simulation_cache: dict[tuple[str, str, str], dict] = {}
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
@@ -803,7 +845,7 @@ class RouterRuntime:
             return self._compare_policies(search_budget_ms)
 
     def _compare_policies(self, search_budget_ms: int | None) -> PolicyComparison:
-        if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
+        if search_budget_ms is not None and not 1 <= search_budget_ms <= 120_000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:
             publication = self.reader.read()
@@ -837,18 +879,27 @@ class RouterRuntime:
             key = (digest, context_version)
             graph = copy.deepcopy(self._graph)
             settings = copy.deepcopy(self.settings)
-            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 8000)
+            effective_budget_ms = search_budget_ms or settings.resolved_comparison_ms()
             cached = self._comparison_cache.get(key)
-            if cached is not None and cached.search_budget_ms == effective_budget_ms:
+            if (cached is not None and cached.search_budget_ms == effective_budget_ms
+                    and cached.input_publication_id == publication.publication_id):
                 return cached.model_copy(deep=True)
-        comparison, plans = calculate_policy_catalog(
-            publication.payload,
-            publication.publication_id,
-            graph,
-            settings,
-            context_version,
-            effective_budget_ms,
-        )
+        # A persisted cache must also reject changed graph bytes whose metadata label
+        # was accidentally left unchanged. No extra graph serialization in beta-off mode.
+        cache_scope = ""
+        if self._catalog_cache:
+            resource_hash = content_hash(graph.model_dump_json().encode()) if isinstance(graph, RoadGraph) else graph.version
+            cache_scope = content_hash(json.dumps([resource_hash, asdict(settings)], sort_keys=True).encode())
+        external = self._catalog_cache.get(publication.publication_id, digest, context_version, effective_budget_ms, cache_scope) if self._catalog_cache else None
+        if external is None:
+            comparison, plans = calculate_policy_catalog(
+                publication.payload, publication.publication_id, graph, settings,
+                context_version, effective_budget_ms,
+            )
+        else:
+            comparison, plans = external
+        if self._catalog_cache and external is None:
+            self._catalog_cache.put(comparison, plans, cache_scope)
         try:
             latest = self.reader.read()
         except Exception as exc:
@@ -877,7 +928,12 @@ class RouterRuntime:
             self._comparison_plans.clear()
             self._comparison_cache[key] = comparison
             self._comparison_plans[key] = plans
-            return comparison.model_copy(deep=True)
+        return comparison.model_copy(deep=True)
+
+    def catalog_cache_stats(self) -> dict:
+        """Expose beta cache counters for local verification, without credentials or task data."""
+        return {"enabled": self._catalog_cache is not None,
+                **(dict(self._catalog_cache.stats) if self._catalog_cache else {})}
 
     def simulate(self, patch: dict) -> dict:
         """What-if on a byte copy of the ready publication. Does not write the active plan.
@@ -1111,6 +1167,9 @@ class RouterRuntime:
                 fixed_travel_time_sec=requested.fixed_travel_time_sec,
                 early_finish_replan_threshold_sec=requested.early_finish_replan_threshold_sec,
                 task_overrun_tolerance_sec=requested.task_overrun_tolerance_sec,
+                time_limit_ms=requested.solve_time_limit_ms,
+                verify_time_limit_ms=requested.verify_time_limit_ms,
+                comparison_time_limit_ms=requested.comparison_time_limit_ms,
             )
             previous_settings = self.settings
             self.settings = updated_settings
@@ -1311,3 +1370,5 @@ class RouterRuntime:
         if self._thread:
             self._thread.join()
         self._executor.shutdown(wait=True, cancel_futures=True)
+        if self._catalog_cache:
+            self._catalog_cache.close()

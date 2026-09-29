@@ -1,0 +1,1467 @@
+{
+  "schema_version": "1.0",
+  "version": "official-southeast-extra-days-geocodes-locationiq-2026-09-29",
+  "source": "LocationIQ (Nominatim/OpenStreetMap) forward geocoding of the organizer extra-days address catalogue (28–29.09.2026), cached offline 2026-09-29.",
+  "entries": [
+    {
+      "address": "Город Москва, ул.Лебедянская, д. 32",
+      "node_id": "southeast-extra-000",
+      "location": {
+        "lat": 55.5846864,
+        "lon": 37.693634
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.6-я Радиальная, д. 7/1 к 1",
+      "node_id": "southeast-extra-001",
+      "location": {
+        "lat": 55.6037747,
+        "lon": 37.6510228
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Севанская, д. 4",
+      "node_id": "southeast-extra-002",
+      "location": {
+        "lat": 55.6207162,
+        "lon": 37.665047
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 8",
+      "node_id": "southeast-extra-003",
+      "location": {
+        "lat": 55.5997037,
+        "lon": 37.6696113
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Кантемировская, д. 4 к 1",
+      "node_id": "southeast-extra-004",
+      "location": {
+        "lat": 55.6376495,
+        "lon": 37.6787153
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Загорьевская, д. 16 к 2",
+      "node_id": "southeast-extra-005",
+      "location": {
+        "lat": 55.5803617,
+        "lon": 37.6839038
+      },
+      "match_level": "highway:construction",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Севанская, д. 8",
+      "node_id": "southeast-extra-006",
+      "location": {
+        "lat": 55.6222486,
+        "lon": 37.661676
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Севанская, д. 9 к 3",
+      "node_id": "southeast-extra-007",
+      "location": {
+        "lat": 55.6199086,
+        "lon": 37.6604005
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Тамбовская, д. 3/13",
+      "node_id": "southeast-extra-008",
+      "location": {
+        "lat": 55.6046465,
+        "lon": 37.7475939
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Загорьевский, д. 3 к 3",
+      "node_id": "southeast-extra-009",
+      "location": {
+        "lat": 55.5760848,
+        "lon": 37.6654126
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Борисовский, д. 26",
+      "node_id": "southeast-extra-010",
+      "location": {
+        "lat": 55.6226964,
+        "lon": 37.7266853
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Воронежская, д. 52 к 1",
+      "node_id": "southeast-extra-011",
+      "location": {
+        "lat": 55.6111826,
+        "lon": 37.7577527
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.6-я Радиальная, д. 3 к 2",
+      "node_id": "southeast-extra-012",
+      "location": {
+        "lat": 55.6056424,
+        "lon": 37.664986
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Вахрушева, д. 18 к 2",
+      "node_id": "southeast-extra-013",
+      "location": {
+        "lat": 54.8382265,
+        "lon": 38.2420058
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Ясеневая, д. 27/25",
+      "node_id": "southeast-extra-014",
+      "location": {
+        "lat": 55.6047558,
+        "lon": 37.7360256
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Елецкая, д. 18",
+      "node_id": "southeast-extra-015",
+      "location": {
+        "lat": 55.6065962,
+        "lon": 37.7327907
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Чкалова, д. 2",
+      "node_id": "southeast-extra-016",
+      "location": {
+        "lat": 55.416402,
+        "lon": 37.838066
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Корнеева, д. 36",
+      "node_id": "southeast-extra-017",
+      "location": {
+        "lat": 55.4280187,
+        "lon": 37.7760954
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.6-я Радиальная, д. 7/6 к 3",
+      "node_id": "southeast-extra-018",
+      "location": {
+        "lat": 55.6037401,
+        "lon": 37.6556238
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Талалихина, д. 10",
+      "node_id": "southeast-extra-019",
+      "location": {
+        "lat": 55.4221898,
+        "lon": 37.7683183
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Гагарина, д. 55/1",
+      "node_id": "southeast-extra-020",
+      "location": {
+        "lat": 55.4512022,
+        "lon": 37.7488993
+      },
+      "match_level": "highway:tertiary",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медиков, д. 12",
+      "node_id": "southeast-extra-021",
+      "location": {
+        "lat": 55.6334628,
+        "lon": 37.6764912
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Москворечье, д. 4 к 5",
+      "node_id": "southeast-extra-022",
+      "location": {
+        "lat": 55.6438785,
+        "lon": 37.6513198
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 16 к 5",
+      "node_id": "southeast-extra-023",
+      "location": {
+        "lat": 55.632893,
+        "lon": 37.7489504
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Паромная, д. 7 к 3",
+      "node_id": "southeast-extra-024",
+      "location": {
+        "lat": 55.6381819,
+        "lon": 37.7649397
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Шипиловская, д. 5 к 1",
+      "node_id": "southeast-extra-025",
+      "location": {
+        "lat": 55.618111,
+        "lon": 37.701092
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Ленина, д. 7 к 2",
+      "node_id": "southeast-extra-026",
+      "location": {
+        "lat": 54.8411127,
+        "lon": 38.1934122
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Маршала Захарова, д. 23",
+      "node_id": "southeast-extra-027",
+      "location": {
+        "lat": 55.6195406,
+        "lon": 37.6983643
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Борисовский, д. 46 к 1",
+      "node_id": "southeast-extra-028",
+      "location": {
+        "lat": 55.6145185,
+        "lon": 37.7285289
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ш.Каширское, д. 80 к 2",
+      "node_id": "southeast-extra-029",
+      "location": {
+        "lat": 55.6249874,
+        "lon": 37.7056437
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, б-р.Ореховый, д. 22",
+      "node_id": "southeast-extra-030",
+      "location": {
+        "lat": 55.6121972,
+        "lon": 37.7363658
+      },
+      "match_level": "building:college",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Мусы Джалиля, д. 44/45",
+      "node_id": "southeast-extra-031",
+      "location": {
+        "lat": 55.6151352,
+        "lon": 37.7431721
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медынская, д. 14 к 1",
+      "node_id": "southeast-extra-032",
+      "location": {
+        "lat": 55.5831048,
+        "lon": 37.6467692
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медынская, д. 4 к 1",
+      "node_id": "southeast-extra-033",
+      "location": {
+        "lat": 55.5925093,
+        "lon": 37.645746
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Борисовский, д. 1 к 2",
+      "node_id": "southeast-extra-034",
+      "location": {
+        "lat": 55.6257207,
+        "lon": 37.7125865
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Елецкая, д. 9 к 3",
+      "node_id": "southeast-extra-035",
+      "location": {
+        "lat": 55.6084374,
+        "lon": 37.7354601
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Кантемировская, д. 16 к 1А",
+      "node_id": "southeast-extra-036",
+      "location": {
+        "lat": 55.638508,
+        "lon": 37.6649743
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бакинская, д. 16",
+      "node_id": "southeast-extra-037",
+      "location": {
+        "lat": 55.6235576,
+        "lon": 37.6564577
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Ленина, д. 15 к 4",
+      "node_id": "southeast-extra-038",
+      "location": {
+        "lat": 54.8446188,
+        "lon": 38.1901831
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Корнеева, д. 40Б",
+      "node_id": "southeast-extra-039",
+      "location": {
+        "lat": 55.4247483,
+        "lon": 37.7762643
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Харьковская, д. 3 к 3",
+      "node_id": "southeast-extra-040",
+      "location": {
+        "lat": 55.5850856,
+        "lon": 37.6490801
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Воронежская, д. 28 к 1",
+      "node_id": "southeast-extra-041",
+      "location": {
+        "lat": 55.6103865,
+        "lon": 37.737357
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Домодедовская, д. 24 к 1",
+      "node_id": "southeast-extra-042",
+      "location": {
+        "lat": 55.6067942,
+        "lon": 37.7103107
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Воронежская, д. 48 к 1",
+      "node_id": "southeast-extra-043",
+      "location": {
+        "lat": 55.6106963,
+        "lon": 37.7555187
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Генерала Белова, д. 28 к 2",
+      "node_id": "southeast-extra-044",
+      "location": {
+        "lat": 55.6040295,
+        "lon": 37.7241272
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Жуковского, д. 1",
+      "node_id": "southeast-extra-045",
+      "location": {
+        "lat": 55.4126135,
+        "lon": 37.8332338
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, пл.Гагарина, д. 6",
+      "node_id": "southeast-extra-046",
+      "location": {
+        "lat": 55.4140581,
+        "lon": 37.8364325
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Ильюшина, д. 5/12",
+      "node_id": "southeast-extra-047",
+      "location": {
+        "lat": 55.4166328,
+        "lon": 37.8412495
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Жуковского, д. 11",
+      "node_id": "southeast-extra-048",
+      "location": {
+        "lat": 55.4131236,
+        "lon": 37.8362523
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Речная, д. 12",
+      "node_id": "southeast-extra-049",
+      "location": {
+        "lat": 55.4490724,
+        "lon": 37.7420296
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 36/20",
+      "node_id": "southeast-extra-050",
+      "location": {
+        "lat": 55.5851305,
+        "lon": 37.6775747
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 14 к 1",
+      "node_id": "southeast-extra-051",
+      "location": {
+        "lat": 55.5970001,
+        "lon": 37.6703129
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 12 к 2",
+      "node_id": "southeast-extra-052",
+      "location": {
+        "lat": 55.5979189,
+        "lon": 37.6675525
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Каширское шоссе, д. 91 к 1",
+      "node_id": "southeast-extra-053",
+      "location": {
+        "lat": 55.4275038,
+        "lon": 37.7741755
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, проезд.Подольский, д. 8",
+      "node_id": "southeast-extra-054",
+      "location": {
+        "lat": 55.4334677,
+        "lon": 37.7615553
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, пр-кт.Пролетарский, д. 27",
+      "node_id": "southeast-extra-055",
+      "location": {
+        "lat": 55.6358613,
+        "lon": 37.6576607
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, пр-кт.Пролетарский, д. 21/24",
+      "node_id": "southeast-extra-056",
+      "location": {
+        "lat": 55.6398111,
+        "lon": 37.6562456
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Алма-Атинская, д. 10 к 1",
+      "node_id": "southeast-extra-057",
+      "location": {
+        "lat": 55.6388899,
+        "lon": 37.76743
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 6 к 1",
+      "node_id": "southeast-extra-058",
+      "location": {
+        "lat": 55.6328298,
+        "lon": 37.7349137
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Братеевская, д. 35 к 3",
+      "node_id": "southeast-extra-059",
+      "location": {
+        "lat": 55.6376841,
+        "lon": 37.7704608
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ш.Каширское, д. 90 к 3",
+      "node_id": "southeast-extra-060",
+      "location": {
+        "lat": 55.6174905,
+        "lon": 37.7104534
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, б-р.Ореховый, д. 10 к 1",
+      "node_id": "southeast-extra-061",
+      "location": {
+        "lat": 55.6082291,
+        "lon": 37.7071913
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Ясеневая, д. 10 к 2",
+      "node_id": "southeast-extra-062",
+      "location": {
+        "lat": 55.5987875,
+        "lon": 37.7202992
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ш.Каширское, д. 142 к 2",
+      "node_id": "southeast-extra-063",
+      "location": {
+        "lat": 55.5974087,
+        "lon": 37.7208873
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ш.Каширское, д. 128 к 2",
+      "node_id": "southeast-extra-064",
+      "location": {
+        "lat": 55.6030023,
+        "lon": 37.7177445
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Мусы Джалиля, д. 38 к 2",
+      "node_id": "southeast-extra-065",
+      "location": {
+        "lat": 55.616975,
+        "lon": 37.7407383
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Домодедовская, д. 27",
+      "node_id": "southeast-extra-066",
+      "location": {
+        "lat": 55.604713,
+        "lon": 37.7158246
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Мусы Джалиля, д. 26 к 1",
+      "node_id": "southeast-extra-067",
+      "location": {
+        "lat": 55.6208522,
+        "lon": 37.7422236
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Булатниковская, д. 4 к 2",
+      "node_id": "southeast-extra-068",
+      "location": {
+        "lat": 55.580743,
+        "lon": 37.6465652
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медынская, д. 11",
+      "node_id": "southeast-extra-069",
+      "location": {
+        "lat": 55.5820299,
+        "lon": 37.6496647
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медынская, д. 8 к 2",
+      "node_id": "southeast-extra-070",
+      "location": {
+        "lat": 55.5897907,
+        "lon": 37.6441769
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Востряковский, д. 11 к 1",
+      "node_id": "southeast-extra-071",
+      "location": {
+        "lat": 55.5796836,
+        "lon": 37.6459383
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Харьковская, д. 4 к 2",
+      "node_id": "southeast-extra-072",
+      "location": {
+        "lat": 55.5875108,
+        "lon": 37.6504239
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Домодедовская, д. 34 к 1",
+      "node_id": "southeast-extra-073",
+      "location": {
+        "lat": 55.6037687,
+        "lon": 37.7131539
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Кржижановского, д. 1 к 3",
+      "node_id": "southeast-extra-074",
+      "location": {
+        "lat": 54.8432863,
+        "lon": 38.2390142
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Ступино, пр-кт.Победы, д. 14",
+      "node_id": "southeast-extra-075",
+      "location": {
+        "lat": 54.8846403,
+        "lon": 38.0783463
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бакинская, д. 2",
+      "node_id": "southeast-extra-076",
+      "location": {
+        "lat": 55.6188311,
+        "lon": 37.6604386
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Кантемировская, д. 39",
+      "node_id": "southeast-extra-077",
+      "location": {
+        "lat": 55.6373908,
+        "lon": 37.6613392
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Москва Каширское ш. д. 134",
+      "node_id": "southeast-extra-078",
+      "location": {
+        "lat": 55.6003331,
+        "lon": 37.721488
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Москва Шипиловский пр-зд. д. 63к1",
+      "node_id": "southeast-extra-079",
+      "location": {
+        "lat": 55.6014848,
+        "lon": 37.7104874
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, ул.Братеевская, д. 23к1",
+      "node_id": "southeast-extra-080",
+      "location": {
+        "lat": 55.6334049,
+        "lon": 37.7552626
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, ш.Каширское, д. 84к1",
+      "node_id": "southeast-extra-081",
+      "location": {
+        "lat": 55.6227758,
+        "lon": 37.7098332
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "МО, г. Кашира Ленина ул. д. 9",
+      "node_id": "southeast-extra-082",
+      "location": {
+        "lat": 54.8426304,
+        "lon": 38.1937228
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Королева, д. 7 к 1",
+      "node_id": "southeast-extra-083",
+      "location": {
+        "lat": 55.4189513,
+        "lon": 37.8332281
+      },
+      "match_level": "office:property_management",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ш.Каширское, д. 84 к 1",
+      "node_id": "southeast-extra-084",
+      "location": {
+        "lat": 55.6227758,
+        "lon": 37.7098332
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, пр-кт.Туполева, д. 6А",
+      "node_id": "southeast-extra-085",
+      "location": {
+        "lat": 55.4162086,
+        "lon": 37.8308258
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бирюлёвская, д. 24 к 2",
+      "node_id": "southeast-extra-086",
+      "location": {
+        "lat": 55.5958524,
+        "lon": 37.6616509
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бирюлёвская, д. 26",
+      "node_id": "southeast-extra-087",
+      "location": {
+        "lat": 55.5941373,
+        "lon": 37.6622661
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, проезд.Советский 1-й, д. 5",
+      "node_id": "southeast-extra-088",
+      "location": {
+        "lat": 55.442441,
+        "lon": 37.7698548
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, проезд.Кутузовский, д. 15",
+      "node_id": "southeast-extra-089",
+      "location": {
+        "lat": 55.4359577,
+        "lon": 37.763482
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бирюлёвская, д. 13 к 3",
+      "node_id": "southeast-extra-090",
+      "location": {
+        "lat": 55.5970773,
+        "lon": 37.6686175
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бирюлёвская, д. 49 к 4",
+      "node_id": "southeast-extra-091",
+      "location": {
+        "lat": 55.5834917,
+        "lon": 37.6749594
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Севанская, д. 11",
+      "node_id": "southeast-extra-092",
+      "location": {
+        "lat": 55.6218648,
+        "lon": 37.6589462
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бирюлёвская, д. 56",
+      "node_id": "southeast-extra-093",
+      "location": {
+        "lat": 55.5828866,
+        "lon": 37.6686929
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Вахрушева, д. 16 к 3",
+      "node_id": "southeast-extra-094",
+      "location": {
+        "lat": 54.8390345,
+        "lon": 38.2422874
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Ступино, пер.Приокский, д. 9",
+      "node_id": "southeast-extra-095",
+      "location": {
+        "lat": 54.8809752,
+        "lon": 38.0539981
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Центральная, д. 2",
+      "node_id": "southeast-extra-096",
+      "location": {
+        "lat": 54.8430671,
+        "lon": 38.2448407
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Борисовский, д. 11 к 1",
+      "node_id": "southeast-extra-097",
+      "location": {
+        "lat": 55.6266822,
+        "lon": 37.7213003
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медиков, д. 6",
+      "node_id": "southeast-extra-098",
+      "location": {
+        "lat": 55.6331783,
+        "lon": 37.673727
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, б-р.Кавказский, д. 15",
+      "node_id": "southeast-extra-099",
+      "location": {
+        "lat": 55.6323824,
+        "lon": 37.6689258
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, б-р.Кавказский, д. 29 к 3",
+      "node_id": "southeast-extra-100",
+      "location": {
+        "lat": 55.6271892,
+        "lon": 37.6670748
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Братеевская, д. 23 к 1",
+      "node_id": "southeast-extra-101",
+      "location": {
+        "lat": 55.6334049,
+        "lon": 37.7552626
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 20 к 2",
+      "node_id": "southeast-extra-102",
+      "location": {
+        "lat": 55.6373622,
+        "lon": 37.7534387
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Кустанайская, д. 5 к 2",
+      "node_id": "southeast-extra-103",
+      "location": {
+        "lat": 55.6189801,
+        "lon": 37.7557113
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Генерала Белова, д. 7 к 1",
+      "node_id": "southeast-extra-104",
+      "location": {
+        "lat": 55.6228108,
+        "lon": 37.7174365
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Шипиловская, д. 48 к 1",
+      "node_id": "southeast-extra-105",
+      "location": {
+        "lat": 55.6213208,
+        "lon": 37.7358554
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Харьковский, д. 1 к 1",
+      "node_id": "southeast-extra-106",
+      "location": {
+        "lat": 55.5969822,
+        "lon": 37.6489827
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Булатниковская, д. 7 к 2",
+      "node_id": "southeast-extra-107",
+      "location": {
+        "lat": 55.579772,
+        "lon": 37.651764
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Паромная, д. 11/31",
+      "node_id": "southeast-extra-108",
+      "location": {
+        "lat": 55.6357294,
+        "lon": 37.7639586
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 10 к 1",
+      "node_id": "southeast-extra-109",
+      "location": {
+        "lat": 55.5984424,
+        "lon": 37.6700112
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медынская, д. 2 к 1",
+      "node_id": "southeast-extra-110",
+      "location": {
+        "lat": 55.5919974,
+        "lon": 37.6490481
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Мусы Джалиля, д. 9 к 5",
+      "node_id": "southeast-extra-111",
+      "location": {
+        "lat": 55.6273314,
+        "lon": 37.7491694
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Ясеневая, д. 28",
+      "node_id": "southeast-extra-112",
+      "location": {
+        "lat": 55.6034561,
+        "lon": 37.7387577
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Рабочая, д. 49",
+      "node_id": "southeast-extra-113",
+      "location": {
+        "lat": 55.4249904,
+        "lon": 37.7652197
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.6-я Радиальная, д. 7/6 к 2",
+      "node_id": "southeast-extra-114",
+      "location": {
+        "lat": 55.6037401,
+        "lon": 37.6556238
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Королева, д. 6",
+      "node_id": "southeast-extra-115",
+      "location": {
+        "lat": 55.4183142,
+        "lon": 37.8322697
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Лебедянская, д. 24 к 1",
+      "node_id": "southeast-extra-116",
+      "location": {
+        "lat": 55.5846766,
+        "lon": 37.6883727
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, пр-кт.Туполева, д. 20",
+      "node_id": "southeast-extra-117",
+      "location": {
+        "lat": 55.4112787,
+        "lon": 37.8283703
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Воронежская, д. 38/43",
+      "node_id": "southeast-extra-118",
+      "location": {
+        "lat": 55.6095967,
+        "lon": 37.743645
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Бакинская, д. 20",
+      "node_id": "southeast-extra-119",
+      "location": {
+        "lat": 55.6222707,
+        "lon": 37.6564266
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Борисовский, д. 11 к 2",
+      "node_id": "southeast-extra-120",
+      "location": {
+        "lat": 55.6273087,
+        "lon": 37.7202746
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, проезд.Гурьевский, д. 15 к 2",
+      "node_id": "southeast-extra-121",
+      "location": {
+        "lat": 55.6063226,
+        "lon": 37.7463355
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медиков, д. 10",
+      "node_id": "southeast-extra-122",
+      "location": {
+        "lat": 55.6330563,
+        "lon": 37.6753376
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, пр-кт.Туполева, д. 3/1",
+      "node_id": "southeast-extra-123",
+      "location": {
+        "lat": 55.4146793,
+        "lon": 37.834614
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Ильюшина, д. 10 к 1",
+      "node_id": "southeast-extra-124",
+      "location": {
+        "lat": 55.4152614,
+        "lon": 37.8407678
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Касимовская, д. 17",
+      "node_id": "southeast-extra-125",
+      "location": {
+        "lat": 55.596476,
+        "lon": 37.6562384
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, проезд.Кутузовский, д. 11",
+      "node_id": "southeast-extra-126",
+      "location": {
+        "lat": 55.4360258,
+        "lon": 37.7651082
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Ступино, ул.Бахарева, д. 4",
+      "node_id": "southeast-extra-127",
+      "location": {
+        "lat": 54.8821827,
+        "lon": 38.0613
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Кашира, ул.Гвардейская, д. 4/2",
+      "node_id": "southeast-extra-128",
+      "location": {
+        "lat": 54.8407926,
+        "lon": 38.2536896
+      },
+      "match_level": "highway:tertiary",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Медиков, д. 1/1 к 1",
+      "node_id": "southeast-extra-129",
+      "location": {
+        "lat": 55.635043,
+        "lon": 37.6742537
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Кантемировская, д. 14 к 2",
+      "node_id": "southeast-extra-130",
+      "location": {
+        "lat": 55.6388759,
+        "lon": 37.668839
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 8 к 3",
+      "node_id": "southeast-extra-131",
+      "location": {
+        "lat": 55.6332021,
+        "lon": 37.738232
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 46 к 2",
+      "node_id": "southeast-extra-132",
+      "location": {
+        "lat": 55.6417227,
+        "lon": 37.7731089
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Борисовские Пруды, д. 10 к 4",
+      "node_id": "southeast-extra-133",
+      "location": {
+        "lat": 55.6337221,
+        "lon": 37.7392102
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Мусы Джалиля, д. 42 к 1",
+      "node_id": "southeast-extra-134",
+      "location": {
+        "lat": 55.6156024,
+        "lon": 37.7419967
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Липецкая, д. 7 к 1",
+      "node_id": "southeast-extra-135",
+      "location": {
+        "lat": 55.5825093,
+        "lon": 37.6827721
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, б-р.Ореховый, д. 21 к 1",
+      "node_id": "southeast-extra-136",
+      "location": {
+        "lat": 55.6124936,
+        "lon": 37.7243318
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Город Москва, ул.Булатниковская, д. 5 к 1",
+      "node_id": "southeast-extra-137",
+      "location": {
+        "lat": 55.5793371,
+        "lon": 37.6540886
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Домодедово, ул.Гагарина, д. 60/14",
+      "node_id": "southeast-extra-138",
+      "location": {
+        "lat": 55.4493789,
+        "lon": 37.7361499
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, проезд.Шипиловский, д. 59к2",
+      "node_id": "southeast-extra-139",
+      "location": {
+        "lat": 55.6060564,
+        "lon": 37.7067109
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, ул.Генерала Белова, д. 49к2",
+      "node_id": "southeast-extra-140",
+      "location": {
+        "lat": 55.6061958,
+        "lon": 37.728357
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "обл.Московская область, г.Домодедово, мкр..Западный, ул.Талалихина, д. 10",
+      "node_id": "southeast-extra-141",
+      "location": {
+        "lat": 55.4221898,
+        "lon": 37.7683183
+      },
+      "match_level": "building:yes",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "Москва Радиальная 6-я ул. д. 5к2",
+      "node_id": "southeast-extra-142",
+      "location": {
+        "lat": 55.6047306,
+        "lon": 37.6585996
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, проезд.Ореховый, д. 45к1",
+      "node_id": "southeast-extra-143",
+      "location": {
+        "lat": 55.6150152,
+        "lon": 37.7316513
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, б-р.Ореховый, д. 67к1",
+      "node_id": "southeast-extra-144",
+      "location": {
+        "lat": 55.6184413,
+        "lon": 37.76058
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    },
+    {
+      "address": "г.Город Москва, б-р.Ореховый, д. 51",
+      "node_id": "southeast-extra-145",
+      "location": {
+        "lat": 55.6164596,
+        "lon": 37.7493332
+      },
+      "match_level": "building:apartments",
+      "source": "LocationIQ (Nominatim/OpenStreetMap)"
+    }
+  ]
+}

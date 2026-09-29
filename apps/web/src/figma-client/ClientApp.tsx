@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { DeskShell } from '../figma-engineer/DeskShell';
@@ -10,13 +10,13 @@ import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
-import { ClientAiPane } from './ClientAiPane';
 import { ClientEmailGate } from './ClientEmailGate';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
 import { ClientRequestDetail } from './ClientRequestDetail';
 import { ClientRequests } from './ClientRequests';
 import { ClientSent } from './ClientSent';
+import { ClientSupport } from './ClientSupport';
 import {
   clientCardFromApi,
   createSubmittedClientRequest,
@@ -64,6 +64,22 @@ export function ClientApp() {
   const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
+  const [chatUnread, setChatUnread] = useState(false);
+  const chatSeen = useRef(0);
+  const chatPrimed = useRef(false);
+  const onChatInbox = useCallback((report: { seq: number; preview: string; active: boolean }) => {
+    if (!chatPrimed.current) {
+      chatPrimed.current = true;
+      chatSeen.current = report.seq;
+      return;
+    }
+    if (report.active) {
+      chatSeen.current = Math.max(chatSeen.current, report.seq);
+      setChatUnread(false);
+      return;
+    }
+    if (report.seq > chatSeen.current) setChatUnread(true);
+  }, []);
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
   const [requests, setRequests] = useState<ClientRequestView[]>([]);
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -74,6 +90,9 @@ export function ClientApp() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<ClientRequestView | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  /** Business clock minus this device's wall clock; see `refreshHistory`. */
+  const [clockSkewMs, setClockSkewMs] = useState(0);
+  const businessNowMs = nowMs + clockSkewMs;
   const opened = requests.find((item) => item.id === openedId) ?? null;
 
   // Declared before the effects that reference it, and memoised: it sits in their
@@ -150,9 +169,13 @@ export function ClientApp() {
   };
 
   const refreshHistory = async (token: string) => {
-    const rows = await loadClientHistory(token);
-    const cards = rows.map(clientCardFromApi);
+    const history = await loadClientHistory(token);
+    const cards = history.requests.map(clientCardFromApi);
     setRequests(cards);
+    // The offset between the server's business clock and this device's wall clock; a
+    // running demo day makes it hours, and every time the customer sees has to come
+    // from the same clock the visit was planned on.
+    setClockSkewMs(history.nowAt * 1000 - Date.now());
     return cards;
   };
 
@@ -318,7 +341,7 @@ export function ClientApp() {
   const detail = opened ? (
     <ClientRequestDetail
       item={opened}
-      nowMs={nowMs}
+      nowMs={businessNowMs}
       notice={inlineNotice}
       onBack={closeDetail}
       onChangeTime={() => setNotice(t('figma-client.ClientApp.d4f8b2e820'))}
@@ -372,6 +395,7 @@ export function ClientApp() {
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
       docked
+      chatUnread={chatUnread}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => undefined}
@@ -380,6 +404,7 @@ export function ClientApp() {
         else go(id);
       }}
       onNewRequest={() => go('new')}
+      onSignOut={forgetSession}
       open
     />
   );
@@ -387,6 +412,7 @@ export function ClientApp() {
   const menuDrawer = (
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
+      chatUnread={chatUnread}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => setMenuOpen(false)}
@@ -395,6 +421,7 @@ export function ClientApp() {
         else go(id);
       }}
       onNewRequest={() => go('new')}
+      onSignOut={forgetSession}
       open={menuOpen}
     />
   );
@@ -450,7 +477,7 @@ export function ClientApp() {
               className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
               style={{ fontSize: eu(32), position: 'relative', top: 2 }}
             >
-              {engineerHeaderStamp(nowMs)}
+              {engineerHeaderStamp(businessNowMs)}
             </p>
           ) : null}
           {screen === 'new' || screen === 'sent' ? (
@@ -493,14 +520,30 @@ export function ClientApp() {
             selectedId={openedId}
           />
         ) : null}
+        {session && screen !== 'support' ? (
+          <div className="hidden" aria-hidden>
+            <ClientSupport
+              token={session.token}
+              contactName={draft.contactName || null}
+              sessionScope={session.email}
+              active={false}
+              onInbox={onChatInbox}
+              onSessionExpired={forgetSession}
+              onOperationApplied={() => undefined}
+              onOpenRequest={() => undefined}
+            />
+          </div>
+        ) : null}
         {screen === 'support' ? (
           <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
             {session ? (
-              <ClientAiPane
+              <ClientSupport
                 token={session.token}
+                contactName={draft.contactName || null}
                 sessionScope={session.email}
+                active
+                onInbox={onChatInbox}
                 onSessionExpired={forgetSession}
-                displayName={draft.contactName || null}
                 onOperationApplied={() => {
                   void refreshHistory(session.token).catch((error: unknown) => {
                     if (isDeadSession(error)) forgetSession();
@@ -510,13 +553,20 @@ export function ClientApp() {
                 onOpenRequest={(id) => void openOwned(session, id)}
               />
             ) : (
-              <button
-                type="button"
-                className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
-                onClick={() => setGate({ purpose: 'support', email: draft.email, codeStep: false })}
-              >
-                {t('figma-client.ClientApp.b050495194')}
-              </button>
+              // The sign-in prompt is the whole screen at this point, so it sits in the
+              // middle of it. Left in the flow it clung to the top-left corner under the
+              // burger with the rest of the screen empty beneath.
+              <div className="flex h-full flex-col items-center justify-center px-6">
+                <button
+                  type="button"
+                  className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
+                  onClick={() =>
+                    setGate({ purpose: 'support', email: draft.email, codeStep: false })
+                  }
+                >
+                  {t('figma-client.ClientApp.b050495194')}
+                </button>
+              </div>
             )}
           </div>
         ) : null}

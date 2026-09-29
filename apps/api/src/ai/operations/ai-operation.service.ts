@@ -11,6 +11,7 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { EngineersService } from '../../orchestrator/engineers/engineers.service';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
+import { commitPolicyRouterPreset } from '../../orchestrator/policy/personal-policy-preset';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import {
   isWindowConfirmationRequired,
@@ -99,13 +100,13 @@ export class AiOperationService {
     private readonly guard: ActionGuardService,
     private readonly decisions: ActionDecisionGate,
     requests: RequestsService,
-    live: LiveService,
+    private readonly live: LiveService,
     engineers: EngineersService,
     alerts: AlertsService,
-    policy: PolicyService,
+    private readonly policy: PolicyService,
     publisher: SnapshotPublisher,
     restore: PlanRestoreService,
-    router: RouterClient,
+    private readonly router: RouterClient,
     manualDecisions: ManualDecisionsService,
   ) {
     this.catalog = buildAiActionCatalog({
@@ -379,6 +380,23 @@ export class AiOperationService {
         },
         (context) => apply({ ...applyArgs, context }),
       );
+      if (!outcome.replayed && op.action === 'policy.select') {
+        const policyId =
+          op.payload && typeof op.payload === 'object' && 'policyId' in op.payload
+            ? String((op.payload as { policyId: unknown }).policyId)
+            : '';
+        const preset =
+          policyId === 'personal'
+            ? ((await this.policy.personal(this.prisma, op.accountId)).profile?.preset ?? null)
+            : null;
+        await commitPolicyRouterPreset({
+          prisma: this.prisma,
+          router: this.router,
+          live: this.live,
+          policyId,
+          preset,
+        });
+      }
       await this.finish(
         op,
         'applied',

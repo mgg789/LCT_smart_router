@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
 import { Module } from '@nestjs/common';
@@ -11,6 +11,8 @@ import { routerFetch } from '../src/common/observability/router-fetch';
 
 @Module({})
 class TestModule {}
+
+const METRICS_TOKEN = 'metrics-test-'.repeat(4);
 
 async function server(telemetry: Observability, routerTarget?: string) {
   const app = await NestFactory.create<NestExpressApplication>(TestModule, { logger: false });
@@ -37,12 +39,94 @@ test('all integrations default off and /metrics is absent', async () => {
   }
 });
 
+test('metrics require exactly one valid scraper credential at the HTTP boundary', async () => {
+  const telemetry = await Observability.create({ METRICS_ENABLED: 'true', METRICS_TOKEN });
+  const { app, url } = await server(telemetry);
+  try {
+    for (const authorization of [
+      undefined,
+      'Basic invalid',
+      'Bearer wrong',
+      `Bearer ${METRICS_TOKEN} extra`,
+      `Bearer ${METRICS_TOKEN}, Bearer wrong`,
+    ]) {
+      const response = await fetch(`${url}/metrics`, {
+        headers: authorization ? { authorization } : {},
+      });
+      assert.equal(response.status, 401);
+      assert.doesNotMatch(await response.text(), /lct_api_process/);
+    }
+    assert.equal(
+      (
+        await fetch(`${url}/metrics?token=${METRICS_TOKEN}`, {
+          headers: { cookie: `token=${METRICS_TOKEN}` },
+        })
+      ).status,
+      401,
+    );
+    for (const headers of [
+      [`Bearer ${METRICS_TOKEN}`, 'Bearer wrong'],
+      ['Bearer wrong', `Bearer ${METRICS_TOKEN}`],
+    ]) {
+      const status = await new Promise<number>((resolve, reject) => {
+        const request = httpRequest(
+          `${url}/metrics`,
+          { headers: { Authorization: headers } },
+          (response) => {
+            response.resume();
+            response.on('end', () => resolve(response.statusCode ?? 0));
+          },
+        );
+        request.on('error', reject);
+        request.end();
+      });
+      assert.equal(status, 401);
+    }
+    assert.equal(
+      (await fetch(`${url}/metrics`, { headers: { authorization: `bearer ${METRICS_TOKEN}` } }))
+        .status,
+      200,
+    );
+    for (const path of ['/metrics/', '/Metrics', '/%6detrics', '/metrics%2f', '/api/v1/metrics']) {
+      assert.notEqual((await fetch(`${url}${path}`)).status, 200);
+    }
+    for (const method of ['HEAD', 'POST', 'OPTIONS']) {
+      assert.equal((await fetch(`${url}/metrics`, { method })).status, 405);
+    }
+    assert.equal((await fetch(`${url}/orders/id`)).status, 200);
+  } finally {
+    await app.close();
+    await telemetry.onApplicationShutdown();
+  }
+});
+
+test('enabled metrics reject missing or malformed token configuration without disclosing it', async () => {
+  for (const token of [
+    undefined,
+    '',
+    'short',
+    `${METRICS_TOKEN} `,
+    `${METRICS_TOKEN}\n`,
+    'ю'.repeat(40),
+    'a'.repeat(513),
+  ]) {
+    await assert.rejects(
+      Observability.create({ METRICS_ENABLED: 'true', METRICS_TOKEN: token }),
+      /METRICS_TOKEN/,
+    );
+  }
+  const disabled = await Observability.create({ METRICS_TOKEN: 'ignored while disabled' });
+  await disabled.onApplicationShutdown();
+});
+
 test('Prometheus exposes bounded route labels and request counts without identifiers', async () => {
-  const telemetry = await Observability.create({ METRICS_ENABLED: 'true' });
+  const telemetry = await Observability.create({ METRICS_ENABLED: 'true', METRICS_TOKEN });
   const { app, url } = await server(telemetry);
   try {
     await fetch(`${url}/orders/secret-id?token=private`);
-    const response = await fetch(`${url}/metrics`);
+    const response = await fetch(`${url}/metrics`, {
+      headers: { authorization: `Bearer ${METRICS_TOKEN}` },
+    });
     const text = await response.text();
     assert.equal(response.status, 200);
     assert.match(

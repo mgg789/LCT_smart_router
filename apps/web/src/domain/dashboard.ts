@@ -86,15 +86,61 @@ export function routeForEngineer(
   return snapshot.plan.plan?.routes.find((route) => route.engineerId === engineerId) ?? null;
 }
 
-export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
+/** The requests this working day is about: everything whose window touches it. */
+export function dayRequests(snapshot: DashboardSnapshot): RequestView[] {
   const dayStart = Date.parse(`${snapshot.workDate}T00:00:00+03:00`) / 1000;
   return snapshot.requests.filter(
-    (item) =>
-      item.lifecycle === 'submitted' &&
-      item.assignmentState !== 'assigned' &&
-      item.windowStartAt < dayStart + 86400 &&
-      item.windowEndAt >= dayStart,
+    (item) => item.windowStartAt < dayStart + 86400 && item.windowEndAt >= dayStart,
   );
+}
+
+export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
+  return dayRequests(snapshot).filter(
+    (item) => item.lifecycle === 'submitted' && item.assignmentState !== 'assigned',
+  );
+}
+
+/**
+ * The requests the arrows in the open request card page through, in the order the card
+ * itself is read in.
+ *
+ * An assigned request belongs to one engineer's day, so its neighbours are that route's
+ * other stops in visiting order -- paging through them walks the day. An unassigned one
+ * has no route, so its neighbours are the rest of the day's unassigned pile, in the order
+ * the board lists it. The two sets never mix: stepping off the end of a route onto
+ * somebody else's stop would silently change which engineer the dispatcher is looking at.
+ *
+ * Returns an empty list when the request is not on this day at all, which leaves the
+ * arrows with nothing to offer.
+ */
+export function requestNeighbours(
+  snapshot: DashboardSnapshot,
+  requestId: string,
+): { readonly scope: 'route' | 'unassigned'; readonly ids: readonly string[] } {
+  const assignment = assignmentFor(snapshot, requestId);
+  if (assignment?.engineerId) {
+    const route = routeForEngineer(snapshot, assignment.engineerId);
+    const stops = [...(route?.stops ?? [])]
+      .sort((a, b) => a.sequence - b.sequence)
+      .map((stop) => stop.requestId)
+      .filter((id): id is string => id !== null);
+    // A route may visit the same request twice (a handoff leg); the card is one per
+    // request, so the list holds each one once, at its first visit.
+    return { scope: 'route', ids: [...new Set(stops)] };
+  }
+  const pile = unassignedRequests(snapshot).map((item) => item.id);
+  return { scope: 'unassigned', ids: pile.includes(requestId) ? pile : [] };
+}
+
+/** The neighbour `step` places along, or null at either end -- the arrows never wrap. */
+export function neighbourAt(
+  neighbours: readonly string[],
+  requestId: string,
+  step: 1 | -1,
+): string | null {
+  const at = neighbours.indexOf(requestId);
+  if (at < 0) return null;
+  return neighbours[at + step] ?? null;
 }
 
 /** Sum planned mileage of the engineers currently shown for the selected region. */

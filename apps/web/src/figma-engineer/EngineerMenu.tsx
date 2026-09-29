@@ -24,6 +24,7 @@ export function EngineerMenu({
   motionOn,
   name,
   email,
+  chatUnread = false,
   active,
   lunch,
   breakActive,
@@ -40,6 +41,8 @@ export function EngineerMenu({
   motionOn: boolean;
   name: string;
   email: string;
+  /** Yellow dot on «Помощник» while a line is waiting. Cleared once that screen is open. */
+  chatUnread?: boolean;
   active: EngineerMenuId;
   lunch: EngineerLunchItem | null;
   breakActive: boolean;
@@ -104,6 +107,7 @@ export function EngineerMenu({
               active={active === 'assistant'}
               onClick={() => onNavigate('assistant')}
               disabled={isNavixOffline()}
+              dot={chatUnread && active !== 'assistant'}
             />
             <MenuItem
               label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
@@ -294,6 +298,7 @@ export function EngineerMenu({
                   iconHeight={33}
                   active={active === 'assistant'}
                   onClick={() => onNavigate('assistant')}
+                  dot={chatUnread && active !== 'assistant'}
                 />
                 <MenuItem
                   label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
@@ -416,6 +421,7 @@ function MenuItem({
   active,
   onClick,
   disabled = false,
+  dot = false,
 }: {
   label: string;
   icon: string;
@@ -424,6 +430,7 @@ function MenuItem({
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
+  dot?: boolean;
 }) {
   return (
     <button
@@ -454,6 +461,13 @@ function MenuItem({
       >
         {label}
       </span>
+      {dot ? (
+        <span
+          aria-hidden
+          className="ml-auto shrink-0 rounded-full bg-figma-bee"
+          style={{ width: eu(12), height: eu(12) }}
+        />
+      ) : null}
     </button>
   );
 }

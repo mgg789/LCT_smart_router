@@ -3,14 +3,21 @@ import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import {
+  addressQueryLadder,
   autocompleteQuery,
   type GeocodeHit,
   type GeocodeQuery,
   hitFromReverse,
   hitsFromAutocomplete,
+  MOSCOW_OBLAST_VIEWBOX,
+  matchLevelOf,
+  type PlacedAddress,
 } from './geocoding-policy';
 
 const LOCATIONIQ_AUTOCOMPLETE = 'https://us1.locationiq.com/v1/autocomplete';
+const LOCATIONIQ_SEARCH = 'https://us1.locationiq.com/v1/search.php';
+/** Upload geocoding budget requested for the dataset modal: 60 searches per second. */
+const DATASET_INTERVAL_MS = 1000 / 60;
 const LOCATIONIQ_REVERSE = 'https://us1.locationiq.com/v1/reverse';
 const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search';
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse';
@@ -39,6 +46,7 @@ export { autocompleteQuery, hitsFromAutocomplete } from './geocoding-policy';
 @Injectable()
 export class GeocodingService {
   private readonly cache = new Map<string, GeocodeHit[]>();
+  private datasetAt = 0;
   private nominatimAt = 0;
   private nominatimChain: Promise<void> = Promise.resolve();
 
@@ -89,6 +97,103 @@ export class GeocodingService {
       : await this.reverseNominatim(lat, lon);
     this.remember(cacheKey, hit ? [hit] : []);
     return hit;
+  }
+
+  /**
+   * Forward-geocodes dataset addresses through LocationIQ only.
+   * No second provider. Missing or unusable hits stay for the caller to approximate.
+   * Without a token the contour cannot geocode; the caller approximates.
+   */
+  async placeAddresses(addresses: readonly string[]): Promise<{
+    available: boolean;
+    house: number;
+    street: number;
+    approximate: number;
+    points: PlacedAddress[];
+  }> {
+    const unique = [
+      ...new Set(
+        addresses.map((address) => address.trim()).filter((address) => address.length >= 3),
+      ),
+    ].slice(0, 400);
+    const token = this.config.get('LOCATION_IQ_TOKEN');
+    if (!token) {
+      return { available: false, house: 0, street: 0, approximate: unique.length, points: [] };
+    }
+    const points: PlacedAddress[] = [];
+    let house = 0;
+    let street = 0;
+    let approximate = 0;
+    for (const address of unique) {
+      let best: { lat: number; lon: number; level: 'house' | 'street'; importance: number } | null =
+        null;
+      for (const query of addressQueryLadder(address)) {
+        const candidates = await this.searchBounded(token, query);
+        for (const candidate of candidates) {
+          const level = matchLevelOf(candidate);
+          if (!level || level === 'approximate') continue;
+          const importance = Number(candidate.importance ?? 0);
+          const rank = level === 'house' ? 3 : 2;
+          const bestRank = best?.level === 'house' ? 3 : best ? 2 : -1;
+          if (rank < bestRank || (rank === bestRank && importance <= (best?.importance ?? 0))) {
+            continue;
+          }
+          const lat = Number(candidate.lat);
+          const lon = Number(candidate.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          best = { lat, lon, level, importance };
+        }
+      }
+      if (!best) {
+        approximate += 1;
+        continue;
+      }
+      if (best.level === 'house') house += 1;
+      else street += 1;
+      points.push({ address, lat: best.lat, lon: best.lon, level: best.level });
+    }
+    return { available: true, house, street, approximate, points };
+  }
+
+  private async searchBounded(
+    token: string,
+    query: string,
+  ): Promise<
+    Array<{ lat?: unknown; lon?: unknown; class?: unknown; type?: unknown; importance?: unknown }>
+  > {
+    const wait = DATASET_INTERVAL_MS - (Date.now() - this.datasetAt);
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    this.datasetAt = Date.now();
+    const url = new URL(LOCATIONIQ_SEARCH);
+    url.searchParams.set('key', token);
+    url.searchParams.set('q', query);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('addressdetails', '0');
+    url.searchParams.set('countrycodes', 'ru');
+    url.searchParams.set('viewbox', MOSCOW_OBLAST_VIEWBOX);
+    url.searchParams.set('bounded', '1');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      if (response.status === 429) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return [];
+      }
+      if (!response.ok) return [];
+      const body: unknown = await response.json();
+      return Array.isArray(body) ? body : [];
+    } catch {
+      return [];
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async searchLocationIq(token: string, q: string): Promise<GeocodeHit[]> {

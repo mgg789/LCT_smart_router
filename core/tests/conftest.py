@@ -27,7 +27,7 @@ def official_east_run(official_east_scenario):
     """Run the deterministic official golden settings once per test session."""
     return run_official_benchmark(
         official_east_scenario,
-        SearchSettings(**OFFICIAL_GOLDEN["settings"]),
+        SearchSettings(**OFFICIAL_GOLDEN["settings"], strict_time_windows=False),
     )
 
 
@@ -37,7 +37,7 @@ def official_east_events(official_east_scenario, official_east_run):
     return run_replanning_events(
         official_east_scenario,
         official_east_run.output,
-        SearchSettings(time_limit_ms=3000, solution_limit=32),
+        SearchSettings(time_limit_ms=3000, solution_limit=32, strict_time_windows=False),
     )
 
 

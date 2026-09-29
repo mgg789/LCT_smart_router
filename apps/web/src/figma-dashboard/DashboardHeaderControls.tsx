@@ -6,14 +6,10 @@ import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
-import {
-  formatNotificationCount,
-  NAV_ITEMS,
-  type NavItemId,
-  type NotificationTone,
-} from './fixtures';
+import { formatNotificationCount, type NotificationTone } from './fixtures';
 import { policyLabel } from './fromSnapshot';
 import { openManualPlanning } from './ManualPlanning';
+import { NAV_ITEMS, type NavItemId } from './navigation';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 
@@ -61,11 +57,14 @@ export function SidebarNav({
   onSelect,
   onUpload,
   motionOn,
+  chatsUnread = false,
 }: {
   activeNav: NavItemId;
   onSelect: (id: NavItemId) => void;
   onUpload: () => void;
   motionOn: boolean;
+  /** Yellow dot on «Чаты» while any dialogue has a message the dispatcher has not read. */
+  chatsUnread?: boolean;
 }) {
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeNav);
   const railRef = useRef<HTMLElement | null>(null);
@@ -108,6 +107,7 @@ export function SidebarNav({
           const active = item.id === activeNav;
           const locked = isNavLocked(item.id) || (isNavixOffline() && item.id === 'ai');
           const icon = NAV_ICON_BOX[item.id];
+          const unreadChats = item.id === 'chats' && chatsUnread;
           return (
             <button
               key={item.id}
@@ -128,16 +128,36 @@ export function SidebarNav({
               }`}
               style={{ marginBottom: NAV_ITEM_GAP }}
             >
-              <FigmaIcon
-                src={NAV_ICONS[item.icon]}
-                alt=""
-                width={icon.width}
-                height={icon.height}
-                className={`${icon.className} ${active ? 'nav-glyph-on' : 'nav-glyph-off'} transition-[filter] duration-150`}
-              />
+              {unreadChats ? (
+                <span
+                  aria-hidden
+                  className={icon.className}
+                  style={{
+                    width: icon.width,
+                    height: icon.height,
+                    backgroundColor: 'var(--color-figma-bee)',
+                    WebkitMaskImage: `url(${NAV_ICONS[item.icon]})`,
+                    maskImage: `url(${NAV_ICONS[item.icon]})`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                  }}
+                />
+              ) : (
+                <FigmaIcon
+                  src={NAV_ICONS[item.icon]}
+                  alt=""
+                  width={icon.width}
+                  height={icon.height}
+                  className={`${icon.className} ${active ? 'nav-glyph-on' : 'nav-glyph-off'} transition-[filter] duration-150`}
+                />
+              )}
               <FigmaText
                 className={`figma-nowrap relative z-10 font-semibold text-[16px] tracking-[-0.272px] transition-colors duration-150 ${
-                  active ? 'text-white' : 'text-figma-muted'
+                  unreadChats ? 'text-figma-bee' : active ? 'text-white' : 'text-figma-muted'
                 }`}
               >
                 {item.label}
@@ -222,6 +242,7 @@ export function UserMenu({
   onToggle,
   onSettings,
   onOpenPreviousPlan,
+  onDownloadPlan,
   onEndDay,
   onRestartDay,
   onReset,
@@ -236,6 +257,7 @@ export function UserMenu({
   onToggle: () => void;
   onSettings: () => void;
   onOpenPreviousPlan: () => void;
+  onDownloadPlan: () => void;
   onEndDay: () => void;
   onRestartDay: () => void;
   onReset: () => void;
@@ -303,6 +325,9 @@ export function UserMenu({
                   {t('figma-dashboard.DashboardHeaderControls.fbde84ea39')}
                 </MenuAction>
               ) : null}
+              <MenuAction motionOn={motionOn} tone="bee" onClick={onDownloadPlan}>
+                {t('figma-dashboard.DashboardHeaderControls.downloadPlan')}
+              </MenuAction>
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
@@ -741,8 +766,10 @@ function PolicySwitch({
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onKeyDown={(event) => {
+        // The hint hides itself, but Escape keeps travelling: the dispatcher's mouse
+        // usually rests on a toggle while the panel is open, and swallowing the key here
+        // left Escape doing nothing visible to the panel they meant to close.
         if (event.key === 'Escape' && shown) {
-          event.stopPropagation();
           setShown(false);
           setHovering(false);
           setFocused(false);

@@ -31,7 +31,12 @@ def test_strict_switch_rejects_even_one_second_of_terminal_lateness(
         "engineers": [engineer], "requests": [request],
         "horizon_end_at": start + (599 if boundary == "horizon" else 3600),
     })
-    relaxed = SearchSettings(traffic_enabled=traffic, solution_limit=4, access_buffer_sec=0)
+    relaxed = SearchSettings(
+        traffic_enabled=traffic,
+        solution_limit=4,
+        access_buffer_sec=0,
+        strict_time_windows=False,
+    )
     strict = replace(relaxed, strict_time_windows=True)
     relaxed_result = solve(task, GraphTravel(graph), relaxed)
     assert relaxed_result.main.summary.assigned_count == 1
@@ -49,9 +54,9 @@ def test_strict_switch_rejects_even_one_second_of_terminal_lateness(
     assert solve(task, GraphTravel(graph), replace(strict, strict_time_windows=False)).main.summary.assigned_count == 1
 
 
-def test_strict_setting_is_durable_and_old_documents_keep_relaxed_mode(tmp_path):
+def test_strict_setting_is_durable_and_new_documents_default_to_strict_mode(tmp_path):
     store = FileTechnicalSettingsStore(tmp_path / "settings.json")
     original = RouterTechnicalSettings(strict_time_windows=True, window_lateness_tolerance_sec=300)
     store.save(original)
     assert FileTechnicalSettingsStore(store.path).load() == original
-    assert RouterTechnicalSettings.model_validate({}).strict_time_windows is False
+    assert RouterTechnicalSettings.model_validate({}).strict_time_windows is True

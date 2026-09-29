@@ -18,7 +18,9 @@ import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { regionStyle } from '../domain/regions';
 import { t } from '../i18n';
 import { transportLabel } from '../lib/reasons';
+import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { ARTBOARD_BLEED } from './artboardScale';
+import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
   arrowSpinDelta,
@@ -80,6 +82,7 @@ export function EngineersView({
   onUpdateProfile,
   onDeleteEngineer,
   onSetAvailability,
+  onOpenChat,
 }: {
   token?: string;
   snapshot: DashboardSnapshot | null;
@@ -91,12 +94,20 @@ export function EngineersView({
   onLinkEmail: (engineerId: string, email: string) => Promise<void>;
   onUpdateProfile: (
     engineerId: string,
-    patch: { region?: string; transportType?: EngineerProfile['transportType'] },
+    patch: {
+      region?: string;
+      transportType?: EngineerProfile['transportType'];
+      shiftPattern?: 'two_two' | 'five_two';
+    },
   ) => Promise<void>;
   onDeleteEngineer: (engineerId: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
+  onOpenChat: (engineerId: string) => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
+  const { dx } = useArtboardStretch();
+  const [chatOpening, setChatOpening] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
   const roster = useMemo(
     () => engineerProfilesFromSnapshot(snapshot, handoffs),
     [handoffs, snapshot],
@@ -126,7 +137,6 @@ export function EngineersView({
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
   const [scrollHint, setScrollHint] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -145,7 +155,6 @@ export function EngineersView({
   const ringRef = useRef<HTMLDivElement | null>(null);
   const bindsRef = useRef(new Map<string, CardBind>());
   const animRef = useRef<ReturnType<typeof animate> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const appliedIdRef = useRef<string | null>(null);
   const prevSelectedRef = useRef<string | null | undefined>(undefined);
   const goGenRef = useRef(0);
@@ -583,7 +592,7 @@ export function EngineersView({
       ) : (
         <div
           className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
-          style={{ left: 180, top: 132, width: 1710, height: 418 }}
+          style={{ left: 180, top: 132, width: 1710 + dx, height: 418 }}
         >
           <div className="absolute inset-y-0 left-0 w-[274px] bg-figma-ink" />
           <FigmaText className="absolute left-[306px] top-[35px] font-murs text-[32px] tracking-[0.64px] text-figma-ink">
@@ -595,6 +604,10 @@ export function EngineersView({
       <div
         ref={ringRef}
         className="engineer-ring-stage absolute inset-0"
+        // The ring is drawn around a fixed point of the 1920 board. Spare width is
+        // shared either side of it, so the carousel stays centred on the canvas the
+        // window actually gives instead of hugging its left half.
+        style={{ transform: `translateX(${dx / 2}px)` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -625,66 +638,73 @@ export function EngineersView({
       />
 
       {focused ? (
-        <motion.button
-          type="button"
-          data-eng-chrome
-          disabled
-          aria-disabled
-          title={t('figma-dashboard.EngineersView.72c299e0d6')}
-          className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
-          style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
-        >
-          <FigmaText className="font-bold text-[20px] text-figma-ink">
-            {t('figma-dashboard.EngineersView.3ad76b849d')}
-          </FigmaText>
-          <FigmaIcon
-            src={FIGMA_ASSETS.engChat}
-            alt=""
-            width={43}
-            height={43}
-            className="absolute right-[4px] top-1/2 -translate-y-1/2"
-          />
-        </motion.button>
+        <>
+          <motion.button
+            type="button"
+            data-eng-chrome
+            disabled={!token || busy || chatOpening}
+            title={
+              !token
+                ? t('figma-dashboard.EngineersView.chatNeedsLiveDay')
+                : t('figma-dashboard.EngineersView.3ad76b849d')
+            }
+            onClick={() => {
+              setChatError(null);
+              setChatOpening(true);
+              void onOpenChat(focused.id)
+                .catch((cause: unknown) => {
+                  setChatError(
+                    cause instanceof Error
+                      ? cause.message
+                      : t('figma-dashboard.EngineersView.chatOpenFailed'),
+                  );
+                })
+                .finally(() => setChatOpening(false));
+            }}
+            whileHover={
+              motionOn && token && !busy && !chatOpening ? { scale: 1.045, y: -2 } : undefined
+            }
+            whileTap={motionOn && token && !busy && !chatOpening ? { scale: 0.98 } : undefined}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute z-20 flex h-[51px] w-[225px] items-center rounded-[27px] bg-figma-bee px-[16px] disabled:cursor-not-allowed disabled:opacity-45"
+            style={{ left: RING_CENTER.x - 112.5 + dx / 2, top: RING_CHAT_TOP }}
+          >
+            <FigmaText className="font-bold text-[20px] text-figma-ink">
+              {t('figma-dashboard.EngineersView.3ad76b849d')}
+            </FigmaText>
+            <FigmaIcon
+              src={FIGMA_ASSETS.engChat}
+              alt=""
+              width={43}
+              height={43}
+              className="absolute right-[4px] top-1/2 -translate-y-1/2"
+            />
+          </motion.button>
+          {chatError ? (
+            <p
+              role="alert"
+              className="absolute z-20 max-w-[320px] text-[16px] text-figma-ink"
+              style={{ left: RING_CENTER.x - 112.5 + dx / 2, top: RING_CHAT_TOP + 58 }}
+            >
+              {chatError}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
-      <motion.label
-        data-eng-chrome
-        className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
-        style={{ left: 895, top: RING_SEARCH_TOP }}
-        animate={
-          !motionOn || reduceMotion
-            ? undefined
-            : searchFocused
-              ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
-              : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
-        }
-        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-      >
-        <input
-          ref={searchInputRef}
-          value={query}
-          onChange={(event) => onSearchChange(event.target.value)}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
-          className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
-        />
-        <motion.button
-          type="button"
-          className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
-          aria-label={t('figma-dashboard.EngineersView.6614a726f7')}
-          onClick={() => searchInputRef.current?.focus()}
-          animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-        >
-          <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
-        </motion.button>
-      </motion.label>
+      <AnimatedEngineerSearch
+        value={query}
+        onChange={onSearchChange}
+        motionOn={motionOn}
+        placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
+        className="h-[51px] w-[284px]"
+        style={{ left: 895 + dx / 2, top: RING_SEARCH_TOP }}
+      />
       <AnimatePresence>
         {scrollHint ? (
           <motion.div
             className="pointer-events-none absolute z-20 flex items-center justify-center gap-[14px] text-figma-ink"
-            style={{ left: 895, top: RING_SEARCH_TOP + 64, width: 284 }}
+            style={{ left: 895 + dx / 2, top: RING_SEARCH_TOP + 64, width: 284 }}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 6 }}
@@ -737,6 +757,7 @@ function EngineerDossier({
   onUpdateProfile: (patch: {
     region?: string;
     transportType?: EngineerProfile['transportType'];
+    shiftPattern?: 'two_two' | 'five_two';
   }) => Promise<void>;
   motionOn: boolean;
   busy: boolean;
@@ -753,13 +774,14 @@ function EngineerDossier({
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   const portrait = ENGINEER_PORTRAITS[engineer.photoIndex] ?? ENGINEER_PORTRAITS[0];
   const offline = engineer.availability === 'offline';
 
   return (
     <div
       className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
-      style={{ left: 180, top: 132, width: 1710, height: 418 }}
+      style={{ left: 180, top: 132, width: 1710 + dx, height: 418 }}
     >
       <div className="absolute inset-y-0 left-0 w-[274px] overflow-hidden bg-figma-ink">
         <img
@@ -844,7 +866,7 @@ function EngineerDossier({
           ))}
         </div>
 
-        <div className="mt-auto grid h-[201px] grid-cols-2 gap-[48px]">
+        <div className="mt-auto grid h-[245px] grid-cols-2 gap-[48px]">
           <div className="flex h-full flex-col">
             <FactRow
               icon={TRANSPORT_ICONS[engineer.transportType] ?? FIGMA_ASSETS.engTransport}
@@ -869,6 +891,27 @@ function EngineerDossier({
               options={regions.map((value) => ({ value, label: regionStyle(value).label }))}
               busy={busy}
               onSave={(region) => onUpdateProfile({ region })}
+            />
+            <FactRow
+              icon={FIGMA_ASSETS.reasonClock}
+              label={t('figma-dashboard.EngineersView.schedule')}
+              value={
+                engineer.shiftPattern === 'five_two'
+                  ? t('figma-dashboard.EngineersView.schedule52')
+                  : t('figma-dashboard.EngineersView.schedule22')
+              }
+              selected={engineer.shiftPattern}
+              options={[
+                { value: 'two_two', label: t('figma-dashboard.EngineersView.schedule22') },
+                { value: 'five_two', label: t('figma-dashboard.EngineersView.schedule52') },
+              ]}
+              busy={busy}
+              onSave={(shiftPattern) => {
+                if (shiftPattern === 'two_two' || shiftPattern === 'five_two') {
+                  return onUpdateProfile({ shiftPattern });
+                }
+                return Promise.resolve();
+              }}
             />
             <div className="mt-auto flex gap-[38px]">
               <motion.button

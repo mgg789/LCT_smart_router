@@ -1,0 +1,6 @@
+[run]
+omit =
+    core/tests/*
+
+[report]
+show_missing = False

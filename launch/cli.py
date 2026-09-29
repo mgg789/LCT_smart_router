@@ -7,7 +7,7 @@ import getpass
 import subprocess
 import sys
 
-from . import core
+from . import core, versions
 
 BANNER = r"""
   _   _    _ __     _____ __  __
@@ -16,9 +16,7 @@ BANNER = r"""
  | |\  |/ ___ \\ V /  | |  /  \
  |_| \_/_/   \_\\_/  |___|/_/\_\
 """
-SOURCE = (
-    "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22"
-)
+SOURCE = "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22"
 
 
 def _core():
@@ -29,11 +27,7 @@ def _core():
 def yes(prompt: str, default: bool = False) -> bool:
     """Read an explicit yes/no choice using a visible default."""
     while True:
-        value = (
-            input(prompt + (" [Да/нет]: " if default else " [да/Нет]: "))
-            .strip()
-            .lower()
-        )
+        value = input(prompt + (" [Да/нет]: " if default else " [да/Нет]: ")).strip().lower()
         if not value:
             return default
         if value in ("да", "д", "y", "yes", "1"):
@@ -60,10 +54,23 @@ def port(prompt: str, default: int, required: bool) -> int | None:
         print("Введите порт от 1 до 65535.")
 
 
-def dispatcher_credentials() -> tuple[str, str]:
+def dispatcher_credentials(previous: dict[str, str] | None = None) -> tuple[str, str]:
     """Collect the launch-time dispatcher identity without echoing its password."""
-    email = input("Почта диспетчера (обязательно): ").strip()
-    password = getpass.getpass("Пароль диспетчера (обязательно, минимум 8 символов): ")
+    previous = previous or {}
+    email = input(
+        "Почта диспетчера"
+        + (
+            f" [{previous['DISPATCHER_EMAIL']}]"
+            if previous.get("DISPATCHER_EMAIL")
+            else " (обязательно)"
+        )
+        + ": "
+    ).strip() or previous.get("DISPATCHER_EMAIL", "")
+    password = getpass.getpass(
+        "Пароль диспетчера (пусто — сохранить): "
+        if previous.get("DISPATCHER_PASSWORD")
+        else "Пароль диспетчера (обязательно, минимум 8 символов): "
+    ) or previous.get("DISPATCHER_PASSWORD", "")
     return email, password
 
 
@@ -72,14 +79,73 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Navix launcher")
     parser.add_argument("--offline", action="store_true")
     parser.add_argument("--osrm", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--route3",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Запускать route-engine3 (по умолчанию следует за --osrm)",
+    )
     parser.add_argument("--mode", choices=("full", "headless"))
     parser.add_argument("--api-port", type=int)
     parser.add_argument("--ui-port", type=int)
-    parser.add_argument(
-        "--autostart", action=argparse.BooleanOptionalAction, default=None
-    )
+    parser.add_argument("--autostart", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--env", help="Путь к .env")
+    parser.add_argument(
+        "--redis-beta",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Redis-beta: кэш каталога и ответов route3. По умолчанию включен, остаётся экспериментальным",
+    )
+    parser.add_argument(
+        "--action",
+        choices=("start", "configure", "status", "remove", "purge"),
+        help="Действие с существующей установкой; без аргумента открывается меню",
+    )
     return parser
+
+
+def existing_action(status: dict) -> str:
+    """Offer management only for this directory's verified installation."""
+    labels = {
+        "running": "работает",
+        "stopped": "остановлена",
+        "partial": "подготовлена частично",
+        "removed": "удалена, данные сохранены",
+    }
+    print(f"Установка {status['record']['project']}: {labels[status['status']]}")
+    if status.get("options", {}).get("redis_beta"):
+        print(
+            "Redis-beta: "
+            + ("готов" if status.get("redis_ready") else "недоступен, обычный расчёт сохранён")
+        )
+    print(
+        "1 — запустить / перезапустить с сохранёнными настройками\n2 — изменить настройки и запустить\n3 — удалить экземпляр, сохранив данные\n4 — удалить экземпляр и его данные\n0 — выйти"
+    )
+    while True:
+        value = input("Действие [1]: ").strip() or "1"
+        actions = {"1": "start", "2": "configure", "3": "remove", "4": "purge", "0": "exit"}
+        if value in actions:
+            return actions[value]
+
+
+def remove_interactively(purge: bool) -> int:
+    """Show exact owned resources and require a separate confirmation for data removal."""
+    preview = core.removal_preview()
+    print(f"Экземпляр: {preview['project']}\nКаталог: {preview['root']}")
+    print("Тома данных: " + (", ".join(preview["volumes"]) or "нет"))
+    if purge:
+        confirmation = input(
+            f"Безвозвратно удалить эти данные? Введите DELETE {preview['project']}: "
+        ).strip()
+        if confirmation != f"DELETE {preview['project']}":
+            print("Удаление отменено.")
+            return 0
+    else:
+        confirmation = ""
+        if not yes("Удалить контейнеры экземпляра, сохранив данные и настройки?"):
+            return 0
+    core.remove_installation(purge_data=purge, confirmation=confirmation)
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:
@@ -101,17 +167,55 @@ def run(args: argparse.Namespace) -> int:
             break
         if not interactive or not yes("Повторить проверку Docker?", True):
             return 1
-    network = core.check_network()
-    print("✓ Сеть доступна" if network else "Сеть недоступна")
-    online = network and not args.offline
-    if interactive and online:
+    status = core.installation_status()
+    action = getattr(args, "action", None)
+    if action == "status":
+        print("Состояние установки: " + status["status"])
+        return 0
+    if not action and status["record"]:
+        if not interactive:
+            raise ValueError(
+                "Для существующей установки укажите --action start или --action status."
+            )
+        action = existing_action(status)
+    if action == "exit":
+        return 0
+    if action in ("remove", "purge"):
+        if not interactive:
+            raise ValueError("Удаление требует интерактивного подтверждения.")
+        return remove_interactively(action == "purge")
+    network = not args.offline and core.check_network()
+    print(
+        "✓ Сервис дистрибуции доступен"
+        if network
+        else "Сервис дистрибуции недоступен или выбран офлайн-режим"
+    )
+    print(versions.message(core.check_version(online=not args.offline)))
+    saved_env = core.saved_environment()
+    saved_options = status["options"]
+    if action == "start":
+        if not saved_env or not saved_options:
+            raise ValueError("Сохранённых настроек недостаточно. Выберите изменение настроек.")
+        start_options = dict(saved_options)
+        for key in ("mode", "api_port", "ui_port", "osrm", "autostart", "redis_beta"):
+            value = getattr(args, key, None)
+            if value is not None:
+                start_options[key] = value
+        if args.offline:
+            start_options["online"] = False
+        for name, url in core.launch(start_options, saved_env, print).items():
+            print(f"{name}: {url}")
+        return 0
+    online = not args.offline and saved_options.get("online", True)
+    if interactive and not args.offline:
         print("Офлайн — закрытый контур. Онлайн — AI и внешние API карт.")
-        online = yes("Включить онлайн-режим?", True)
+        online = yes("Включить онлайн-режим?", online)
     mode = args.mode
     if not mode:
         mode = (
             "headless"
-            if interactive and yes("Headless (только API, без UI)?")
+            if interactive
+            and yes("Headless (только API, без UI)?", saved_options.get("mode") == "headless")
             else "full"
         )
     options = {
@@ -119,28 +223,48 @@ def run(args: argparse.Namespace) -> int:
         "mode": mode,
         "osrm": args.osrm
         if args.osrm is not None
-        else interactive and yes("Запускать OSRM (дорожные маршруты)?", True),
+        else interactive
+        and yes("Запускать OSRM (дорожные маршруты)?", saved_options.get("osrm", False)),
+        "route3": getattr(args, "route3", None),
         "autostart": args.autostart
         if args.autostart is not None
-        else interactive and yes("Автозапуск при старте Docker?"),
+        else interactive
+        and yes("Автозапуск при старте Docker?", saved_options.get("autostart", False)),
         "api_port": args.api_port,
         "ui_port": args.ui_port if mode == "full" else None,
+        "redis_beta": (
+            args.redis_beta
+            if args.redis_beta is not None
+            else yes(
+                "Включить Redis-beta (экспериментальный кэш)?",
+                saved_options.get("redis_beta", True),
+            )
+            if interactive
+            else saved_options.get("redis_beta", True)
+        ),
     }
     if interactive:
         if options["api_port"] is None:
-            options["api_port"] = port("Порт API + MCP", 8000, mode == "headless")
+            options["api_port"] = port(
+                "Порт API + MCP", saved_options.get("api_port") or 8000, mode == "headless"
+            )
         if mode == "full" and options["ui_port"] is None:
-            options["ui_port"] = port("Порт UI", 5173, True)
+            options["ui_port"] = port("Порт UI", saved_options.get("ui_port") or 5173, True)
     core.validate_options(options)
     env_text = core.read_env(args.env) if args.env else ""
     while not env_text and interactive:
         print(
             ("1 — distribute.droidje.com по PIN (рекомендуется)\n" if network else "")
             + "2 — файл .env\n3 — ввести значения"
+            + ("\n4 — сохранить настройки этой установки" if saved_env else "")
         )
-        choice = input("Источник настроек: ").strip()
+        choice = input("Источник настроек" + (" [4]" if saved_env else "") + ": ").strip() or (
+            "4" if saved_env else ""
+        )
         try:
-            if choice == "1" and network:
+            if choice == "4" and saved_env:
+                env_text = saved_env
+            elif choice == "1" and network:
                 env_text = core.fetch_secrets(getpass.getpass("Шестизначный PIN: "))
             elif choice == "2":
                 env_text = core.read_env(input("Путь к .env: ").strip())
@@ -151,9 +275,7 @@ def run(args: argparse.Namespace) -> int:
                 }
                 if online:
                     values.update(
-                        LLM_PROVIDER=input(
-                            "AI provider [off/openai_chat/agents]: "
-                        ).strip()
+                        LLM_PROVIDER=input("AI provider [off/openai_chat/agents]: ").strip()
                         or "off",
                         LLM_TOKEN=getpass.getpass("AI token (если нужен): "),
                         LLM_BASE_URL=input("AI base URL (если нужен): ").strip(),
@@ -161,16 +283,12 @@ def run(args: argparse.Namespace) -> int:
                     )
                 env_text = "\n".join(f"{k}={v}" for k, v in values.items() if v) or "\n"
         except (OSError, ValueError):
-            print(
-                "Не удалось получить настройки. Проверьте путь/PIN или выберите другой источник."
-            )
+            print("Не удалось получить настройки. Проверьте путь/PIN или выберите другой источник.")
     if not env_text:
         raise ValueError("Для неинтерактивного запуска укажите --env.")
     if not interactive:
-        raise ValueError(
-            "Запуск требует интерактивного ввода почты и пароля диспетчера."
-        )
-    email, password = dispatcher_credentials()
+        raise ValueError("Запуск требует интерактивного ввода почты и пароля диспетчера.")
+    email, password = dispatcher_credentials(core.parse_env(saved_env) if saved_env else None)
     env_text = core.override_dispatcher_credentials(env_text, email, password)
     for name, url in core.launch(options, env_text, print).items():
         print(f"{name}: {url}")

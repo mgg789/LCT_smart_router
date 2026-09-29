@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import { configuredTimeZone } from '../../common/time/zone';
 import type { Engineer, Request } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { workDateOf } from '../../orchestrator/engineers/workday';
@@ -28,7 +29,7 @@ export class ManualDecisionsService {
     const state = await readManualState(context.tx);
     if (state.version !== version)
       throw new SysError('VERSION_CONFLICT', 'Ручные решения изменились. Обновите панель.');
-    const date = workDateOf(await businessNow(context.tx, context.now), 'Europe/Moscow');
+    const date = workDateOf(await businessNow(context.tx, context.now), configuredTimeZone());
     if (state.workDate !== date)
       throw SysError.validationFailed(
         'Ручная сессия относится к другому дню. Вернитесь в Авто и включите Manual заново.',

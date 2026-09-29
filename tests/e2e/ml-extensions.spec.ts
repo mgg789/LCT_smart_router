@@ -95,7 +95,7 @@ test('calibration shows honest missing-history status without changing the plan'
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const modal = page.getByRole('dialog');
-  await modal.getByRole('button', { name: 'AI', exact: true }).click();
+  await modal.getByRole('tab', { name: 'AI', exact: true }).click();
   await expect(modal.getByText('Покрытие фактами', { exact: true })).toBeVisible();
   const weather = modal.getByRole('region', { name: 'Калибровка коэффициентов' });
   await expect(weather).toBeVisible();

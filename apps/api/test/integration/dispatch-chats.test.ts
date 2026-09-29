@@ -413,9 +413,8 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.ok(handoffRow.closedAt !== null);
     assert.equal(handoffRow.closedByAccountId, dispatcherAccountId);
 
-    // History is not deleted by closing the chat (context/36 §9.3): the seeded question,
-    // the dispatcher's reply, and the closing system note `finish` itself writes into the
-    // same dialogue so the client sees the turn happen.
+    // History is not deleted by closing the chat (context/36 §9.3): the seeded question
+    // and the dispatcher's reply stay. Closing writes no system note.
     const history = await call(
       'GET',
       `/api/v1/ai/conversations/${conversationId}/messages`,
@@ -423,7 +422,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     );
     assert.equal(history.status, 200, await history.clone().text());
     const historyBody = (await history.json()) as { messages: MessageBody[] };
-    assert.equal(historyBody.messages.length, 3);
+    assert.equal(historyBody.messages.length, 2);
 
     // A finished chat keeps hanging in the list -- ending a handover is not deleting it
     // (context/36 §9.3), and this is what lets the dispatcher re-read what was agreed.
@@ -435,26 +434,21 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.equal(closedChat?.handoff.state, 'closed');
     assert.equal(closedChat?.unreadCount, 0, 'a finished chat never badges');
 
-    // A late reply from a stale dispatcher tab must not silently reopen the handover.
+    // Sending after the assistant took the chat back joins the same dialogue again.
     const lateReply = await call(
       'POST',
       `/api/v1/dispatch/chats/${conversationId}/messages`,
       dispatcherToken,
-      { operationId: randomUUID(), text: 'Слишком поздно' },
+      { operationId: randomUUID(), text: 'Снова на связи' },
     );
-    assert.equal(lateReply.status, 409, await lateReply.clone().text());
-    const lateReplyBody = (await lateReply.json()) as ErrorBody;
-    assert.equal(lateReplyBody.error.code, 'AI_HANDOFF_NOT_ACTIVE');
-
-    const stillClosed = await prisma.aiHandoff.findFirstOrThrow({ where: { conversationId } });
-    assert.equal(stillClosed.state, 'closed', 'the closed handoff must stay closed');
-    const stillAiMode = await prisma.aiConversation.findUniqueOrThrow({
+    assert.equal(lateReply.status, 201, await lateReply.clone().text());
+    const rejoined = await prisma.aiConversation.findUniqueOrThrow({
       where: { id: conversationId },
     });
-    assert.equal(stillAiMode.mode, 'ai', 'the late reply must not reopen dispatcher mode');
+    assert.equal(rejoined.mode, 'dispatcher', 'a sent message is what rejoins the chat');
   });
 
-  it('refuses a reply to a conversation that was never handed to a dispatcher', async () => {
+  it('opens a handover when a dispatcher writes into a conversation that was never handed over', async () => {
     const email = `${unique('dispatch-chat-never')}@example.test`;
     emails.push(email);
     const clientToken = await signInClient(email);
@@ -471,20 +465,22 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
       dispatcherToken,
       { operationId: randomUUID(), text: 'Здравствуйте' },
     );
-    assert.equal(reply.status, 409, await reply.clone().text());
-    const replyBody = (await reply.json()) as ErrorBody;
-    assert.equal(replyBody.error.code, 'AI_HANDOFF_NOT_ACTIVE');
+    assert.equal(reply.status, 201, await reply.clone().text());
+    const joined = await prisma.aiConversation.findUniqueOrThrow({
+      where: { id: conversation.id },
+    });
+    assert.equal(joined.mode, 'dispatcher');
 
     const chats = await call('GET', '/api/v1/dispatch/chats', dispatcherToken);
     const chatsBody = ((await chats.json()) as { chats: DispatchChatBody[] }).chats;
     assert.equal(
       chatsBody.some((chat) => chat.conversation.id === conversation.id),
-      false,
-      'an ordinary ai-mode conversation must never appear in the dispatcher queue',
+      true,
+      'sending is what puts the dialogue in the dispatcher queue',
     );
   });
 
-  it("opens a chat with a request's client: creates the handover, a joined message and the opening text, and a second press does not duplicate either", async () => {
+  it("opens a chat with a request's client when the dispatcher sends text, and a second press does not duplicate it", async () => {
     const email = `${unique('dispatch-chat-open-req')}@example.test`;
     emails.push(email);
     // Only the account matters here, not a token to act as it.
@@ -502,10 +498,13 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
 
     assert.equal(chat.handoff.initiatedBy, 'dispatcher');
     assert.equal(chat.conversation.mode, 'dispatcher');
-    assert.equal(chat.messages.length, 2, 'the joined system message plus the opening text');
-    assert.equal(chat.messages[0]?.author, 'system');
-    assert.equal(chat.messages[1]?.author, 'dispatcher');
-    assert.equal(chat.messages[1]?.text, 'Добрый день, уточняю по заявке');
+    assert.equal(
+      chat.messages.length,
+      1,
+      'only the opening text — looking does not write a system line',
+    );
+    assert.equal(chat.messages[0]?.author, 'dispatcher');
+    assert.equal(chat.messages[0]?.text, 'Добрый день, уточняю по заявке');
 
     // The dialogue is the client's own conversation -- not a second, parallel thread.
     const storedConversation = await prisma.aiConversation.findUniqueOrThrow({
@@ -524,7 +523,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
       chat.handoff.id,
       'the running handover is returned, not a new one',
     );
-    assert.equal(chatAgain.messages.length, 2, 'no duplicate joined message on a second press');
+    assert.equal(chatAgain.messages.length, 1, 'no duplicate opening text on a second press');
 
     const openHandoverCount = await prisma.aiHandoff.count({
       where: { conversationId: chat.conversation.id, state: { not: 'closed' } },
@@ -535,19 +534,21 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
   it('opens a chat with an engineer, addressed by engineerId', async () => {
     const { accountId, engineer } = await createEngineerWithAccount();
 
-    const opened = await openChat({ kind: 'engineer', engineerId: engineer.id });
+    const looked = await openChat({ kind: 'engineer', engineerId: engineer.id });
+    assert.equal(looked.status, 201, await looked.clone().text());
+    const lookedBody = (await looked.json()) as { chat: DispatchChatBody | null };
+    assert.equal(lookedBody.chat, null, 'opening the row without a message does not join the chat');
+
+    const opened = await openChat({ kind: 'engineer', engineerId: engineer.id }, 'Добрый день');
     assert.equal(opened.status, 201, await opened.clone().text());
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);
 
     assert.equal(chat.handoff.initiatedBy, 'dispatcher');
     assert.equal(chat.conversation.mode, 'dispatcher');
-    assert.equal(
-      chat.messages.length,
-      1,
-      'just the joined system message -- no opening text was sent this time',
-    );
-    assert.equal(chat.messages[0]?.author, 'system');
+    assert.equal(chat.messages.length, 1);
+    assert.equal(chat.messages[0]?.author, 'dispatcher');
+    assert.equal(chat.messages[0]?.text, 'Добрый день');
 
     const storedConversation = await prisma.aiConversation.findUniqueOrThrow({
       where: { id: chat.conversation.id },
@@ -563,7 +564,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
     const request = await createRequestRow(clientAccount.id);
 
-    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const opened = await openChat({ kind: 'request', requestId: request.id }, 'Здравствуйте');
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);
     assert.equal(
@@ -595,7 +596,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
     const request = await createRequestRow(clientAccount.id);
 
-    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const opened = await openChat({ kind: 'request', requestId: request.id }, 'Здравствуйте');
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);
 
@@ -674,7 +675,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.ok(sentAgainBody.runId, 'the assistant takes the dialogue back and answers again');
   });
 
-  it('a second escalation of the same dialogue opens a new handover row rather than reviving the closed one, and both appear in the list', async () => {
+  it('a second message after finish opens a new handover on the same dialogue, and the list keeps one row', async () => {
     const email = `${unique('dispatch-chat-reescalate')}@example.test`;
     emails.push(email);
     // Only the account matters here, not a token to act as it.
@@ -682,7 +683,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
     const request = await createRequestRow(clientAccount.id);
 
-    const firstOpen = await openChat({ kind: 'request', requestId: request.id });
+    const firstOpen = await openChat({ kind: 'request', requestId: request.id }, 'Первый раз');
     const firstChat = ((await firstOpen.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(firstChat.conversation.id);
     await finishChat(firstChat.conversation.id);
@@ -706,8 +707,8 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const rowsForThisConversation = chats.filter(
       (row) => row.conversation.id === firstChat.conversation.id,
     );
-    const ids = rowsForThisConversation.map((row) => row.handoff.id).sort();
-    assert.deepEqual(ids, [firstChat.handoff.id, secondChat.handoff.id].sort());
+    assert.equal(rowsForThisConversation.length, 1, 'one person is one chat');
+    assert.equal(rowsForThisConversation[0]?.handoff.id, secondChat.handoff.id);
   });
 
   it('refuses to finish a conversation that was never handed to a dispatcher', async () => {
@@ -782,7 +783,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
     const request = await createRequestRow(clientAccount.id);
 
-    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const opened = await openChat({ kind: 'request', requestId: request.id }, 'Здравствуйте');
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);
 
@@ -824,7 +825,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     );
   });
 
-  it("a closed handover's messages stop at endSeq, while a live one shows the whole history including what came before the handover", async () => {
+  it('a live chat shows the whole history, and messages after finish stay on the same row', async () => {
     const email = `${unique('dispatch-chat-window')}@example.test`;
     emails.push(email);
     const clientToken = await signInClient(email);
@@ -858,17 +859,17 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
       "the chat opens the client's own existing dialogue",
     );
     // Live: the whole history is visible, including the message written before the handover.
-    assert.equal(chat.messages.length, 3);
+    // No system "joined" line is written, so that is the prior message plus the opening text.
+    assert.equal(chat.messages.length, 2);
     assert.equal(chat.messages[0]?.seq, 1);
 
     const finished = await finishChat(conversation.id);
     const finishedBody = (await finished.json()) as { chat: DispatchChatBody };
     const endSeq = finishedBody.chat.handoff.endSeq;
     assert.ok(endSeq !== null);
-    assert.equal(finishedBody.chat.messages.length, 4);
+    assert.equal(finishedBody.chat.messages.length, 2);
 
-    // Written into the same dialogue after the handover closed -- must not appear under
-    // the closed row.
+    // The same chat continues after the assistant takes it back.
     await prisma.aiMessage.create({
       data: {
         conversationId: conversation.id,
@@ -888,8 +889,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     );
     assert.ok(closedRow);
     assert.equal(closedRow?.handoff.id, chat.handoff.id);
-    assert.equal(closedRow?.messages.length, 4, 'the window stops at endSeq');
-    assert.ok(closedRow?.messages.every((message) => message.seq <= (endSeq ?? 0)));
+    assert.equal(closedRow?.messages.length, 3, 'later messages stay on the same chat');
   });
 
   it("unreadCount counts only the counterpart's messages above the read cursor, and read only ever moves the cursor forward", async () => {
@@ -899,7 +899,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
     const request = await createRequestRow(clientAccount.id);
 
-    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const opened = await openChat({ kind: 'request', requestId: request.id }, 'Здравствуйте');
     const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
     conversationIds.push(chat.conversation.id);
 
@@ -936,7 +936,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     const fullBody = (await full.json()) as { chat: DispatchChatBody | null };
     assert.equal(fullBody.chat?.unreadCount, 0);
   });
-  it('does not offer client handoff while the dispatcher queue is locked', () => {
-    assert.equal(app.get(ToolRegistry).find('client', 'call_dispatch_helper'), undefined);
+  it('offers client handoff when the dispatcher chat screen is available', () => {
+    assert.ok(app.get(ToolRegistry).find('client', 'call_dispatch_helper'));
   });
 });

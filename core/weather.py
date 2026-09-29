@@ -275,6 +275,7 @@ class WeatherTravel:
             geometry_exact=quote.geometry_exact,
             segments=_rescale_segments(quote.segments, duration_sec),
             weather_multiplier_used=factor,
+            traffic_prepriced=quote.traffic_prepriced,
         )
 
 
@@ -341,4 +342,5 @@ class LearnedWeatherTravel:
             geometry_exact=quote.geometry_exact,
             segments=_rescale_segments(quote.segments, duration_sec),
             weather_multiplier_used=candidate.multiplier,
+            traffic_prepriced=quote.traffic_prepriced,
         )

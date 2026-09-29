@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { t } from '../i18n';
 import { ARTBOARD_BLEED } from './artboardScale';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 import {
@@ -72,6 +73,7 @@ export function ToastColumn({
   onCollapse: () => void;
   onToastAction?: (toast: ToastNotification) => void;
 }) {
+  const { dx } = useArtboardStretch();
   const visible = useVisibleColumnToasts();
   const latestDetailId = visible.reduce<string | null>((best, toast) => {
     if (toast.actionLabel !== t('figma-dashboard.ToastColumn.59589fe2a5')) return best;
@@ -189,7 +191,7 @@ export function ToastColumn({
                   top: -ARTBOARD_BLEED,
                   bottom: -ARTBOARD_BLEED,
                   width: TOAST_WIDTH + 72,
-                  left: TOAST_LEFT - TOAST_WIDTH - 72,
+                  left: TOAST_LEFT + dx - TOAST_WIDTH - 72,
                 }}
                 onClick={onCollapse}
               />
@@ -200,7 +202,11 @@ export function ToastColumn({
                 className="pointer-events-auto absolute z-10 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{
                   top: TOAST_STACK_TOP,
-                  left: TOAST_LEFT - SHADOW_PAD,
+                  // The stack hangs 30 units off the board's right edge, under the bell
+                  // that opens it -- and the bell already moves with the spare width. Left
+                  // at the drawn 1465 the cards drifted into the middle of a wide screen
+                  // while the control they belong to stayed in the corner.
+                  left: TOAST_LEFT + dx - SHADOW_PAD,
                   width: TOAST_WIDTH + SHADOW_PAD * 2,
                   bottom: -ARTBOARD_BLEED,
                   paddingLeft: SHADOW_PAD,

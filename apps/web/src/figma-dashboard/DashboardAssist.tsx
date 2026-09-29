@@ -7,14 +7,31 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
-import { ChatsPage } from '../components/ChatsPage';
+import type { LiveWorkday } from '../api/live';
+import type { DashboardSnapshot } from '../api/types';
 import { t } from '../i18n';
+import { ChatsView } from './ChatsView';
 import { DashboardAi } from './DispatcherAiPane';
+import { engineerProfilesFromSnapshot } from './engineerRoster';
 
 export { DashboardAi };
 
 /** Dispatcher chat list for the sidebar tab. Reads the handover contour and writes replies. */
-export function DashboardChats({ token }: { token: string | null }) {
+export function DashboardChats({
+  token,
+  focusChatId,
+  focusEngineerId,
+  snapshot,
+  workday,
+  onOpenEngineer,
+}: {
+  token: string | null;
+  focusChatId?: string | null;
+  focusEngineerId?: string | null;
+  snapshot: DashboardSnapshot | null;
+  workday?: LiveWorkday | null;
+  onOpenEngineer: (engineerId: string, text: string) => Promise<DispatchChatView>;
+}) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +61,17 @@ export function DashboardChats({ token }: { token: string | null }) {
     [token],
   );
 
+  /** Replaces one committed chat in place; a row the list has not seen yet is appended. */
+  const applyChat = useCallback((chat: DispatchChatView) => {
+    setChats((current) => {
+      if (!current) return [chat];
+      const known = current.some((item) => item.handoff.id === chat.handoff.id);
+      return known
+        ? current.map((item) => (item.handoff.id === chat.handoff.id ? chat : item))
+        : [...current, chat];
+    });
+  }, []);
+
   useEffect(() => {
     refresh();
     const timer = window.setInterval(() => refresh(true), 5_000);
@@ -51,27 +79,52 @@ export function DashboardChats({ token }: { token: string | null }) {
   }, [refresh]);
 
   return (
-    <div className="absolute inset-0 overflow-auto bg-figma-canvas p-[32px]">
-      <ChatsPage
+    <div className="absolute inset-0 overflow-hidden bg-figma-canvas">
+      <ChatsView
         token={token}
+        focusChatId={focusChatId}
+        focusEngineerId={focusEngineerId}
         chats={chats}
         loading={loading}
         error={error}
         writesDisabled={!token}
-        onRefresh={refresh}
         onSendMessage={async (conversationId, text) => {
           if (!token) return;
-          await sendDispatchChatMessage(token, conversationId, crypto.randomUUID(), text);
-          refresh();
+          const written = await sendDispatchChatMessage(
+            token,
+            conversationId,
+            crypto.randomUUID(),
+            text,
+          );
+          // Show it the moment the server accepted it. Waiting for the five-second poll
+          // left the composer empty and the thread unchanged, so the dispatcher could
+          // not tell the message had gone and sent it a second time.
+          applyChat(written.chat);
         }}
         onFinish={async (conversationId) => {
           if (!token) return;
-          await finishDispatchChat(token, conversationId, crypto.randomUUID());
-          refresh();
+          const finished = await finishDispatchChat(token, conversationId, crypto.randomUUID());
+          applyChat(finished.chat);
         }}
+        workday={workday ?? null}
         onMarkRead={(conversationId, seq) => {
           if (!token) return;
           void readDispatchChat(token, conversationId, crypto.randomUUID(), seq);
+        }}
+        engineers={engineerProfilesFromSnapshot(snapshot).map(
+          ({ id, displayName, hasAccount }) => ({
+            id,
+            displayName,
+            canChat: hasAccount,
+          }),
+        )}
+        onOpenEngineer={async (engineerId, text) => {
+          const chat = await onOpenEngineer(engineerId, text);
+          setChats((current) => [
+            chat,
+            ...(current ?? []).filter((item) => item.handoff.id !== chat.handoff.id),
+          ]);
+          return chat;
         }}
       />
     </div>

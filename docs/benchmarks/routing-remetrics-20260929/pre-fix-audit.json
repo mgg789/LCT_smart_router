@@ -1,0 +1,5706 @@
+{
+  "east": {
+    "fifo_verified": {
+      "legs": 30,
+      "modes": {
+        "road": 25,
+        "metro_composite": 5
+      },
+      "violations": [
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "61540",
+          "code": "DURATION",
+          "plan_sec": 785,
+          "route3_with_buffer_sec": 822
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "86160",
+          "code": "DURATION",
+          "plan_sec": 1722,
+          "route3_with_buffer_sec": 1706
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "46393",
+          "code": "DURATION",
+          "plan_sec": 1173,
+          "route3_with_buffer_sec": 1130
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "82388",
+          "code": "DURATION",
+          "plan_sec": 2611,
+          "route3_with_buffer_sec": 2847
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "84627",
+          "code": "DURATION",
+          "plan_sec": 1042,
+          "route3_with_buffer_sec": 1034
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "71388",
+          "code": "DURATION",
+          "plan_sec": 1488,
+          "route3_with_buffer_sec": 1498
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "67554",
+          "code": "DURATION",
+          "plan_sec": 3159,
+          "route3_with_buffer_sec": 3511
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "21571",
+          "code": "DURATION",
+          "plan_sec": 1926,
+          "route3_with_buffer_sec": 2526
+        }
+      ],
+      "endpoint_max_m": 72.79,
+      "rows": [
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "61540",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 21.13,
+          "service_duration_s": 221.8,
+          "plan_travel_sec": 785
+        },
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "41962",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 21.13,
+          "end_error_m": 23.79,
+          "service_duration_s": 469.1,
+          "plan_travel_sec": 1070
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "86160",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 27.55,
+          "end_error_m": 16.7,
+          "service_duration_s": 1105.8,
+          "plan_travel_sec": 1722
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "98815",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 16.7,
+          "end_error_m": 16.0,
+          "service_duration_s": 852.0,
+          "plan_travel_sec": 1452
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "74949",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 54.61,
+          "service_duration_s": 2350,
+          "plan_travel_sec": 2950
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "41077",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 54.61,
+          "end_error_m": 21.67,
+          "service_duration_s": 187,
+          "plan_travel_sec": 787
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "87693",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 21.67,
+          "end_error_m": 31.46,
+          "service_duration_s": 1912,
+          "plan_travel_sec": 2512
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "92031",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 31.46,
+          "end_error_m": 10.0,
+          "service_duration_s": 1654,
+          "plan_travel_sec": 2254
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "74198",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 14.86,
+          "service_duration_s": 277.7,
+          "plan_travel_sec": 878
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "31260",
+          "mode": "road",
+          "departure_at": 1786990200,
+          "start_error_m": 14.86,
+          "end_error_m": 0.05,
+          "service_duration_s": 429.1,
+          "plan_travel_sec": 1030
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "93086",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 72.79,
+          "end_error_m": 11.73,
+          "service_duration_s": 2097,
+          "plan_travel_sec": 2697
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "57866",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 11.73,
+          "end_error_m": 20.69,
+          "service_duration_s": 747,
+          "plan_travel_sec": 1347
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "35675",
+          "mode": "metro_composite",
+          "departure_at": 1786968600,
+          "start_error_m": 20.69,
+          "end_error_m": 29.8,
+          "service_duration_s": 2696,
+          "plan_travel_sec": 3296
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "50104",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 27.55,
+          "end_error_m": 14.47,
+          "service_duration_s": 604.5,
+          "plan_travel_sec": 1205
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "46393",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.47,
+          "end_error_m": 14.82,
+          "service_duration_s": 530.0,
+          "plan_travel_sec": 1173
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "82388",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 12.03,
+          "service_duration_s": 2247,
+          "plan_travel_sec": 2611
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "22634",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 12.03,
+          "end_error_m": 29.73,
+          "service_duration_s": 1061,
+          "plan_travel_sec": 1661
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "10135",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 12.8,
+          "service_duration_s": 579.5,
+          "plan_travel_sec": 1180
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "84627",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 12.8,
+          "end_error_m": 20.3,
+          "service_duration_s": 433.6,
+          "plan_travel_sec": 1042
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "18754",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 72.79,
+          "end_error_m": 25.39,
+          "service_duration_s": 649,
+          "plan_travel_sec": 1249
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "23380",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 27.55,
+          "end_error_m": 9.87,
+          "service_duration_s": 1890.0,
+          "plan_travel_sec": 2490
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "71388",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 9.87,
+          "end_error_m": 41.83,
+          "service_duration_s": 897.6,
+          "plan_travel_sec": 1488
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "47330",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 41.83,
+          "end_error_m": 11.8,
+          "service_duration_s": 968.6,
+          "plan_travel_sec": 1569
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "26645",
+          "mode": "road",
+          "departure_at": 1786971369,
+          "start_error_m": 11.8,
+          "end_error_m": 14.31,
+          "service_duration_s": 345.3,
+          "plan_travel_sec": 946
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "97886",
+          "mode": "road",
+          "departure_at": 1786974115,
+          "start_error_m": 14.31,
+          "end_error_m": 21.6,
+          "service_duration_s": 1621.5,
+          "plan_travel_sec": 2222
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "67554",
+          "mode": "metro_composite",
+          "departure_at": 1786953600,
+          "start_error_m": 72.79,
+          "end_error_m": 71.86,
+          "service_duration_s": 2911,
+          "plan_travel_sec": 3159
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "30769",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 71.86,
+          "end_error_m": 11.58,
+          "service_duration_s": 2234,
+          "plan_travel_sec": 2834
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "17892",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 11.58,
+          "end_error_m": 25.48,
+          "service_duration_s": 1132,
+          "plan_travel_sec": 1732
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "43506",
+          "mode": "metro_composite",
+          "departure_at": 1786983000,
+          "start_error_m": 25.48,
+          "end_error_m": 19.24,
+          "service_duration_s": 3200,
+          "plan_travel_sec": 3800
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "21571",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 14.91,
+          "service_duration_s": 1925.5,
+          "plan_travel_sec": 1926
+        }
+      ]
+    },
+    "router_hybrid_verified": {
+      "legs": 59,
+      "modes": {
+        "road": 54,
+        "metro_composite": 5
+      },
+      "violations": [
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "32807",
+          "code": "DURATION",
+          "plan_sec": 1098,
+          "route3_with_buffer_sec": 1159
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "97886",
+          "code": "DURATION",
+          "plan_sec": 2508,
+          "route3_with_buffer_sec": 3007
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "46393",
+          "code": "DURATION",
+          "plan_sec": 820,
+          "route3_with_buffer_sec": 824
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "50104",
+          "code": "DURATION",
+          "plan_sec": 1173,
+          "route3_with_buffer_sec": 1194
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "84627",
+          "code": "DURATION",
+          "plan_sec": 1187,
+          "route3_with_buffer_sec": 1150
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "82808",
+          "code": "DURATION",
+          "plan_sec": 1417,
+          "route3_with_buffer_sec": 1424
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "41077",
+          "code": "DURATION",
+          "plan_sec": 3434,
+          "route3_with_buffer_sec": 3795
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "98815",
+          "code": "DURATION",
+          "plan_sec": 2780,
+          "route3_with_buffer_sec": 3517
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "50219",
+          "code": "DURATION",
+          "plan_sec": 1573,
+          "route3_with_buffer_sec": 1809
+        }
+      ],
+      "endpoint_max_m": 181.47,
+      "rows": [
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "32807",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 16.89,
+          "service_duration_s": 558.3,
+          "plan_travel_sec": 1098
+        },
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "98182",
+          "mode": "road",
+          "departure_at": 1786951800,
+          "start_error_m": 16.89,
+          "end_error_m": 14.25,
+          "service_duration_s": 543.7,
+          "plan_travel_sec": 1144
+        },
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "4893",
+          "mode": "road",
+          "departure_at": 1786957144,
+          "start_error_m": 14.25,
+          "end_error_m": 27.91,
+          "service_duration_s": 796.7,
+          "plan_travel_sec": 1397
+        },
+        {
+          "engineer_id": "east-team-01",
+          "request_id": "48238",
+          "mode": "road",
+          "departure_at": 1786963341,
+          "start_error_m": 27.91,
+          "end_error_m": 18.57,
+          "service_duration_s": 1035.7,
+          "plan_travel_sec": 1636
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "52405",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 27.55,
+          "end_error_m": 10.28,
+          "service_duration_s": 745.2,
+          "plan_travel_sec": 1346
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "29890",
+          "mode": "road",
+          "departure_at": 1786955546,
+          "start_error_m": 10.28,
+          "end_error_m": 17.0,
+          "service_duration_s": 594.1,
+          "plan_travel_sec": 1195
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "76082",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 17.0,
+          "end_error_m": 19.11,
+          "service_duration_s": 279.8,
+          "plan_travel_sec": 880
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "30243",
+          "mode": "road",
+          "departure_at": 1786963480,
+          "start_error_m": 19.11,
+          "end_error_m": 24.23,
+          "service_duration_s": 401.7,
+          "plan_travel_sec": 1002
+        },
+        {
+          "engineer_id": "east-team-02",
+          "request_id": "86160",
+          "mode": "road",
+          "departure_at": 1786980000,
+          "start_error_m": 24.23,
+          "end_error_m": 16.7,
+          "service_duration_s": 542.1,
+          "plan_travel_sec": 1143
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "57299",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 53.72,
+          "service_duration_s": 261,
+          "plan_travel_sec": 861
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "33527",
+          "mode": "road",
+          "departure_at": 1786953261,
+          "start_error_m": 53.72,
+          "end_error_m": 11.96,
+          "service_duration_s": 1173,
+          "plan_travel_sec": 1773
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "67554",
+          "mode": "road",
+          "departure_at": 1786956234,
+          "start_error_m": 11.96,
+          "end_error_m": 71.86,
+          "service_duration_s": 207,
+          "plan_travel_sec": 807
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "22634",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 71.86,
+          "end_error_m": 29.73,
+          "service_duration_s": 1579,
+          "plan_travel_sec": 2179
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "82388",
+          "mode": "road",
+          "departure_at": 1786965600,
+          "start_error_m": 29.73,
+          "end_error_m": 12.03,
+          "service_duration_s": 354,
+          "plan_travel_sec": 954
+        },
+        {
+          "engineer_id": "east-team-03",
+          "request_id": "35675",
+          "mode": "road",
+          "departure_at": 1786970754,
+          "start_error_m": 12.03,
+          "end_error_m": 29.8,
+          "service_duration_s": 837,
+          "plan_travel_sec": 1437
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "10245",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 13.85,
+          "service_duration_s": 486.7,
+          "plan_travel_sec": 1087
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "57866",
+          "mode": "road",
+          "departure_at": 1786962487,
+          "start_error_m": 13.85,
+          "end_error_m": 20.69,
+          "service_duration_s": 200.6,
+          "plan_travel_sec": 801
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "18754",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 20.69,
+          "end_error_m": 32.54,
+          "service_duration_s": 122.6,
+          "plan_travel_sec": 723
+        },
+        {
+          "engineer_id": "east-team-04",
+          "request_id": "74198",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 32.54,
+          "end_error_m": 14.86,
+          "service_duration_s": 456.2,
+          "plan_travel_sec": 1057
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "24980",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 72.79,
+          "end_error_m": 181.47,
+          "service_duration_s": 2925,
+          "plan_travel_sec": 3525
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "76678",
+          "mode": "road",
+          "departure_at": 1786952325,
+          "start_error_m": 181.47,
+          "end_error_m": 25.24,
+          "service_duration_s": 875,
+          "plan_travel_sec": 1475
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "94409",
+          "mode": "road",
+          "departure_at": 1786955600,
+          "start_error_m": 25.24,
+          "end_error_m": 52.31,
+          "service_duration_s": 1514,
+          "plan_travel_sec": 2114
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "97886",
+          "mode": "metro_composite",
+          "departure_at": 1786961914,
+          "start_error_m": 52.31,
+          "end_error_m": 139.12,
+          "service_duration_s": 2407,
+          "plan_travel_sec": 2508
+        },
+        {
+          "engineer_id": "east-team-05",
+          "request_id": "41962",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 139.12,
+          "end_error_m": 45.53,
+          "service_duration_s": 1248,
+          "plan_travel_sec": 1848
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "69967",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 27.55,
+          "end_error_m": 20.09,
+          "service_duration_s": 1217.3,
+          "plan_travel_sec": 1818
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "93086",
+          "mode": "road",
+          "departure_at": 1786956618,
+          "start_error_m": 20.09,
+          "end_error_m": 34.77,
+          "service_duration_s": 1208.6,
+          "plan_travel_sec": 1809
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "10135",
+          "mode": "road",
+          "departure_at": 1786962627,
+          "start_error_m": 34.77,
+          "end_error_m": 12.8,
+          "service_duration_s": 177.4,
+          "plan_travel_sec": 778
+        },
+        {
+          "engineer_id": "east-team-06",
+          "request_id": "46393",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 12.8,
+          "end_error_m": 14.82,
+          "service_duration_s": 223.6,
+          "plan_travel_sec": 820
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "34366",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 53.22,
+          "service_duration_s": 1518,
+          "plan_travel_sec": 2118
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "53587",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 53.22,
+          "end_error_m": 36.58,
+          "service_duration_s": 414,
+          "plan_travel_sec": 1014
+        },
+        {
+          "engineer_id": "east-team-07",
+          "request_id": "87693",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 36.58,
+          "end_error_m": 31.46,
+          "service_duration_s": 308,
+          "plan_travel_sec": 908
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "41912",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 22.52,
+          "service_duration_s": 832.6,
+          "plan_travel_sec": 1433
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "71388",
+          "mode": "road",
+          "departure_at": 1786963433,
+          "start_error_m": 22.52,
+          "end_error_m": 41.83,
+          "service_duration_s": 825.2,
+          "plan_travel_sec": 1426
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "61540",
+          "mode": "road",
+          "departure_at": 1786969059,
+          "start_error_m": 41.83,
+          "end_error_m": 21.13,
+          "service_duration_s": 343.0,
+          "plan_travel_sec": 943
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "50104",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 21.13,
+          "end_error_m": 14.47,
+          "service_duration_s": 593.4,
+          "plan_travel_sec": 1173
+        },
+        {
+          "engineer_id": "east-team-08",
+          "request_id": "84627",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.47,
+          "end_error_m": 20.3,
+          "service_duration_s": 549.2,
+          "plan_travel_sec": 1187
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "77563",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 72.79,
+          "end_error_m": 10.01,
+          "service_duration_s": 461,
+          "plan_travel_sec": 1061
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "7939",
+          "mode": "road",
+          "departure_at": 1786955261,
+          "start_error_m": 10.01,
+          "end_error_m": 48.73,
+          "service_duration_s": 446,
+          "plan_travel_sec": 1046
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "30769",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 48.73,
+          "end_error_m": 11.58,
+          "service_duration_s": 921,
+          "plan_travel_sec": 1521
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "17892",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 11.58,
+          "end_error_m": 25.48,
+          "service_duration_s": 378,
+          "plan_travel_sec": 978
+        },
+        {
+          "engineer_id": "east-team-09",
+          "request_id": "48174",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 25.48,
+          "end_error_m": 70.23,
+          "service_duration_s": 524,
+          "plan_travel_sec": 1124
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "21367",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 27.55,
+          "end_error_m": 15.23,
+          "service_duration_s": 626.9,
+          "plan_travel_sec": 1227
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "37272",
+          "mode": "road",
+          "departure_at": 1786950027,
+          "start_error_m": 15.23,
+          "end_error_m": 22.68,
+          "service_duration_s": 787.1,
+          "plan_travel_sec": 1388
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "23380",
+          "mode": "road",
+          "departure_at": 1786955615,
+          "start_error_m": 22.68,
+          "end_error_m": 9.87,
+          "service_duration_s": 297.1,
+          "plan_travel_sec": 898
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "82808",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 9.87,
+          "end_error_m": 16.95,
+          "service_duration_s": 823.2,
+          "plan_travel_sec": 1417
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "47330",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 16.95,
+          "end_error_m": 11.8,
+          "service_duration_s": 667.2,
+          "plan_travel_sec": 1268
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "15648",
+          "mode": "road",
+          "departure_at": 1786971068,
+          "start_error_m": 11.8,
+          "end_error_m": 8.52,
+          "service_duration_s": 358.2,
+          "plan_travel_sec": 959
+        },
+        {
+          "engineer_id": "east-team-10",
+          "request_id": "26645",
+          "mode": "road",
+          "departure_at": 1786973827,
+          "start_error_m": 8.52,
+          "end_error_m": 14.31,
+          "service_duration_s": 266.0,
+          "plan_travel_sec": 866
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "41077",
+          "mode": "metro_composite",
+          "departure_at": 1786953600,
+          "start_error_m": 72.79,
+          "end_error_m": 21.67,
+          "service_duration_s": 3195,
+          "plan_travel_sec": 3434
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "24076",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 21.67,
+          "end_error_m": 18.04,
+          "service_duration_s": 243,
+          "plan_travel_sec": 843
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "17349",
+          "mode": "road",
+          "departure_at": 1786963443,
+          "start_error_m": 18.04,
+          "end_error_m": 81.77,
+          "service_duration_s": 588,
+          "plan_travel_sec": 1188
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "98815",
+          "mode": "metro_composite",
+          "departure_at": 1786966431,
+          "start_error_m": 81.77,
+          "end_error_m": 15.21,
+          "service_duration_s": 2917,
+          "plan_travel_sec": 2780
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "92031",
+          "mode": "metro_composite",
+          "departure_at": 1786980000,
+          "start_error_m": 15.21,
+          "end_error_m": 10.0,
+          "service_duration_s": 2401,
+          "plan_travel_sec": 3001
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "31260",
+          "mode": "road",
+          "departure_at": 1786984201,
+          "start_error_m": 10.0,
+          "end_error_m": 19.24,
+          "service_duration_s": 740,
+          "plan_travel_sec": 1340
+        },
+        {
+          "engineer_id": "east-team-11",
+          "request_id": "43506",
+          "mode": "road",
+          "departure_at": 1786987200,
+          "start_error_m": 19.24,
+          "end_error_m": 19.24,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "50219",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 13.27,
+          "service_duration_s": 1208.3,
+          "plan_travel_sec": 1573
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "60720",
+          "mode": "road",
+          "departure_at": 1786954800,
+          "start_error_m": 13.27,
+          "end_error_m": 26.71,
+          "service_duration_s": 671.1,
+          "plan_travel_sec": 1272
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "73572",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 26.71,
+          "end_error_m": 19.38,
+          "service_duration_s": 405.7,
+          "plan_travel_sec": 1006
+        },
+        {
+          "engineer_id": "east-team-12",
+          "request_id": "51115",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 19.38,
+          "end_error_m": 13.51,
+          "service_duration_s": 374.2,
+          "plan_travel_sec": 975
+        }
+      ]
+    }
+  },
+  "southeast": {
+    "fifo_verified": {
+      "legs": 34,
+      "modes": {
+        "road": 33,
+        "metro_composite": 1
+      },
+      "violations": [
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "14416",
+          "code": "DURATION",
+          "plan_sec": 1827,
+          "route3_with_buffer_sec": 1927
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "84466",
+          "code": "DURATION",
+          "plan_sec": 1637,
+          "route3_with_buffer_sec": 1626
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "33880",
+          "code": "DURATION",
+          "plan_sec": 1767,
+          "route3_with_buffer_sec": 1646
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "54422",
+          "code": "DURATION",
+          "plan_sec": 2715,
+          "route3_with_buffer_sec": 2846
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "7610",
+          "code": "DURATION",
+          "plan_sec": 1377,
+          "route3_with_buffer_sec": 1389
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "60141",
+          "code": "DURATION",
+          "plan_sec": 1352,
+          "route3_with_buffer_sec": 1354
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "60886",
+          "code": "DURATION",
+          "plan_sec": 1384,
+          "route3_with_buffer_sec": 1410
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "88209",
+          "code": "DURATION",
+          "plan_sec": 1685,
+          "route3_with_buffer_sec": 1915
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "11872",
+          "code": "DURATION",
+          "plan_sec": 1450,
+          "route3_with_buffer_sec": 1459
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "4724",
+          "code": "DURATION",
+          "plan_sec": 1063,
+          "route3_with_buffer_sec": 1059
+        }
+      ],
+      "endpoint_max_m": 80.39,
+      "rows": [
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "14416",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 14.29,
+          "service_duration_s": 1326.5,
+          "plan_travel_sec": 1827
+        },
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "68359",
+          "mode": "road",
+          "departure_at": 1786972800,
+          "start_error_m": 14.29,
+          "end_error_m": 19.2,
+          "service_duration_s": 499.1,
+          "plan_travel_sec": 1100
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "84466",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 0.05,
+          "end_error_m": 15.28,
+          "service_duration_s": 1025.6,
+          "plan_travel_sec": 1637
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "51603",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 15.28,
+          "end_error_m": 16.4,
+          "service_duration_s": 717.4,
+          "plan_travel_sec": 1318
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "52041",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 8.07,
+          "service_duration_s": 1657,
+          "plan_travel_sec": 2257
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "60484",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 8.07,
+          "end_error_m": 29.13,
+          "service_duration_s": 1255,
+          "plan_travel_sec": 1855
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "68946",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 29.13,
+          "end_error_m": 27.82,
+          "service_duration_s": 1087,
+          "plan_travel_sec": 1687
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "2427",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 27.82,
+          "end_error_m": 32.49,
+          "service_duration_s": 344,
+          "plan_travel_sec": 944
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "63591",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 10.81,
+          "end_error_m": 12.59,
+          "service_duration_s": 143,
+          "plan_travel_sec": 743
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "76173",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 23.49,
+          "end_error_m": 17.16,
+          "service_duration_s": 434.6,
+          "plan_travel_sec": 1035
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "33880",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 17.16,
+          "end_error_m": 15.51,
+          "service_duration_s": 1045.7,
+          "plan_travel_sec": 1767
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "23807",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 10.81,
+          "end_error_m": 80.39,
+          "service_duration_s": 1200,
+          "plan_travel_sec": 1800
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "876",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 47.2,
+          "end_error_m": 47.2,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "2245",
+          "mode": "road",
+          "departure_at": 1786955400,
+          "start_error_m": 80.39,
+          "end_error_m": 37.12,
+          "service_duration_s": 8147,
+          "plan_travel_sec": 8747
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "54422",
+          "mode": "metro_composite",
+          "departure_at": 1786968600,
+          "start_error_m": 37.12,
+          "end_error_m": 28.52,
+          "service_duration_s": 2246,
+          "plan_travel_sec": 2715
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "58066",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 0.05,
+          "end_error_m": 27.47,
+          "service_duration_s": 1160.4,
+          "plan_travel_sec": 1761
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "79450",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 27.47,
+          "end_error_m": 25.63,
+          "service_duration_s": 656.6,
+          "plan_travel_sec": 1257
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "72476",
+          "mode": "road",
+          "departure_at": 1786963857,
+          "start_error_m": 25.63,
+          "end_error_m": 15.91,
+          "service_duration_s": 1036.2,
+          "plan_travel_sec": 1637
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "37590",
+          "mode": "road",
+          "departure_at": 1786966694,
+          "start_error_m": 15.91,
+          "end_error_m": 14.04,
+          "service_duration_s": 436.6,
+          "plan_travel_sec": 1037
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "2915",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 26.36,
+          "service_duration_s": 5542,
+          "plan_travel_sec": 6142
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "75282",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 26.36,
+          "end_error_m": 15.36,
+          "service_duration_s": 6991,
+          "plan_travel_sec": 7591
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "3566",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 20.14,
+          "service_duration_s": 874.1,
+          "plan_travel_sec": 1475
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "7610",
+          "mode": "road",
+          "departure_at": 1786962875,
+          "start_error_m": 20.14,
+          "end_error_m": 71.79,
+          "service_duration_s": 788.2,
+          "plan_travel_sec": 1377
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "65717",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 10.81,
+          "end_error_m": 37.6,
+          "service_duration_s": 1521,
+          "plan_travel_sec": 2121
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "78920",
+          "mode": "road",
+          "departure_at": 1786956321,
+          "start_error_m": 37.6,
+          "end_error_m": 11.75,
+          "service_duration_s": 1465,
+          "plan_travel_sec": 2065
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "33507",
+          "mode": "road",
+          "departure_at": 1786962586,
+          "start_error_m": 11.75,
+          "end_error_m": 59.16,
+          "service_duration_s": 2753,
+          "plan_travel_sec": 3353
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "44117",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 0.05,
+          "end_error_m": 16.15,
+          "service_duration_s": 768.0,
+          "plan_travel_sec": 1368
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "60141",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 16.15,
+          "end_error_m": 15.92,
+          "service_duration_s": 753.8,
+          "plan_travel_sec": 1352
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "19216",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 15.92,
+          "end_error_m": 18.69,
+          "service_duration_s": 734.9,
+          "plan_travel_sec": 1335
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "60886",
+          "mode": "road",
+          "departure_at": 1786963935,
+          "start_error_m": 18.69,
+          "end_error_m": 14.45,
+          "service_duration_s": 809.1,
+          "plan_travel_sec": 1384
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "64168",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 14.45,
+          "end_error_m": 17.29,
+          "service_duration_s": 781.0,
+          "plan_travel_sec": 1381
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "88209",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 19.12,
+          "service_duration_s": 1314.2,
+          "plan_travel_sec": 1685
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "11872",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 19.12,
+          "end_error_m": 28.22,
+          "service_duration_s": 858.8,
+          "plan_travel_sec": 1450
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "4724",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 28.22,
+          "end_error_m": 13.87,
+          "service_duration_s": 458.2,
+          "plan_travel_sec": 1063
+        }
+      ]
+    },
+    "router_hybrid_verified": {
+      "legs": 45,
+      "modes": {
+        "road": 45
+      },
+      "violations": [
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "876",
+          "code": "DURATION",
+          "plan_sec": 860,
+          "route3_with_buffer_sec": 940
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "4724",
+          "code": "DURATION",
+          "plan_sec": 1230,
+          "route3_with_buffer_sec": 1256
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "37590",
+          "code": "DURATION",
+          "plan_sec": 2020,
+          "route3_with_buffer_sec": 1981
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "54422",
+          "code": "DURATION",
+          "plan_sec": 741,
+          "route3_with_buffer_sec": 739
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "7610",
+          "code": "DURATION",
+          "plan_sec": 724,
+          "route3_with_buffer_sec": 748
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "78920",
+          "code": "DURATION",
+          "plan_sec": 1439,
+          "route3_with_buffer_sec": 1472
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "40919",
+          "code": "DURATION",
+          "plan_sec": 1607,
+          "route3_with_buffer_sec": 1739
+        }
+      ],
+      "endpoint_max_m": 172.16,
+      "rows": [
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "876",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 15.59,
+          "service_duration_s": 339.2,
+          "plan_travel_sec": 860
+        },
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "23807",
+          "mode": "road",
+          "departure_at": 1786951200,
+          "start_error_m": 47.2,
+          "end_error_m": 47.2,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "12329",
+          "mode": "road",
+          "departure_at": 1786955400,
+          "start_error_m": 15.59,
+          "end_error_m": 15.68,
+          "service_duration_s": 708.5,
+          "plan_travel_sec": 1309
+        },
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "72476",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 15.68,
+          "end_error_m": 15.91,
+          "service_duration_s": 279.9,
+          "plan_travel_sec": 880
+        },
+        {
+          "engineer_id": "southeast-team-01",
+          "request_id": "75282",
+          "mode": "road",
+          "departure_at": 1786965600,
+          "start_error_m": 15.91,
+          "end_error_m": 21.4,
+          "service_duration_s": 497.6,
+          "plan_travel_sec": 1098
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "58129",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 0.05,
+          "end_error_m": 18.26,
+          "service_duration_s": 875.2,
+          "plan_travel_sec": 1476
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "58066",
+          "mode": "road",
+          "departure_at": 1786955676,
+          "start_error_m": 18.26,
+          "end_error_m": 27.47,
+          "service_duration_s": 594.6,
+          "plan_travel_sec": 1195
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "2245",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 27.47,
+          "end_error_m": 23.14,
+          "service_duration_s": 104.3,
+          "plan_travel_sec": 705
+        },
+        {
+          "engineer_id": "southeast-team-02",
+          "request_id": "51603",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 23.14,
+          "end_error_m": 16.4,
+          "service_duration_s": 250.2,
+          "plan_travel_sec": 851
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "31495",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 23.01,
+          "service_duration_s": 344,
+          "plan_travel_sec": 944
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "20055",
+          "mode": "road",
+          "departure_at": 1786953344,
+          "start_error_m": 23.01,
+          "end_error_m": 61.55,
+          "service_duration_s": 2214,
+          "plan_travel_sec": 2814
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "60484",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 61.55,
+          "end_error_m": 29.13,
+          "service_duration_s": 1728,
+          "plan_travel_sec": 2328
+        },
+        {
+          "engineer_id": "southeast-team-03",
+          "request_id": "76173",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 29.13,
+          "end_error_m": 172.16,
+          "service_duration_s": 305,
+          "plan_travel_sec": 905
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "3566",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 20.14,
+          "service_duration_s": 874.1,
+          "plan_travel_sec": 1475
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "32066",
+          "mode": "road",
+          "departure_at": 1786962875,
+          "start_error_m": 20.14,
+          "end_error_m": 12.24,
+          "service_duration_s": 210.3,
+          "plan_travel_sec": 811
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "60886",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 12.24,
+          "end_error_m": 14.45,
+          "service_duration_s": 484.0,
+          "plan_travel_sec": 1084
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "4724",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 14.45,
+          "end_error_m": 13.87,
+          "service_duration_s": 655.5,
+          "plan_travel_sec": 1230
+        },
+        {
+          "engineer_id": "southeast-team-04",
+          "request_id": "37590",
+          "mode": "road",
+          "departure_at": 1786983600,
+          "start_error_m": 13.87,
+          "end_error_m": 14.04,
+          "service_duration_s": 1380.3,
+          "plan_travel_sec": 2020
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "1287",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 10.81,
+          "end_error_m": 13.58,
+          "service_duration_s": 198,
+          "plan_travel_sec": 798
+        },
+        {
+          "engineer_id": "southeast-team-05",
+          "request_id": "19216",
+          "mode": "road",
+          "departure_at": 1786949598,
+          "start_error_m": 13.58,
+          "end_error_m": 11.18,
+          "service_duration_s": 4143,
+          "plan_travel_sec": 4743
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "60141",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 0.05,
+          "end_error_m": 15.92,
+          "service_duration_s": 739.4,
+          "plan_travel_sec": 1340
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "79450",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 15.92,
+          "end_error_m": 25.63,
+          "service_duration_s": 161.7,
+          "plan_travel_sec": 762
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "11872",
+          "mode": "road",
+          "departure_at": 1786963362,
+          "start_error_m": 25.63,
+          "end_error_m": 28.22,
+          "service_duration_s": 730.3,
+          "plan_travel_sec": 1331
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "54422",
+          "mode": "road",
+          "departure_at": 1786969493,
+          "start_error_m": 28.22,
+          "end_error_m": 15.14,
+          "service_duration_s": 138.6,
+          "plan_travel_sec": 741
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "7610",
+          "mode": "road",
+          "departure_at": 1786976400,
+          "start_error_m": 15.14,
+          "end_error_m": 71.79,
+          "service_duration_s": 147.9,
+          "plan_travel_sec": 724
+        },
+        {
+          "engineer_id": "southeast-team-06",
+          "request_id": "24482",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.14,
+          "end_error_m": 9.38,
+          "service_duration_s": 529,
+          "plan_travel_sec": 1129
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "93798",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 27.38,
+          "service_duration_s": 5475,
+          "plan_travel_sec": 6075
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "40698",
+          "mode": "road",
+          "departure_at": 1786956675,
+          "start_error_m": 27.38,
+          "end_error_m": 36.54,
+          "service_duration_s": 1520,
+          "plan_travel_sec": 2120
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "14416",
+          "mode": "road",
+          "departure_at": 1786962995,
+          "start_error_m": 36.54,
+          "end_error_m": 78.97,
+          "service_duration_s": 237,
+          "plan_travel_sec": 837
+        },
+        {
+          "engineer_id": "southeast-team-07",
+          "request_id": "64168",
+          "mode": "road",
+          "departure_at": 1786972800,
+          "start_error_m": 78.97,
+          "end_error_m": 44.88,
+          "service_duration_s": 1756,
+          "plan_travel_sec": 2356
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "52041",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 22.85,
+          "service_duration_s": 785.3,
+          "plan_travel_sec": 1386
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "68946",
+          "mode": "road",
+          "departure_at": 1786962786,
+          "start_error_m": 22.85,
+          "end_error_m": 7.63,
+          "service_duration_s": 204.1,
+          "plan_travel_sec": 805
+        },
+        {
+          "engineer_id": "southeast-team-08",
+          "request_id": "2427",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 27.82,
+          "end_error_m": 32.49,
+          "service_duration_s": 1032,
+          "plan_travel_sec": 1632
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "79144",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 10.81,
+          "end_error_m": 28.79,
+          "service_duration_s": 1344,
+          "plan_travel_sec": 1944
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "88209",
+          "mode": "road",
+          "departure_at": 1786956144,
+          "start_error_m": 28.79,
+          "end_error_m": 82.43,
+          "service_duration_s": 276,
+          "plan_travel_sec": 876
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "63591",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 82.43,
+          "end_error_m": 12.59,
+          "service_duration_s": 1434,
+          "plan_travel_sec": 2034
+        },
+        {
+          "engineer_id": "southeast-team-09",
+          "request_id": "33507",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 12.59,
+          "end_error_m": 59.16,
+          "service_duration_s": 282,
+          "plan_travel_sec": 882
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "65717",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 0.05,
+          "end_error_m": 14.55,
+          "service_duration_s": 831.3,
+          "plan_travel_sec": 1432
+        },
+        {
+          "engineer_id": "southeast-team-10",
+          "request_id": "78920",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 14.55,
+          "end_error_m": 16.4,
+          "service_duration_s": 871.5,
+          "plan_travel_sec": 1439
+        },
+        {
+          "engineer_id": "southeast-team-11",
+          "request_id": "2915",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 10.81,
+          "end_error_m": 26.36,
+          "service_duration_s": 5542,
+          "plan_travel_sec": 6142
+        },
+        {
+          "engineer_id": "southeast-team-11",
+          "request_id": "68359",
+          "mode": "road",
+          "departure_at": 1786963942,
+          "start_error_m": 26.36,
+          "end_error_m": 20.79,
+          "service_duration_s": 1976,
+          "plan_travel_sec": 2576
+        },
+        {
+          "engineer_id": "southeast-team-11",
+          "request_id": "84466",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 20.79,
+          "end_error_m": 41.65,
+          "service_duration_s": 2082,
+          "plan_travel_sec": 2682
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "40919",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 18.26,
+          "service_duration_s": 1138.7,
+          "plan_travel_sec": 1607
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "63894",
+          "mode": "road",
+          "departure_at": 1786954800,
+          "start_error_m": 18.26,
+          "end_error_m": 14.1,
+          "service_duration_s": 179.9,
+          "plan_travel_sec": 780
+        },
+        {
+          "engineer_id": "southeast-team-12",
+          "request_id": "36961",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 14.1,
+          "end_error_m": 14.47,
+          "service_duration_s": 104.7,
+          "plan_travel_sec": 705
+        }
+      ]
+    }
+  },
+  "south_central": {
+    "fifo_verified": {
+      "legs": 25,
+      "modes": {
+        "road": 21,
+        "metro_composite": 4
+      },
+      "violations": [
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "55711",
+          "code": "DURATION",
+          "plan_sec": 1094,
+          "route3_with_buffer_sec": 1238
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "32840",
+          "code": "DURATION",
+          "plan_sec": 1703,
+          "route3_with_buffer_sec": 1628
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "23637",
+          "code": "DURATION",
+          "plan_sec": 1558,
+          "route3_with_buffer_sec": 1463
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "66376",
+          "code": "DURATION",
+          "plan_sec": 1442,
+          "route3_with_buffer_sec": 1447
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "97770",
+          "code": "DURATION",
+          "plan_sec": 1729,
+          "route3_with_buffer_sec": 1660
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "76452",
+          "code": "DURATION",
+          "plan_sec": 2085,
+          "route3_with_buffer_sec": 2072
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "47560",
+          "code": "DURATION",
+          "plan_sec": 2652,
+          "route3_with_buffer_sec": 2992
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "52576",
+          "code": "DURATION",
+          "plan_sec": 1579,
+          "route3_with_buffer_sec": 1634
+        },
+        {
+          "engineer_id": "south_central-team-10",
+          "request_id": "66315",
+          "code": "DURATION",
+          "plan_sec": 3268,
+          "route3_with_buffer_sec": 3617
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "94447",
+          "code": "DURATION",
+          "plan_sec": 1538,
+          "route3_with_buffer_sec": 1694
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "93544",
+          "code": "DURATION",
+          "plan_sec": 1688,
+          "route3_with_buffer_sec": 1765
+        }
+      ],
+      "endpoint_max_m": 214.92,
+      "rows": [
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "55711",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 13.23,
+          "service_duration_s": 637.3,
+          "plan_travel_sec": 1094
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "76944",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 13.23,
+          "end_error_m": 12.59,
+          "service_duration_s": 697.3,
+          "plan_travel_sec": 1298
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "85188",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 12.59,
+          "end_error_m": 8.34,
+          "service_duration_s": 827.8,
+          "plan_travel_sec": 1428
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "32840",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 35.95,
+          "end_error_m": 18.64,
+          "service_duration_s": 1027.9,
+          "plan_travel_sec": 1703
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "75881",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 24.71,
+          "service_duration_s": 1069,
+          "plan_travel_sec": 1669
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "19376",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 24.71,
+          "end_error_m": 105.77,
+          "service_duration_s": 228,
+          "plan_travel_sec": 828
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "77795",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 105.77,
+          "end_error_m": 30.79,
+          "service_duration_s": 164,
+          "plan_travel_sec": 764
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "78540",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 19.45,
+          "service_duration_s": 965.9,
+          "plan_travel_sec": 1566
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "23637",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 19.45,
+          "end_error_m": 12.5,
+          "service_duration_s": 862.9,
+          "plan_travel_sec": 1558
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "49105",
+          "mode": "road",
+          "departure_at": 1786990200,
+          "start_error_m": 12.5,
+          "end_error_m": 15.92,
+          "service_duration_s": 429.2,
+          "plan_travel_sec": 1030
+        },
+        {
+          "engineer_id": "south_central-team-05",
+          "request_id": "80548",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 30.26,
+          "service_duration_s": 2917,
+          "plan_travel_sec": 3517
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "66376",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 35.95,
+          "end_error_m": 15.06,
+          "service_duration_s": 846.9,
+          "plan_travel_sec": 1442
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "97770",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 15.06,
+          "end_error_m": 22.48,
+          "service_duration_s": 1059.3,
+          "plan_travel_sec": 1729
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "76452",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 38.05,
+          "service_duration_s": 1472,
+          "plan_travel_sec": 2085
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "47560",
+          "mode": "metro_composite",
+          "departure_at": 1786961400,
+          "start_error_m": 38.05,
+          "end_error_m": 23.12,
+          "service_duration_s": 2392,
+          "plan_travel_sec": 2652
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "6185",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 13.96,
+          "service_duration_s": 420.3,
+          "plan_travel_sec": 1021
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "52576",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 13.96,
+          "end_error_m": 24.42,
+          "service_duration_s": 1033.3,
+          "plan_travel_sec": 1579
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "23142",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 41.65,
+          "end_error_m": 214.92,
+          "service_duration_s": 1345,
+          "plan_travel_sec": 1945
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "10776",
+          "mode": "road",
+          "departure_at": 1786956145,
+          "start_error_m": 214.92,
+          "end_error_m": 12.56,
+          "service_duration_s": 96,
+          "plan_travel_sec": 696
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "94575",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.56,
+          "end_error_m": 5.19,
+          "service_duration_s": 1208,
+          "plan_travel_sec": 1808
+        },
+        {
+          "engineer_id": "south_central-team-10",
+          "request_id": "79707",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 8.67,
+          "service_duration_s": 2960,
+          "plan_travel_sec": 3560
+        },
+        {
+          "engineer_id": "south_central-team-10",
+          "request_id": "66315",
+          "mode": "metro_composite",
+          "departure_at": 1786954200,
+          "start_error_m": 8.67,
+          "end_error_m": 26.07,
+          "service_duration_s": 3017,
+          "plan_travel_sec": 3268
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "94447",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 19.54,
+          "service_duration_s": 1093.5,
+          "plan_travel_sec": 1538
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "93544",
+          "mode": "road",
+          "departure_at": 1786951200,
+          "start_error_m": 19.54,
+          "end_error_m": 11.3,
+          "service_duration_s": 1164.2,
+          "plan_travel_sec": 1688
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "27023",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 11.3,
+          "end_error_m": 12.72,
+          "service_duration_s": 950.5,
+          "plan_travel_sec": 1551
+        }
+      ]
+    },
+    "router_hybrid_verified": {
+      "legs": 47,
+      "modes": {
+        "road": 43,
+        "metro_composite": 4
+      },
+      "violations": [
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "6957",
+          "code": "DURATION",
+          "plan_sec": 2087,
+          "route3_with_buffer_sec": 3182
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "26845",
+          "code": "DURATION",
+          "plan_sec": 1750,
+          "route3_with_buffer_sec": 1748
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "86002",
+          "code": "DURATION",
+          "plan_sec": 1167,
+          "route3_with_buffer_sec": 1149
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "93276",
+          "code": "DURATION",
+          "plan_sec": 891,
+          "route3_with_buffer_sec": 884
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "78036",
+          "code": "DURATION",
+          "plan_sec": 1459,
+          "route3_with_buffer_sec": 1396
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "97770",
+          "code": "DURATION",
+          "plan_sec": 1015,
+          "route3_with_buffer_sec": 1027
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "79707",
+          "code": "DURATION",
+          "plan_sec": 3324,
+          "route3_with_buffer_sec": 3560
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "85188",
+          "code": "DURATION",
+          "plan_sec": 2144,
+          "route3_with_buffer_sec": 2286
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "49105",
+          "code": "DURATION",
+          "plan_sec": 1193,
+          "route3_with_buffer_sec": 1220
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "94431",
+          "code": "DURATION",
+          "plan_sec": 1423,
+          "route3_with_buffer_sec": 1781
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "32840",
+          "code": "DURATION",
+          "plan_sec": 1744,
+          "route3_with_buffer_sec": 1812
+        }
+      ],
+      "endpoint_max_m": 214.92,
+      "rows": [
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "6957",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 38.04,
+          "service_duration_s": 2581.9,
+          "plan_travel_sec": 2087
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "26845",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 38.04,
+          "end_error_m": 44.06,
+          "service_duration_s": 1147.6,
+          "plan_travel_sec": 1750
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "86002",
+          "mode": "road",
+          "departure_at": 1786958400,
+          "start_error_m": 44.06,
+          "end_error_m": 16.46,
+          "service_duration_s": 548.4,
+          "plan_travel_sec": 1167
+        },
+        {
+          "engineer_id": "south_central-team-01",
+          "request_id": "93276",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 16.46,
+          "end_error_m": 16.48,
+          "service_duration_s": 283.4,
+          "plan_travel_sec": 891
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "5406",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 35.95,
+          "end_error_m": 15.92,
+          "service_duration_s": 289.8,
+          "plan_travel_sec": 890
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "19203",
+          "mode": "road",
+          "departure_at": 1786955090,
+          "start_error_m": 15.92,
+          "end_error_m": 16.01,
+          "service_duration_s": 586.2,
+          "plan_travel_sec": 1187
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "17896",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 100.66,
+          "end_error_m": 40.52,
+          "service_duration_s": 284,
+          "plan_travel_sec": 884
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "19376",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 15.3,
+          "end_error_m": 11.78,
+          "service_duration_s": 607.3,
+          "plan_travel_sec": 1208
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "61311",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 11.78,
+          "end_error_m": 12.14,
+          "service_duration_s": 862.8,
+          "plan_travel_sec": 1463
+        },
+        {
+          "engineer_id": "south_central-team-02",
+          "request_id": "78540",
+          "mode": "road",
+          "departure_at": 1786978463,
+          "start_error_m": 12.14,
+          "end_error_m": 19.45,
+          "service_duration_s": 224.9,
+          "plan_travel_sec": 825
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "16024",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 68.44,
+          "service_duration_s": 1379,
+          "plan_travel_sec": 1979
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "94447",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 68.44,
+          "end_error_m": 49.58,
+          "service_duration_s": 200,
+          "plan_travel_sec": 800
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "90373",
+          "mode": "road",
+          "departure_at": 1786956200,
+          "start_error_m": 49.58,
+          "end_error_m": 12.33,
+          "service_duration_s": 360,
+          "plan_travel_sec": 960
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "90709",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.33,
+          "end_error_m": 30.04,
+          "service_duration_s": 224,
+          "plan_travel_sec": 824
+        },
+        {
+          "engineer_id": "south_central-team-03",
+          "request_id": "77795",
+          "mode": "road",
+          "departure_at": 1786976400,
+          "start_error_m": 30.04,
+          "end_error_m": 30.79,
+          "service_duration_s": 2139,
+          "plan_travel_sec": 2739
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "55711",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 13.23,
+          "service_duration_s": 505.8,
+          "plan_travel_sec": 1106
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "13203",
+          "mode": "road",
+          "departure_at": 1786962506,
+          "start_error_m": 13.23,
+          "end_error_m": 15.48,
+          "service_duration_s": 533.6,
+          "plan_travel_sec": 1134
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "18023",
+          "mode": "road",
+          "departure_at": 1786965600,
+          "start_error_m": 15.48,
+          "end_error_m": 25.54,
+          "service_duration_s": 289.1,
+          "plan_travel_sec": 890
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "35265",
+          "mode": "road",
+          "departure_at": 1786968290,
+          "start_error_m": 25.54,
+          "end_error_m": 14.38,
+          "service_duration_s": 393.1,
+          "plan_travel_sec": 994
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "66315",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 14.38,
+          "end_error_m": 15.79,
+          "service_duration_s": 306.7,
+          "plan_travel_sec": 907
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "66376",
+          "mode": "road",
+          "departure_at": 1786978507,
+          "start_error_m": 15.79,
+          "end_error_m": 15.06,
+          "service_duration_s": 935.5,
+          "plan_travel_sec": 1536
+        },
+        {
+          "engineer_id": "south_central-team-04",
+          "request_id": "78036",
+          "mode": "road",
+          "departure_at": 1786984243,
+          "start_error_m": 15.06,
+          "end_error_m": 17.36,
+          "service_duration_s": 795.8,
+          "plan_travel_sec": 1459
+        },
+        {
+          "engineer_id": "south_central-team-05",
+          "request_id": "20263",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 24.44,
+          "service_duration_s": 1170,
+          "plan_travel_sec": 1770
+        },
+        {
+          "engineer_id": "south_central-team-05",
+          "request_id": "51133",
+          "mode": "metro_composite",
+          "departure_at": 1786954800,
+          "start_error_m": 24.44,
+          "end_error_m": 51.78,
+          "service_duration_s": 2987,
+          "plan_travel_sec": 3587
+        },
+        {
+          "engineer_id": "south_central-team-05",
+          "request_id": "87819",
+          "mode": "metro_composite",
+          "departure_at": 1786963187,
+          "start_error_m": 51.78,
+          "end_error_m": 11.77,
+          "service_duration_s": 2355,
+          "plan_travel_sec": 2955
+        },
+        {
+          "engineer_id": "south_central-team-05",
+          "request_id": "47560",
+          "mode": "road",
+          "departure_at": 1786970342,
+          "start_error_m": 11.77,
+          "end_error_m": 23.12,
+          "service_duration_s": 1061,
+          "plan_travel_sec": 1661
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "76452",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 35.95,
+          "end_error_m": 15.1,
+          "service_duration_s": 345.1,
+          "plan_travel_sec": 946
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "86864",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 15.1,
+          "end_error_m": 16.29,
+          "service_duration_s": 252.2,
+          "plan_travel_sec": 853
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "26896",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 16.29,
+          "end_error_m": 16.51,
+          "service_duration_s": 227.5,
+          "plan_travel_sec": 828
+        },
+        {
+          "engineer_id": "south_central-team-06",
+          "request_id": "97770",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 16.51,
+          "end_error_m": 22.48,
+          "service_duration_s": 426.5,
+          "plan_travel_sec": 1015
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "79707",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 8.67,
+          "service_duration_s": 2960,
+          "plan_travel_sec": 3324
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "79719",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 8.67,
+          "end_error_m": 19.55,
+          "service_duration_s": 516,
+          "plan_travel_sec": 1116
+        },
+        {
+          "engineer_id": "south_central-team-07",
+          "request_id": "85188",
+          "mode": "metro_composite",
+          "departure_at": 1786958400,
+          "start_error_m": 19.55,
+          "end_error_m": 10.97,
+          "service_duration_s": 1686,
+          "plan_travel_sec": 2144
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "93544",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 11.3,
+          "service_duration_s": 383.9,
+          "plan_travel_sec": 984
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "6185",
+          "mode": "road",
+          "departure_at": 1786962384,
+          "start_error_m": 11.3,
+          "end_error_m": 13.96,
+          "service_duration_s": 256.9,
+          "plan_travel_sec": 857
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "49105",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 13.96,
+          "end_error_m": 15.92,
+          "service_duration_s": 620.0,
+          "plan_travel_sec": 1193
+        },
+        {
+          "engineer_id": "south_central-team-08",
+          "request_id": "23637",
+          "mode": "road",
+          "departure_at": 1786987200,
+          "start_error_m": 15.92,
+          "end_error_m": 12.5,
+          "service_duration_s": 464.4,
+          "plan_travel_sec": 1065
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "23142",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 41.65,
+          "end_error_m": 214.92,
+          "service_duration_s": 1345,
+          "plan_travel_sec": 1945
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "10776",
+          "mode": "road",
+          "departure_at": 1786956145,
+          "start_error_m": 214.92,
+          "end_error_m": 12.56,
+          "service_duration_s": 96,
+          "plan_travel_sec": 696
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "80548",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.56,
+          "end_error_m": 30.26,
+          "service_duration_s": 846,
+          "plan_travel_sec": 1446
+        },
+        {
+          "engineer_id": "south_central-team-09",
+          "request_id": "94575",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 30.26,
+          "end_error_m": 5.19,
+          "service_duration_s": 1368,
+          "plan_travel_sec": 1968
+        },
+        {
+          "engineer_id": "south_central-team-10",
+          "request_id": "12263",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 85.88,
+          "service_duration_s": 2661,
+          "plan_travel_sec": 3261
+        },
+        {
+          "engineer_id": "south_central-team-10",
+          "request_id": "84074",
+          "mode": "road",
+          "departure_at": 1786954800,
+          "start_error_m": 85.88,
+          "end_error_m": 21.02,
+          "service_duration_s": 2601,
+          "plan_travel_sec": 3201
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "94431",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 11.8,
+          "service_duration_s": 1180.6,
+          "plan_travel_sec": 1423
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "75881",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 11.8,
+          "end_error_m": 14.92,
+          "service_duration_s": 212.2,
+          "plan_travel_sec": 813
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "76944",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 14.92,
+          "end_error_m": 12.59,
+          "service_duration_s": 233.5,
+          "plan_travel_sec": 834
+        },
+        {
+          "engineer_id": "south_central-team-11",
+          "request_id": "32840",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 12.59,
+          "end_error_m": 18.64,
+          "service_duration_s": 1211.6,
+          "plan_travel_sec": 1744
+        }
+      ]
+    }
+  },
+  "all": {
+    "fifo_verified": {
+      "legs": 89,
+      "modes": {
+        "road": 79,
+        "metro_composite": 10
+      },
+      "violations": [
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:61540",
+          "code": "DURATION",
+          "plan_sec": 785,
+          "route3_with_buffer_sec": 822
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:86160",
+          "code": "DURATION",
+          "plan_sec": 1722,
+          "route3_with_buffer_sec": 1706
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:46393",
+          "code": "DURATION",
+          "plan_sec": 1173,
+          "route3_with_buffer_sec": 1130
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:82388",
+          "code": "DURATION",
+          "plan_sec": 2611,
+          "route3_with_buffer_sec": 2847
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:84627",
+          "code": "DURATION",
+          "plan_sec": 1042,
+          "route3_with_buffer_sec": 1034
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:71388",
+          "code": "DURATION",
+          "plan_sec": 1488,
+          "route3_with_buffer_sec": 1498
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:67554",
+          "code": "DURATION",
+          "plan_sec": 3159,
+          "route3_with_buffer_sec": 3511
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:21571",
+          "code": "DURATION",
+          "plan_sec": 1926,
+          "route3_with_buffer_sec": 2526
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:14416",
+          "code": "DURATION",
+          "plan_sec": 1827,
+          "route3_with_buffer_sec": 1927
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:84466",
+          "code": "DURATION",
+          "plan_sec": 1637,
+          "route3_with_buffer_sec": 1626
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:33880",
+          "code": "DURATION",
+          "plan_sec": 1767,
+          "route3_with_buffer_sec": 1646
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:54422",
+          "code": "DURATION",
+          "plan_sec": 2715,
+          "route3_with_buffer_sec": 2846
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:7610",
+          "code": "DURATION",
+          "plan_sec": 1377,
+          "route3_with_buffer_sec": 1389
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:60141",
+          "code": "DURATION",
+          "plan_sec": 1352,
+          "route3_with_buffer_sec": 1354
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:60886",
+          "code": "DURATION",
+          "plan_sec": 1384,
+          "route3_with_buffer_sec": 1410
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:88209",
+          "code": "DURATION",
+          "plan_sec": 1685,
+          "route3_with_buffer_sec": 1915
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:11872",
+          "code": "DURATION",
+          "plan_sec": 1450,
+          "route3_with_buffer_sec": 1459
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:4724",
+          "code": "DURATION",
+          "plan_sec": 1063,
+          "route3_with_buffer_sec": 1059
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:55711",
+          "code": "DURATION",
+          "plan_sec": 1094,
+          "route3_with_buffer_sec": 1238
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:32840",
+          "code": "DURATION",
+          "plan_sec": 1703,
+          "route3_with_buffer_sec": 1628
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:23637",
+          "code": "DURATION",
+          "plan_sec": 1558,
+          "route3_with_buffer_sec": 1463
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:66376",
+          "code": "DURATION",
+          "plan_sec": 1442,
+          "route3_with_buffer_sec": 1447
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:97770",
+          "code": "DURATION",
+          "plan_sec": 1729,
+          "route3_with_buffer_sec": 1660
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:76452",
+          "code": "DURATION",
+          "plan_sec": 2085,
+          "route3_with_buffer_sec": 2072
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:47560",
+          "code": "DURATION",
+          "plan_sec": 2652,
+          "route3_with_buffer_sec": 2992
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:52576",
+          "code": "DURATION",
+          "plan_sec": 1579,
+          "route3_with_buffer_sec": 1634
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:66315",
+          "code": "DURATION",
+          "plan_sec": 3268,
+          "route3_with_buffer_sec": 3617
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:94447",
+          "code": "DURATION",
+          "plan_sec": 1538,
+          "route3_with_buffer_sec": 1694
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:93544",
+          "code": "DURATION",
+          "plan_sec": 1688,
+          "route3_with_buffer_sec": 1765
+        }
+      ],
+      "endpoint_max_m": 214.92,
+      "rows": [
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:61540",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 21.13,
+          "service_duration_s": 221.8,
+          "plan_travel_sec": 785
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:41962",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 21.13,
+          "end_error_m": 23.79,
+          "service_duration_s": 469.1,
+          "plan_travel_sec": 1070
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:86160",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 27.55,
+          "end_error_m": 16.7,
+          "service_duration_s": 1105.8,
+          "plan_travel_sec": 1722
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:98815",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 16.7,
+          "end_error_m": 16.0,
+          "service_duration_s": 852.0,
+          "plan_travel_sec": 1452
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:74949",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 54.61,
+          "service_duration_s": 2350,
+          "plan_travel_sec": 2950
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:41077",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 54.61,
+          "end_error_m": 21.67,
+          "service_duration_s": 187,
+          "plan_travel_sec": 787
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:87693",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 21.67,
+          "end_error_m": 31.46,
+          "service_duration_s": 1912,
+          "plan_travel_sec": 2512
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:92031",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 31.46,
+          "end_error_m": 10.0,
+          "service_duration_s": 1654,
+          "plan_travel_sec": 2254
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:74198",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 14.86,
+          "service_duration_s": 277.7,
+          "plan_travel_sec": 878
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:31260",
+          "mode": "road",
+          "departure_at": 1786990200,
+          "start_error_m": 14.86,
+          "end_error_m": 0.05,
+          "service_duration_s": 429.1,
+          "plan_travel_sec": 1030
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:93086",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 72.79,
+          "end_error_m": 11.73,
+          "service_duration_s": 2097,
+          "plan_travel_sec": 2697
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:57866",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 11.73,
+          "end_error_m": 20.69,
+          "service_duration_s": 747,
+          "plan_travel_sec": 1347
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:35675",
+          "mode": "metro_composite",
+          "departure_at": 1786968600,
+          "start_error_m": 20.69,
+          "end_error_m": 29.8,
+          "service_duration_s": 2696,
+          "plan_travel_sec": 3296
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:50104",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 27.55,
+          "end_error_m": 14.47,
+          "service_duration_s": 604.5,
+          "plan_travel_sec": 1205
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:46393",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.47,
+          "end_error_m": 14.82,
+          "service_duration_s": 530.0,
+          "plan_travel_sec": 1173
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:82388",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 12.03,
+          "service_duration_s": 2247,
+          "plan_travel_sec": 2611
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:22634",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 12.03,
+          "end_error_m": 29.73,
+          "service_duration_s": 1061,
+          "plan_travel_sec": 1661
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:10135",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 12.8,
+          "service_duration_s": 579.5,
+          "plan_travel_sec": 1180
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:84627",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 12.8,
+          "end_error_m": 20.3,
+          "service_duration_s": 433.6,
+          "plan_travel_sec": 1042
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:18754",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 72.79,
+          "end_error_m": 25.39,
+          "service_duration_s": 649,
+          "plan_travel_sec": 1249
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:23380",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 27.55,
+          "end_error_m": 9.87,
+          "service_duration_s": 1890.0,
+          "plan_travel_sec": 2490
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:71388",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 9.87,
+          "end_error_m": 41.83,
+          "service_duration_s": 897.6,
+          "plan_travel_sec": 1488
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:47330",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 41.83,
+          "end_error_m": 11.8,
+          "service_duration_s": 968.6,
+          "plan_travel_sec": 1569
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:26645",
+          "mode": "road",
+          "departure_at": 1786971369,
+          "start_error_m": 11.8,
+          "end_error_m": 14.31,
+          "service_duration_s": 345.3,
+          "plan_travel_sec": 946
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:97886",
+          "mode": "road",
+          "departure_at": 1786974115,
+          "start_error_m": 14.31,
+          "end_error_m": 21.6,
+          "service_duration_s": 1621.5,
+          "plan_travel_sec": 2222
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:67554",
+          "mode": "metro_composite",
+          "departure_at": 1786953600,
+          "start_error_m": 72.79,
+          "end_error_m": 71.86,
+          "service_duration_s": 2911,
+          "plan_travel_sec": 3159
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:30769",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 71.86,
+          "end_error_m": 11.58,
+          "service_duration_s": 2234,
+          "plan_travel_sec": 2834
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:17892",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 11.58,
+          "end_error_m": 25.48,
+          "service_duration_s": 1132,
+          "plan_travel_sec": 1732
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:43506",
+          "mode": "metro_composite",
+          "departure_at": 1786983000,
+          "start_error_m": 25.48,
+          "end_error_m": 19.24,
+          "service_duration_s": 3200,
+          "plan_travel_sec": 3800
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:21571",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 14.91,
+          "service_duration_s": 1925.5,
+          "plan_travel_sec": 1926
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:14416",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 14.29,
+          "service_duration_s": 1326.5,
+          "plan_travel_sec": 1827
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:68359",
+          "mode": "road",
+          "departure_at": 1786972800,
+          "start_error_m": 14.29,
+          "end_error_m": 19.2,
+          "service_duration_s": 499.1,
+          "plan_travel_sec": 1100
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:84466",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 0.05,
+          "end_error_m": 15.28,
+          "service_duration_s": 1025.6,
+          "plan_travel_sec": 1637
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:51603",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 15.28,
+          "end_error_m": 16.4,
+          "service_duration_s": 717.4,
+          "plan_travel_sec": 1318
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:52041",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 8.07,
+          "service_duration_s": 1657,
+          "plan_travel_sec": 2257
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:60484",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 8.07,
+          "end_error_m": 29.13,
+          "service_duration_s": 1255,
+          "plan_travel_sec": 1855
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:68946",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 29.13,
+          "end_error_m": 27.82,
+          "service_duration_s": 1087,
+          "plan_travel_sec": 1687
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:2427",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 27.82,
+          "end_error_m": 32.49,
+          "service_duration_s": 344,
+          "plan_travel_sec": 944
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:63591",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 10.81,
+          "end_error_m": 12.59,
+          "service_duration_s": 143,
+          "plan_travel_sec": 743
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:76173",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 23.49,
+          "end_error_m": 17.16,
+          "service_duration_s": 434.6,
+          "plan_travel_sec": 1035
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:33880",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 17.16,
+          "end_error_m": 15.51,
+          "service_duration_s": 1045.7,
+          "plan_travel_sec": 1767
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:23807",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 10.81,
+          "end_error_m": 80.39,
+          "service_duration_s": 1200,
+          "plan_travel_sec": 1800
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:876",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 47.2,
+          "end_error_m": 47.2,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:2245",
+          "mode": "road",
+          "departure_at": 1786955400,
+          "start_error_m": 80.39,
+          "end_error_m": 37.12,
+          "service_duration_s": 8147,
+          "plan_travel_sec": 8747
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:54422",
+          "mode": "metro_composite",
+          "departure_at": 1786968600,
+          "start_error_m": 37.12,
+          "end_error_m": 28.52,
+          "service_duration_s": 2246,
+          "plan_travel_sec": 2715
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:58066",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 0.05,
+          "end_error_m": 27.47,
+          "service_duration_s": 1160.4,
+          "plan_travel_sec": 1761
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:79450",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 27.47,
+          "end_error_m": 25.63,
+          "service_duration_s": 656.6,
+          "plan_travel_sec": 1257
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:72476",
+          "mode": "road",
+          "departure_at": 1786963857,
+          "start_error_m": 25.63,
+          "end_error_m": 15.91,
+          "service_duration_s": 1036.2,
+          "plan_travel_sec": 1637
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:37590",
+          "mode": "road",
+          "departure_at": 1786966694,
+          "start_error_m": 15.91,
+          "end_error_m": 14.04,
+          "service_duration_s": 436.6,
+          "plan_travel_sec": 1037
+        },
+        {
+          "engineer_id": "southeast:southeast-team-07",
+          "request_id": "southeast:2915",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 26.36,
+          "service_duration_s": 5542,
+          "plan_travel_sec": 6142
+        },
+        {
+          "engineer_id": "southeast:southeast-team-07",
+          "request_id": "southeast:75282",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 26.36,
+          "end_error_m": 15.36,
+          "service_duration_s": 6991,
+          "plan_travel_sec": 7591
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:3566",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 20.14,
+          "service_duration_s": 874.1,
+          "plan_travel_sec": 1475
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:7610",
+          "mode": "road",
+          "departure_at": 1786962875,
+          "start_error_m": 20.14,
+          "end_error_m": 71.79,
+          "service_duration_s": 788.2,
+          "plan_travel_sec": 1377
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:65717",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 10.81,
+          "end_error_m": 37.6,
+          "service_duration_s": 1521,
+          "plan_travel_sec": 2121
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:78920",
+          "mode": "road",
+          "departure_at": 1786956321,
+          "start_error_m": 37.6,
+          "end_error_m": 11.75,
+          "service_duration_s": 1465,
+          "plan_travel_sec": 2065
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:33507",
+          "mode": "road",
+          "departure_at": 1786962586,
+          "start_error_m": 11.75,
+          "end_error_m": 59.16,
+          "service_duration_s": 2753,
+          "plan_travel_sec": 3353
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:44117",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 0.05,
+          "end_error_m": 16.15,
+          "service_duration_s": 768.0,
+          "plan_travel_sec": 1368
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:60141",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 16.15,
+          "end_error_m": 15.92,
+          "service_duration_s": 753.8,
+          "plan_travel_sec": 1352
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:19216",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 15.92,
+          "end_error_m": 18.69,
+          "service_duration_s": 734.9,
+          "plan_travel_sec": 1335
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:60886",
+          "mode": "road",
+          "departure_at": 1786963935,
+          "start_error_m": 18.69,
+          "end_error_m": 14.45,
+          "service_duration_s": 809.1,
+          "plan_travel_sec": 1384
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:64168",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 14.45,
+          "end_error_m": 17.29,
+          "service_duration_s": 781.0,
+          "plan_travel_sec": 1381
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:88209",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 19.12,
+          "service_duration_s": 1314.2,
+          "plan_travel_sec": 1685
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:11872",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 19.12,
+          "end_error_m": 28.22,
+          "service_duration_s": 858.8,
+          "plan_travel_sec": 1450
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:4724",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 28.22,
+          "end_error_m": 13.87,
+          "service_duration_s": 458.2,
+          "plan_travel_sec": 1063
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:55711",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 13.23,
+          "service_duration_s": 637.3,
+          "plan_travel_sec": 1094
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:76944",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 13.23,
+          "end_error_m": 12.59,
+          "service_duration_s": 697.3,
+          "plan_travel_sec": 1298
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:85188",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 12.59,
+          "end_error_m": 8.34,
+          "service_duration_s": 827.8,
+          "plan_travel_sec": 1428
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:32840",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 35.95,
+          "end_error_m": 18.64,
+          "service_duration_s": 1027.9,
+          "plan_travel_sec": 1703
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:75881",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 24.71,
+          "service_duration_s": 1069,
+          "plan_travel_sec": 1669
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:19376",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 24.71,
+          "end_error_m": 105.77,
+          "service_duration_s": 228,
+          "plan_travel_sec": 828
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:77795",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 105.77,
+          "end_error_m": 30.79,
+          "service_duration_s": 164,
+          "plan_travel_sec": 764
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:78540",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 19.45,
+          "service_duration_s": 965.9,
+          "plan_travel_sec": 1566
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:23637",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 19.45,
+          "end_error_m": 12.5,
+          "service_duration_s": 862.9,
+          "plan_travel_sec": 1558
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:49105",
+          "mode": "road",
+          "departure_at": 1786990200,
+          "start_error_m": 12.5,
+          "end_error_m": 15.92,
+          "service_duration_s": 429.2,
+          "plan_travel_sec": 1030
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:80548",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 30.26,
+          "service_duration_s": 2917,
+          "plan_travel_sec": 3517
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:66376",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 35.95,
+          "end_error_m": 15.06,
+          "service_duration_s": 846.9,
+          "plan_travel_sec": 1442
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:97770",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 15.06,
+          "end_error_m": 22.48,
+          "service_duration_s": 1059.3,
+          "plan_travel_sec": 1729
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:76452",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 38.05,
+          "service_duration_s": 1472,
+          "plan_travel_sec": 2085
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:47560",
+          "mode": "metro_composite",
+          "departure_at": 1786961400,
+          "start_error_m": 38.05,
+          "end_error_m": 23.12,
+          "service_duration_s": 2392,
+          "plan_travel_sec": 2652
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:6185",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 13.96,
+          "service_duration_s": 420.3,
+          "plan_travel_sec": 1021
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:52576",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 13.96,
+          "end_error_m": 24.42,
+          "service_duration_s": 1033.3,
+          "plan_travel_sec": 1579
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:23142",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 41.65,
+          "end_error_m": 214.92,
+          "service_duration_s": 1345,
+          "plan_travel_sec": 1945
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:10776",
+          "mode": "road",
+          "departure_at": 1786956145,
+          "start_error_m": 214.92,
+          "end_error_m": 12.56,
+          "service_duration_s": 96,
+          "plan_travel_sec": 696
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:94575",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.56,
+          "end_error_m": 5.19,
+          "service_duration_s": 1208,
+          "plan_travel_sec": 1808
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:79707",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 8.67,
+          "service_duration_s": 2960,
+          "plan_travel_sec": 3560
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:66315",
+          "mode": "metro_composite",
+          "departure_at": 1786954200,
+          "start_error_m": 8.67,
+          "end_error_m": 26.07,
+          "service_duration_s": 3017,
+          "plan_travel_sec": 3268
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:94447",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 19.54,
+          "service_duration_s": 1093.5,
+          "plan_travel_sec": 1538
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:93544",
+          "mode": "road",
+          "departure_at": 1786951200,
+          "start_error_m": 19.54,
+          "end_error_m": 11.3,
+          "service_duration_s": 1164.2,
+          "plan_travel_sec": 1688
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:27023",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 11.3,
+          "end_error_m": 12.72,
+          "service_duration_s": 950.5,
+          "plan_travel_sec": 1551
+        }
+      ]
+    },
+    "router_hybrid_verified": {
+      "legs": 152,
+      "modes": {
+        "road": 139,
+        "metro_composite": 13
+      },
+      "violations": [
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:32807",
+          "code": "DURATION",
+          "plan_sec": 1098,
+          "route3_with_buffer_sec": 1159
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:48238",
+          "code": "DURATION",
+          "plan_sec": 1368,
+          "route3_with_buffer_sec": 1376
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:82808",
+          "code": "DURATION",
+          "plan_sec": 2216,
+          "route3_with_buffer_sec": 2551
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:97886",
+          "code": "DURATION",
+          "plan_sec": 2533,
+          "route3_with_buffer_sec": 3161
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:46393",
+          "code": "DURATION",
+          "plan_sec": 820,
+          "route3_with_buffer_sec": 824
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:93086",
+          "code": "DURATION",
+          "plan_sec": 2911,
+          "route3_with_buffer_sec": 3628
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:50104",
+          "code": "DURATION",
+          "plan_sec": 1140,
+          "route3_with_buffer_sec": 1168
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:84627",
+          "code": "DURATION",
+          "plan_sec": 1187,
+          "route3_with_buffer_sec": 1150
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:24076",
+          "code": "DURATION",
+          "plan_sec": 3353,
+          "route3_with_buffer_sec": 3670
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:15648",
+          "code": "DURATION",
+          "plan_sec": 2086,
+          "route3_with_buffer_sec": 2358
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:50219",
+          "code": "DURATION",
+          "plan_sec": 1573,
+          "route3_with_buffer_sec": 1809
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:5406",
+          "code": "DURATION",
+          "plan_sec": 935,
+          "route3_with_buffer_sec": 959
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:86002",
+          "code": "DURATION",
+          "plan_sec": 1167,
+          "route3_with_buffer_sec": 1149
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:32840",
+          "code": "DURATION",
+          "plan_sec": 1296,
+          "route3_with_buffer_sec": 1224
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:78036",
+          "code": "DURATION",
+          "plan_sec": 1459,
+          "route3_with_buffer_sec": 1396
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:93276",
+          "code": "DURATION",
+          "plan_sec": 1779,
+          "route3_with_buffer_sec": 2181
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:97770",
+          "code": "DURATION",
+          "plan_sec": 1015,
+          "route3_with_buffer_sec": 1027
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:79707",
+          "code": "DURATION",
+          "plan_sec": 3324,
+          "route3_with_buffer_sec": 3560
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:85188",
+          "code": "DURATION",
+          "plan_sec": 2144,
+          "route3_with_buffer_sec": 2286
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:49105",
+          "code": "DURATION",
+          "plan_sec": 1193,
+          "route3_with_buffer_sec": 1220
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:90373",
+          "code": "DURATION",
+          "plan_sec": 2248,
+          "route3_with_buffer_sec": 2850
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:94431",
+          "code": "DURATION",
+          "plan_sec": 1423,
+          "route3_with_buffer_sec": 1781
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:23807",
+          "code": "DURATION",
+          "plan_sec": 860,
+          "route3_with_buffer_sec": 940
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:7610",
+          "code": "DURATION",
+          "plan_sec": 1272,
+          "route3_with_buffer_sec": 1320
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:78920",
+          "code": "DURATION",
+          "plan_sec": 1439,
+          "route3_with_buffer_sec": 1472
+        },
+        {
+          "engineer_id": "southeast:southeast-team-11",
+          "request_id": "southeast:64168",
+          "code": "DURATION",
+          "plan_sec": 2330,
+          "route3_with_buffer_sec": 2557
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:40919",
+          "code": "DURATION",
+          "plan_sec": 1607,
+          "route3_with_buffer_sec": 1739
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:4724",
+          "code": "DURATION",
+          "plan_sec": 1157,
+          "route3_with_buffer_sec": 1177
+        }
+      ],
+      "endpoint_max_m": 214.92,
+      "rows": [
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:32807",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 16.89,
+          "service_duration_s": 558.3,
+          "plan_travel_sec": 1098
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:98182",
+          "mode": "road",
+          "departure_at": 1786951800,
+          "start_error_m": 16.89,
+          "end_error_m": 14.25,
+          "service_duration_s": 543.7,
+          "plan_travel_sec": 1144
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:48227",
+          "mode": "road",
+          "departure_at": 1786957144,
+          "start_error_m": 14.25,
+          "end_error_m": 18.67,
+          "service_duration_s": 443.1,
+          "plan_travel_sec": 1044
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:48238",
+          "mode": "road",
+          "departure_at": 1786962988,
+          "start_error_m": 18.67,
+          "end_error_m": 18.57,
+          "service_duration_s": 775.2,
+          "plan_travel_sec": 1368
+        },
+        {
+          "engineer_id": "east:east-team-01",
+          "request_id": "east:61540",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 18.57,
+          "end_error_m": 21.13,
+          "service_duration_s": 367.3,
+          "plan_travel_sec": 968
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:52405",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 27.55,
+          "end_error_m": 10.28,
+          "service_duration_s": 745.2,
+          "plan_travel_sec": 1346
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:29890",
+          "mode": "road",
+          "departure_at": 1786955546,
+          "start_error_m": 10.28,
+          "end_error_m": 17.0,
+          "service_duration_s": 594.1,
+          "plan_travel_sec": 1195
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:76082",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 17.0,
+          "end_error_m": 19.11,
+          "service_duration_s": 279.8,
+          "plan_travel_sec": 880
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:30243",
+          "mode": "road",
+          "departure_at": 1786963480,
+          "start_error_m": 19.11,
+          "end_error_m": 24.23,
+          "service_duration_s": 401.7,
+          "plan_travel_sec": 1002
+        },
+        {
+          "engineer_id": "east:east-team-02",
+          "request_id": "east:86160",
+          "mode": "road",
+          "departure_at": 1786980000,
+          "start_error_m": 24.23,
+          "end_error_m": 16.7,
+          "service_duration_s": 542.1,
+          "plan_travel_sec": 1143
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:57299",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 53.72,
+          "service_duration_s": 261,
+          "plan_travel_sec": 861
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:33527",
+          "mode": "road",
+          "departure_at": 1786953261,
+          "start_error_m": 53.72,
+          "end_error_m": 11.96,
+          "service_duration_s": 1173,
+          "plan_travel_sec": 1773
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:4893",
+          "mode": "road",
+          "departure_at": 1786956234,
+          "start_error_m": 11.96,
+          "end_error_m": 9.56,
+          "service_duration_s": 1960,
+          "plan_travel_sec": 2560
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:22634",
+          "mode": "road",
+          "departure_at": 1786963594,
+          "start_error_m": 9.56,
+          "end_error_m": 29.73,
+          "service_duration_s": 834,
+          "plan_travel_sec": 1434
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:82388",
+          "mode": "road",
+          "departure_at": 1786966228,
+          "start_error_m": 29.73,
+          "end_error_m": 12.03,
+          "service_duration_s": 354,
+          "plan_travel_sec": 954
+        },
+        {
+          "engineer_id": "east:east-team-03",
+          "request_id": "east:35675",
+          "mode": "road",
+          "departure_at": 1786971382,
+          "start_error_m": 12.03,
+          "end_error_m": 29.8,
+          "service_duration_s": 837,
+          "plan_travel_sec": 1437
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:10245",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 13.85,
+          "service_duration_s": 486.7,
+          "plan_travel_sec": 1087
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:57866",
+          "mode": "road",
+          "departure_at": 1786962487,
+          "start_error_m": 13.85,
+          "end_error_m": 20.69,
+          "service_duration_s": 200.6,
+          "plan_travel_sec": 801
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:18754",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 20.69,
+          "end_error_m": 32.54,
+          "service_duration_s": 122.6,
+          "plan_travel_sec": 723
+        },
+        {
+          "engineer_id": "east:east-team-04",
+          "request_id": "east:74198",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 32.54,
+          "end_error_m": 14.86,
+          "service_duration_s": 456.2,
+          "plan_travel_sec": 1057
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:24980",
+          "mode": "metro_composite",
+          "departure_at": 1786942800,
+          "start_error_m": 72.79,
+          "end_error_m": 181.47,
+          "service_duration_s": 2925,
+          "plan_travel_sec": 3525
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:76678",
+          "mode": "road",
+          "departure_at": 1786952325,
+          "start_error_m": 181.47,
+          "end_error_m": 25.24,
+          "service_duration_s": 875,
+          "plan_travel_sec": 1475
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:94409",
+          "mode": "road",
+          "departure_at": 1786955600,
+          "start_error_m": 25.24,
+          "end_error_m": 52.31,
+          "service_duration_s": 1514,
+          "plan_travel_sec": 2114
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:82808",
+          "mode": "metro_composite",
+          "departure_at": 1786961914,
+          "start_error_m": 52.31,
+          "end_error_m": 24.97,
+          "service_duration_s": 1951,
+          "plan_travel_sec": 2216
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:97886",
+          "mode": "metro_composite",
+          "departure_at": 1786968600,
+          "start_error_m": 24.97,
+          "end_error_m": 139.12,
+          "service_duration_s": 2561,
+          "plan_travel_sec": 2533
+        },
+        {
+          "engineer_id": "east:east-team-05",
+          "request_id": "east:41962",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 139.12,
+          "end_error_m": 45.53,
+          "service_duration_s": 1248,
+          "plan_travel_sec": 1848
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:69967",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 27.55,
+          "end_error_m": 20.09,
+          "service_duration_s": 1217.3,
+          "plan_travel_sec": 1818
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:67554",
+          "mode": "road",
+          "departure_at": 1786956618,
+          "start_error_m": 20.09,
+          "end_error_m": 13.06,
+          "service_duration_s": 892.4,
+          "plan_travel_sec": 1493
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:10135",
+          "mode": "road",
+          "departure_at": 1786962311,
+          "start_error_m": 13.06,
+          "end_error_m": 12.8,
+          "service_duration_s": 423.4,
+          "plan_travel_sec": 1024
+        },
+        {
+          "engineer_id": "east:east-team-06",
+          "request_id": "east:46393",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 12.8,
+          "end_error_m": 14.82,
+          "service_duration_s": 223.6,
+          "plan_travel_sec": 820
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:34366",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 72.79,
+          "end_error_m": 53.22,
+          "service_duration_s": 1518,
+          "plan_travel_sec": 2118
+        },
+        {
+          "engineer_id": "east:east-team-07",
+          "request_id": "east:93086",
+          "mode": "metro_composite",
+          "departure_at": 1786954200,
+          "start_error_m": 53.22,
+          "end_error_m": 11.73,
+          "service_duration_s": 3028,
+          "plan_travel_sec": 2911
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:53587",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 27.55,
+          "end_error_m": 22.2,
+          "service_duration_s": 325.1,
+          "plan_travel_sec": 926
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:71388",
+          "mode": "road",
+          "departure_at": 1786962326,
+          "start_error_m": 36.58,
+          "end_error_m": 107.41,
+          "service_duration_s": 267,
+          "plan_travel_sec": 867
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:87693",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 41.83,
+          "end_error_m": 11.7,
+          "service_duration_s": 213.0,
+          "plan_travel_sec": 813
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:50104",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 11.7,
+          "end_error_m": 14.47,
+          "service_duration_s": 567.8,
+          "plan_travel_sec": 1140
+        },
+        {
+          "engineer_id": "east:east-team-08",
+          "request_id": "east:84627",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.47,
+          "end_error_m": 20.3,
+          "service_duration_s": 549.2,
+          "plan_travel_sec": 1187
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:77563",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 72.79,
+          "end_error_m": 10.01,
+          "service_duration_s": 461,
+          "plan_travel_sec": 1061
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:7939",
+          "mode": "road",
+          "departure_at": 1786955261,
+          "start_error_m": 10.01,
+          "end_error_m": 48.73,
+          "service_duration_s": 446,
+          "plan_travel_sec": 1046
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:30769",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 48.73,
+          "end_error_m": 11.58,
+          "service_duration_s": 921,
+          "plan_travel_sec": 1521
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:17892",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 11.58,
+          "end_error_m": 25.48,
+          "service_duration_s": 378,
+          "plan_travel_sec": 978
+        },
+        {
+          "engineer_id": "east:east-team-09",
+          "request_id": "east:48174",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 25.48,
+          "end_error_m": 70.23,
+          "service_duration_s": 524,
+          "plan_travel_sec": 1124
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:21367",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 27.55,
+          "end_error_m": 15.23,
+          "service_duration_s": 626.9,
+          "plan_travel_sec": 1227
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:74949",
+          "mode": "road",
+          "departure_at": 1786950027,
+          "start_error_m": 15.23,
+          "end_error_m": 12.23,
+          "service_duration_s": 813.2,
+          "plan_travel_sec": 1414
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:23380",
+          "mode": "road",
+          "departure_at": 1786955641,
+          "start_error_m": 12.23,
+          "end_error_m": 9.87,
+          "service_duration_s": 216.2,
+          "plan_travel_sec": 817
+        },
+        {
+          "engineer_id": "east:east-team-10",
+          "request_id": "east:17349",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 9.87,
+          "end_error_m": 28.83,
+          "service_duration_s": 276.1,
+          "plan_travel_sec": 877
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:24076",
+          "mode": "metro_composite",
+          "departure_at": 1786953600,
+          "start_error_m": 72.79,
+          "end_error_m": 18.04,
+          "service_duration_s": 3070,
+          "plan_travel_sec": 3353
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:41077",
+          "mode": "road",
+          "departure_at": 1786958400,
+          "start_error_m": 18.04,
+          "end_error_m": 21.67,
+          "service_duration_s": 243,
+          "plan_travel_sec": 843
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:47330",
+          "mode": "road",
+          "departure_at": 1786963443,
+          "start_error_m": 21.67,
+          "end_error_m": 16.84,
+          "service_duration_s": 2004,
+          "plan_travel_sec": 2604
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:15648",
+          "mode": "metro_composite",
+          "departure_at": 1786967247,
+          "start_error_m": 16.84,
+          "end_error_m": 12.17,
+          "service_duration_s": 1758,
+          "plan_travel_sec": 2086
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:26645",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 12.17,
+          "end_error_m": 60.94,
+          "service_duration_s": 1297,
+          "plan_travel_sec": 1897
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:98815",
+          "mode": "road",
+          "departure_at": 1786977097,
+          "start_error_m": 60.94,
+          "end_error_m": 15.21,
+          "service_duration_s": 589,
+          "plan_travel_sec": 1189
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:92031",
+          "mode": "metro_composite",
+          "departure_at": 1786980000,
+          "start_error_m": 15.21,
+          "end_error_m": 10.0,
+          "service_duration_s": 2401,
+          "plan_travel_sec": 3001
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:31260",
+          "mode": "road",
+          "departure_at": 1786984201,
+          "start_error_m": 10.0,
+          "end_error_m": 19.24,
+          "service_duration_s": 740,
+          "plan_travel_sec": 1340
+        },
+        {
+          "engineer_id": "east:east-team-11",
+          "request_id": "east:43506",
+          "mode": "road",
+          "departure_at": 1786987200,
+          "start_error_m": 19.24,
+          "end_error_m": 19.24,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:50219",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 27.55,
+          "end_error_m": 13.27,
+          "service_duration_s": 1208.3,
+          "plan_travel_sec": 1573
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:60720",
+          "mode": "road",
+          "departure_at": 1786954800,
+          "start_error_m": 13.27,
+          "end_error_m": 26.71,
+          "service_duration_s": 671.1,
+          "plan_travel_sec": 1272
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:73572",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 26.71,
+          "end_error_m": 19.38,
+          "service_duration_s": 405.7,
+          "plan_travel_sec": 1006
+        },
+        {
+          "engineer_id": "east:east-team-12",
+          "request_id": "east:51115",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 19.38,
+          "end_error_m": 13.51,
+          "service_duration_s": 374.2,
+          "plan_travel_sec": 975
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:5406",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 15.92,
+          "service_duration_s": 358.7,
+          "plan_travel_sec": 935
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:19203",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 15.92,
+          "end_error_m": 16.01,
+          "service_duration_s": 586.2,
+          "plan_travel_sec": 1187
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:17896",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 100.66,
+          "end_error_m": 40.52,
+          "service_duration_s": 284,
+          "plan_travel_sec": 884
+        },
+        {
+          "engineer_id": "south_central:south_central-team-01",
+          "request_id": "south_central:76944",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 15.3,
+          "end_error_m": 12.59,
+          "service_duration_s": 748.7,
+          "plan_travel_sec": 1349
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:6957",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 35.95,
+          "end_error_m": 38.04,
+          "service_duration_s": 1403.3,
+          "plan_travel_sec": 2004
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:26845",
+          "mode": "road",
+          "departure_at": 1786956204,
+          "start_error_m": 38.04,
+          "end_error_m": 44.06,
+          "service_duration_s": 1147.6,
+          "plan_travel_sec": 1748
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:86002",
+          "mode": "road",
+          "departure_at": 1786959152,
+          "start_error_m": 44.06,
+          "end_error_m": 16.46,
+          "service_duration_s": 548.4,
+          "plan_travel_sec": 1167
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:47560",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 16.46,
+          "end_error_m": 18.05,
+          "service_duration_s": 368.1,
+          "plan_travel_sec": 969
+        },
+        {
+          "engineer_id": "south_central:south_central-team-02",
+          "request_id": "south_central:32840",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 18.05,
+          "end_error_m": 18.64,
+          "service_duration_s": 623.5,
+          "plan_travel_sec": 1296
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:16024",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 68.44,
+          "service_duration_s": 1379,
+          "plan_travel_sec": 1979
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:94447",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 68.44,
+          "end_error_m": 49.58,
+          "service_duration_s": 200,
+          "plan_travel_sec": 800
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:84074",
+          "mode": "road",
+          "departure_at": 1786956200,
+          "start_error_m": 49.58,
+          "end_error_m": 21.02,
+          "service_duration_s": 511,
+          "plan_travel_sec": 1111
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:80548",
+          "mode": "road",
+          "departure_at": 1786962111,
+          "start_error_m": 21.02,
+          "end_error_m": 30.26,
+          "service_duration_s": 1007,
+          "plan_travel_sec": 1607
+        },
+        {
+          "engineer_id": "south_central:south_central-team-03",
+          "request_id": "south_central:77795",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 30.26,
+          "end_error_m": 30.79,
+          "service_duration_s": 1739,
+          "plan_travel_sec": 2339
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:55711",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 13.23,
+          "service_duration_s": 505.8,
+          "plan_travel_sec": 1106
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:13203",
+          "mode": "road",
+          "departure_at": 1786962506,
+          "start_error_m": 13.23,
+          "end_error_m": 15.48,
+          "service_duration_s": 533.6,
+          "plan_travel_sec": 1134
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:18023",
+          "mode": "road",
+          "departure_at": 1786965600,
+          "start_error_m": 15.48,
+          "end_error_m": 25.54,
+          "service_duration_s": 289.1,
+          "plan_travel_sec": 890
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:35265",
+          "mode": "road",
+          "departure_at": 1786968290,
+          "start_error_m": 25.54,
+          "end_error_m": 14.38,
+          "service_duration_s": 393.1,
+          "plan_travel_sec": 994
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:66315",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 14.38,
+          "end_error_m": 15.79,
+          "service_duration_s": 306.7,
+          "plan_travel_sec": 907
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:66376",
+          "mode": "road",
+          "departure_at": 1786978507,
+          "start_error_m": 15.79,
+          "end_error_m": 15.06,
+          "service_duration_s": 935.5,
+          "plan_travel_sec": 1536
+        },
+        {
+          "engineer_id": "south_central:south_central-team-04",
+          "request_id": "south_central:78036",
+          "mode": "road",
+          "departure_at": 1786984243,
+          "start_error_m": 15.06,
+          "end_error_m": 17.36,
+          "service_duration_s": 795.8,
+          "plan_travel_sec": 1459
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:12263",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 85.88,
+          "service_duration_s": 2661,
+          "plan_travel_sec": 3261
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:51133",
+          "mode": "metro_composite",
+          "departure_at": 1786954800,
+          "start_error_m": 85.88,
+          "end_error_m": 51.78,
+          "service_duration_s": 2397,
+          "plan_travel_sec": 2997
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:87819",
+          "mode": "metro_composite",
+          "departure_at": 1786962597,
+          "start_error_m": 51.78,
+          "end_error_m": 11.77,
+          "service_duration_s": 2405,
+          "plan_travel_sec": 3005
+        },
+        {
+          "engineer_id": "south_central:south_central-team-05",
+          "request_id": "south_central:93276",
+          "mode": "metro_composite",
+          "departure_at": 1786969802,
+          "start_error_m": 11.77,
+          "end_error_m": 10.48,
+          "service_duration_s": 1581,
+          "plan_travel_sec": 1779
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:76452",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 35.95,
+          "end_error_m": 15.1,
+          "service_duration_s": 345.1,
+          "plan_travel_sec": 946
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:86864",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 15.1,
+          "end_error_m": 16.29,
+          "service_duration_s": 252.2,
+          "plan_travel_sec": 853
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:26896",
+          "mode": "road",
+          "departure_at": 1786973400,
+          "start_error_m": 16.29,
+          "end_error_m": 16.51,
+          "service_duration_s": 227.5,
+          "plan_travel_sec": 828
+        },
+        {
+          "engineer_id": "south_central:south_central-team-06",
+          "request_id": "south_central:97770",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 16.51,
+          "end_error_m": 22.48,
+          "service_duration_s": 426.5,
+          "plan_travel_sec": 1015
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:79707",
+          "mode": "metro_composite",
+          "departure_at": 1786946400,
+          "start_error_m": 41.65,
+          "end_error_m": 8.67,
+          "service_duration_s": 2960,
+          "plan_travel_sec": 3324
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:79719",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 8.67,
+          "end_error_m": 19.55,
+          "service_duration_s": 516,
+          "plan_travel_sec": 1116
+        },
+        {
+          "engineer_id": "south_central:south_central-team-07",
+          "request_id": "south_central:85188",
+          "mode": "metro_composite",
+          "departure_at": 1786958400,
+          "start_error_m": 19.55,
+          "end_error_m": 10.97,
+          "service_duration_s": 1686,
+          "plan_travel_sec": 2144
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:93544",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 35.95,
+          "end_error_m": 11.3,
+          "service_duration_s": 383.9,
+          "plan_travel_sec": 984
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:6185",
+          "mode": "road",
+          "departure_at": 1786962384,
+          "start_error_m": 11.3,
+          "end_error_m": 13.96,
+          "service_duration_s": 256.9,
+          "plan_travel_sec": 857
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:49105",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 13.96,
+          "end_error_m": 15.92,
+          "service_duration_s": 620.0,
+          "plan_travel_sec": 1193
+        },
+        {
+          "engineer_id": "south_central:south_central-team-08",
+          "request_id": "south_central:23637",
+          "mode": "road",
+          "departure_at": 1786987200,
+          "start_error_m": 15.92,
+          "end_error_m": 12.5,
+          "service_duration_s": 464.4,
+          "plan_travel_sec": 1065
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:23142",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 41.65,
+          "end_error_m": 214.92,
+          "service_duration_s": 1345,
+          "plan_travel_sec": 1945
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:10776",
+          "mode": "road",
+          "departure_at": 1786956145,
+          "start_error_m": 214.92,
+          "end_error_m": 12.56,
+          "service_duration_s": 96,
+          "plan_travel_sec": 696
+        },
+        {
+          "engineer_id": "south_central:south_central-team-09",
+          "request_id": "south_central:94575",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.56,
+          "end_error_m": 5.19,
+          "service_duration_s": 1208,
+          "plan_travel_sec": 1808
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:20263",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 41.65,
+          "end_error_m": 24.44,
+          "service_duration_s": 1170,
+          "plan_travel_sec": 1770
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:90373",
+          "mode": "metro_composite",
+          "departure_at": 1786954800,
+          "start_error_m": 24.44,
+          "end_error_m": 12.33,
+          "service_duration_s": 2250,
+          "plan_travel_sec": 2248
+        },
+        {
+          "engineer_id": "south_central:south_central-team-10",
+          "request_id": "south_central:90709",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 12.33,
+          "end_error_m": 30.04,
+          "service_duration_s": 670,
+          "plan_travel_sec": 1270
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:94431",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 35.95,
+          "end_error_m": 11.8,
+          "service_duration_s": 1180.6,
+          "plan_travel_sec": 1423
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:75881",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 11.8,
+          "end_error_m": 14.92,
+          "service_duration_s": 212.2,
+          "plan_travel_sec": 813
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:19376",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 14.92,
+          "end_error_m": 11.78,
+          "service_duration_s": 284.4,
+          "plan_travel_sec": 885
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:61311",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 11.78,
+          "end_error_m": 12.14,
+          "service_duration_s": 862.8,
+          "plan_travel_sec": 1463
+        },
+        {
+          "engineer_id": "south_central:south_central-team-11",
+          "request_id": "south_central:78540",
+          "mode": "road",
+          "departure_at": 1786978463,
+          "start_error_m": 12.14,
+          "end_error_m": 19.45,
+          "service_duration_s": 224.9,
+          "plan_travel_sec": 825
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:23807",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 15.59,
+          "service_duration_s": 339.2,
+          "plan_travel_sec": 860
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:876",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 47.2,
+          "end_error_m": 47.2,
+          "service_duration_s": 0,
+          "plan_travel_sec": 0
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:12329",
+          "mode": "road",
+          "departure_at": 1786955400,
+          "start_error_m": 15.59,
+          "end_error_m": 15.68,
+          "service_duration_s": 708.5,
+          "plan_travel_sec": 1309
+        },
+        {
+          "engineer_id": "southeast:southeast-team-01",
+          "request_id": "southeast:72476",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 15.68,
+          "end_error_m": 15.91,
+          "service_duration_s": 279.9,
+          "plan_travel_sec": 880
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:14494",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 0.05,
+          "end_error_m": 20.96,
+          "service_duration_s": 1314.2,
+          "plan_travel_sec": 1915
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:58066",
+          "mode": "road",
+          "departure_at": 1786956115,
+          "start_error_m": 41.35,
+          "end_error_m": 21.23,
+          "service_duration_s": 354,
+          "plan_travel_sec": 954
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:2245",
+          "mode": "road",
+          "departure_at": 1786961400,
+          "start_error_m": 27.47,
+          "end_error_m": 23.14,
+          "service_duration_s": 104.3,
+          "plan_travel_sec": 705
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:51603",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 23.14,
+          "end_error_m": 16.4,
+          "service_duration_s": 250.2,
+          "plan_travel_sec": 851
+        },
+        {
+          "engineer_id": "southeast:southeast-team-02",
+          "request_id": "southeast:36961",
+          "mode": "road",
+          "departure_at": 1786980000,
+          "start_error_m": 16.4,
+          "end_error_m": 14.47,
+          "service_duration_s": 596.1,
+          "plan_travel_sec": 1197
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:31495",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 23.01,
+          "service_duration_s": 344,
+          "plan_travel_sec": 944
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:20055",
+          "mode": "road",
+          "departure_at": 1786953344,
+          "start_error_m": 23.01,
+          "end_error_m": 61.55,
+          "service_duration_s": 2214,
+          "plan_travel_sec": 2814
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:60484",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 61.55,
+          "end_error_m": 29.13,
+          "service_duration_s": 1728,
+          "plan_travel_sec": 2328
+        },
+        {
+          "engineer_id": "southeast:southeast-team-03",
+          "request_id": "southeast:76173",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 29.13,
+          "end_error_m": 172.16,
+          "service_duration_s": 305,
+          "plan_travel_sec": 905
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:60141",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 15.92,
+          "service_duration_s": 739.4,
+          "plan_travel_sec": 1340
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:32066",
+          "mode": "road",
+          "departure_at": 1786962740,
+          "start_error_m": 15.92,
+          "end_error_m": 12.24,
+          "service_duration_s": 207.3,
+          "plan_travel_sec": 808
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:68359",
+          "mode": "road",
+          "departure_at": 1786969200,
+          "start_error_m": 12.24,
+          "end_error_m": 19.2,
+          "service_duration_s": 191.3,
+          "plan_travel_sec": 792
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:75282",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 19.2,
+          "end_error_m": 21.4,
+          "service_duration_s": 678.2,
+          "plan_travel_sec": 1279
+        },
+        {
+          "engineer_id": "southeast:southeast-team-04",
+          "request_id": "southeast:37590",
+          "mode": "road",
+          "departure_at": 1786978279,
+          "start_error_m": 15.36,
+          "end_error_m": 68.12,
+          "service_duration_s": 470,
+          "plan_travel_sec": 1070
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:1287",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 10.81,
+          "end_error_m": 13.58,
+          "service_duration_s": 198,
+          "plan_travel_sec": 798
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:11899",
+          "mode": "road",
+          "departure_at": 1786949598,
+          "start_error_m": 13.58,
+          "end_error_m": 9.38,
+          "service_duration_s": 1418,
+          "plan_travel_sec": 2018
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:19216",
+          "mode": "road",
+          "departure_at": 1786956416,
+          "start_error_m": 9.38,
+          "end_error_m": 11.18,
+          "service_duration_s": 5471,
+          "plan_travel_sec": 6071
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:11872",
+          "mode": "road",
+          "departure_at": 1786963687,
+          "start_error_m": 11.18,
+          "end_error_m": 9.38,
+          "service_duration_s": 725,
+          "plan_travel_sec": 1325
+        },
+        {
+          "engineer_id": "southeast:southeast-team-05",
+          "request_id": "southeast:54422",
+          "mode": "road",
+          "departure_at": 1786969812,
+          "start_error_m": 9.38,
+          "end_error_m": 28.52,
+          "service_duration_s": 795,
+          "plan_travel_sec": 1395
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:79450",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 0.05,
+          "end_error_m": 25.63,
+          "service_duration_s": 815.6,
+          "plan_travel_sec": 1416
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:2915",
+          "mode": "road",
+          "departure_at": 1786958400,
+          "start_error_m": 25.63,
+          "end_error_m": 20.14,
+          "service_duration_s": 254.1,
+          "plan_travel_sec": 855
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:60886",
+          "mode": "road",
+          "departure_at": 1786963455,
+          "start_error_m": 20.14,
+          "end_error_m": 14.45,
+          "service_duration_s": 452.1,
+          "plan_travel_sec": 1053
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:7610",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 14.45,
+          "end_error_m": 71.79,
+          "service_duration_s": 720.0,
+          "plan_travel_sec": 1272
+        },
+        {
+          "engineer_id": "southeast:southeast-team-06",
+          "request_id": "southeast:24482",
+          "mode": "road",
+          "departure_at": 1786983000,
+          "start_error_m": 14.14,
+          "end_error_m": 9.38,
+          "service_duration_s": 529,
+          "plan_travel_sec": 1129
+        },
+        {
+          "engineer_id": "southeast:southeast-team-07",
+          "request_id": "southeast:93798",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 10.81,
+          "end_error_m": 27.38,
+          "service_duration_s": 5475,
+          "plan_travel_sec": 6075
+        },
+        {
+          "engineer_id": "southeast:southeast-team-07",
+          "request_id": "southeast:40698",
+          "mode": "road",
+          "departure_at": 1786956675,
+          "start_error_m": 27.38,
+          "end_error_m": 36.54,
+          "service_duration_s": 1520,
+          "plan_travel_sec": 2120
+        },
+        {
+          "engineer_id": "southeast:southeast-team-07",
+          "request_id": "southeast:14416",
+          "mode": "road",
+          "departure_at": 1786962995,
+          "start_error_m": 36.54,
+          "end_error_m": 78.97,
+          "service_duration_s": 237,
+          "plan_travel_sec": 837
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:52041",
+          "mode": "road",
+          "departure_at": 1786957200,
+          "start_error_m": 0.05,
+          "end_error_m": 22.85,
+          "service_duration_s": 785.3,
+          "plan_travel_sec": 1386
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:68946",
+          "mode": "road",
+          "departure_at": 1786962786,
+          "start_error_m": 22.85,
+          "end_error_m": 7.63,
+          "service_duration_s": 204.1,
+          "plan_travel_sec": 805
+        },
+        {
+          "engineer_id": "southeast:southeast-team-08",
+          "request_id": "southeast:2427",
+          "mode": "road",
+          "departure_at": 1786975800,
+          "start_error_m": 27.82,
+          "end_error_m": 32.49,
+          "service_duration_s": 1032,
+          "plan_travel_sec": 1632
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:79144",
+          "mode": "road",
+          "departure_at": 1786950000,
+          "start_error_m": 10.81,
+          "end_error_m": 28.79,
+          "service_duration_s": 1344,
+          "plan_travel_sec": 1944
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:88209",
+          "mode": "road",
+          "departure_at": 1786956144,
+          "start_error_m": 28.79,
+          "end_error_m": 82.43,
+          "service_duration_s": 276,
+          "plan_travel_sec": 876
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:63591",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 82.43,
+          "end_error_m": 12.59,
+          "service_duration_s": 1434,
+          "plan_travel_sec": 2034
+        },
+        {
+          "engineer_id": "southeast:southeast-team-09",
+          "request_id": "southeast:33507",
+          "mode": "road",
+          "departure_at": 1786968600,
+          "start_error_m": 12.59,
+          "end_error_m": 59.16,
+          "service_duration_s": 282,
+          "plan_travel_sec": 882
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:65717",
+          "mode": "road",
+          "departure_at": 1786942800,
+          "start_error_m": 0.05,
+          "end_error_m": 14.55,
+          "service_duration_s": 831.3,
+          "plan_travel_sec": 1432
+        },
+        {
+          "engineer_id": "southeast:southeast-team-10",
+          "request_id": "southeast:78920",
+          "mode": "road",
+          "departure_at": 1786954200,
+          "start_error_m": 14.55,
+          "end_error_m": 16.4,
+          "service_duration_s": 871.5,
+          "plan_travel_sec": 1439
+        },
+        {
+          "engineer_id": "southeast:southeast-team-11",
+          "request_id": "southeast:3566",
+          "mode": "road",
+          "departure_at": 1786953600,
+          "start_error_m": 10.81,
+          "end_error_m": 26.36,
+          "service_duration_s": 5542,
+          "plan_travel_sec": 6142
+        },
+        {
+          "engineer_id": "southeast:southeast-team-11",
+          "request_id": "southeast:64168",
+          "mode": "road",
+          "departure_at": 1786963942,
+          "start_error_m": 26.36,
+          "end_error_m": 44.88,
+          "service_duration_s": 1957,
+          "plan_travel_sec": 2330
+        },
+        {
+          "engineer_id": "southeast:southeast-team-11",
+          "request_id": "southeast:84466",
+          "mode": "road",
+          "departure_at": 1786972800,
+          "start_error_m": 44.88,
+          "end_error_m": 41.65,
+          "service_duration_s": 1195,
+          "plan_travel_sec": 1795
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:40919",
+          "mode": "road",
+          "departure_at": 1786946400,
+          "start_error_m": 0.05,
+          "end_error_m": 18.26,
+          "service_duration_s": 1138.7,
+          "plan_travel_sec": 1607
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:63894",
+          "mode": "road",
+          "departure_at": 1786954800,
+          "start_error_m": 18.26,
+          "end_error_m": 14.1,
+          "service_duration_s": 179.9,
+          "plan_travel_sec": 780
+        },
+        {
+          "engineer_id": "southeast:southeast-team-12",
+          "request_id": "southeast:4724",
+          "mode": "road",
+          "departure_at": 1786962000,
+          "start_error_m": 14.1,
+          "end_error_m": 13.87,
+          "service_duration_s": 576.5,
+          "plan_travel_sec": 1157
+        }
+      ]
+    }
+  }
+}

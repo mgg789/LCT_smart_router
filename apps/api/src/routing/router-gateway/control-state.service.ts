@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import { configuredTimeZone } from '../../common/time/zone';
 import type { ControlMode } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { workDateOf } from '../../orchestrator/engineers/workday';
@@ -48,7 +49,7 @@ export class ControlStateService {
       {
         version: previous.version + 1,
         reason: reason.trim(),
-        workDate: workDateOf(await businessNow(context.tx, context.now), 'Europe/Moscow'),
+        workDate: workDateOf(await businessNow(context.tx, context.now), configuredTimeZone()),
         decisions: [],
         acknowledgedConflicts: [],
         resolution: null,

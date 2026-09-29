@@ -176,12 +176,14 @@ export class ImportPreparationService {
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
   ): Promise<ImportPreparationView> {
     await lockWorkingSetGeneration(context.tx);
+    const horizonNow = await this.datasets.liveHorizonNow(context, timeZoneOffsetSec);
     const prepared = this.datasets.prepareRegions(
       context,
       regions,
       datasetRoot,
       timeZoneOffsetSec,
       engineerCountPerRegion,
+      horizonNow,
     );
     const errors = prepared.flatMap((region) => region.parsed.errors);
     if (errors.length > 0) {

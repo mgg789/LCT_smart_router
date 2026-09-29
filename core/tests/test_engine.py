@@ -13,11 +13,16 @@ SETTINGS = SearchSettings(
     solution_limit=12,
     lunches_enabled=True,
     access_buffer_sec=0,
+    strict_time_windows=False,
 )
 
 
-def test_default_completion_window_grace_is_ten_minutes():
+def test_default_windows_are_strict_with_explicit_legacy_grace_available():
+    assert SearchSettings().strict_time_windows is True
     assert SearchSettings().window_lateness_tolerance_sec == 600
+    with pytest.raises(ValueError, match="strict_time_windows=False"):
+        SearchSettings(tolerance_sec=60)
+    assert SearchSettings(tolerance_sec=60, strict_time_windows=False).technical().departure_lateness_tolerance_sec == 60
 
 
 def test_legacy_transit_and_walk_are_assignment_compatible(snapshot, graph):
@@ -326,7 +331,7 @@ def test_empty_requests_and_lunch_only_engineer(snapshot, graph):
 
 def test_revalidation_uses_stable_reference_and_repairs(snapshot, graph):
     travel = GraphTravel(graph)
-    settings = SearchSettings(time_limit_ms=1000, solution_limit=8, tolerance_sec=60)
+    settings = SearchSettings(time_limit_ms=1000, solution_limit=8, tolerance_sec=60, strict_time_windows=False)
     first = solve(snapshot, travel, settings)
     second_task = changed(snapshot, lambda d: d.update(planning_as_of=d["planning_as_of"] + 40))
     second = solve(second_task, travel, settings, first.memory)
@@ -342,7 +347,7 @@ def test_revalidation_uses_stable_reference_and_repairs(snapshot, graph):
 def test_task_start_tolerance_is_independent_from_departure_tolerance(snapshot, graph):
     """A bounded departure drift still repairs when downstream start drift is too large."""
     travel = GraphTravel(graph)
-    first = solve(snapshot, travel, SearchSettings(time_limit_ms=800, solution_limit=8))
+    first = solve(snapshot, travel, SearchSettings(time_limit_ms=800, solution_limit=8, strict_time_windows=False))
 
     def delay(data):
         data["planning_as_of"] += 40
@@ -354,12 +359,14 @@ def test_task_start_tolerance_is_independent_from_departure_tolerance(snapshot, 
         solution_limit=8,
         departure_lateness_tolerance_sec=60,
         task_start_lateness_tolerance_sec=30,
+        strict_time_windows=False,
     )
     relaxed = SearchSettings(
         time_limit_ms=800,
         solution_limit=8,
         departure_lateness_tolerance_sec=60,
         task_start_lateness_tolerance_sec=60,
+        strict_time_windows=False,
     )
     assert solve(delayed, travel, strict, first.memory).path == "REPAIR_AND_IMPROVE"
     assert solve(delayed, travel, relaxed, first.memory).path == "REVALIDATE"
@@ -422,6 +429,7 @@ def test_revalidate_cannot_silently_drop_previous_assignment(snapshot, graph):
         solution_limit=6,
         tolerance_sec=1000,
         access_buffer_sec=0,
+        strict_time_windows=False,
     )
     first = solve(task, travel, settings)
     assert first.main.summary.assigned_count == 2

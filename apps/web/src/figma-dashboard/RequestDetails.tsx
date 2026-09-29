@@ -1,5 +1,5 @@
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
 import { isNavixOffline } from '../domain/mapAvailability';
@@ -22,6 +22,7 @@ const PANEL_HEIGHT = 893 + HEADER_LIFT;
 /** Holds the board's right edge, which a wide window puts past the drawing. */
 const DETAIL_PANEL_LEFT = 1406;
 const CLOSE_PANEL_SIZE = 43;
+const STEP_BUTTON_SIZE = 52;
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const FACT_ICON = {
   skills: '/figma/engineer-skills.svg',
@@ -32,6 +33,21 @@ const FACT_ICON = {
   route: '/figma/graph-route.svg',
 } as const;
 
+/**
+ * Where the open request sits among its neighbours, and how to reach them.
+ *
+ * `at` is 1-based so it can be shown as it reads; a handler is null at that end of the
+ * list, which disables the arrow rather than hiding it -- an arrow that vanishes moves
+ * the other one and makes the pair jump under the cursor.
+ */
+export interface RequestPaging {
+  readonly at: number;
+  readonly total: number;
+  readonly scope: 'route' | 'unassigned';
+  readonly onPrev: (() => void) | null;
+  readonly onNext: (() => void) | null;
+}
+
 /** Shows request or engineer facts, with optional AI explanation controls for requests. */
 export function RequestDetails({
   mode,
@@ -40,8 +56,10 @@ export function RequestDetails({
   explanation,
   token,
   motionOn,
+  paging,
   onClose,
   onOpenEngineer,
+  onWriteToEngineer,
 }: {
   mode: 'plan' | 'request';
   request: RequestView | null;
@@ -55,8 +73,11 @@ export function RequestDetails({
     availability: string | null;
   }>;
   motionOn: boolean;
+  /** Steps to the neighbouring request; absent when the panel shows an engineer's plan. */
+  paging?: RequestPaging | null;
   onClose: () => void;
   onOpenEngineer?: () => void;
+  onWriteToEngineer?: () => Promise<void>;
 }) {
   const offline = isNavixOffline();
   const { dx, dy } = useArtboardStretch();
@@ -98,7 +119,7 @@ export function RequestDetails({
       </motion.button>
       <div
         className={`absolute inset-x-0 top-0 overflow-y-auto px-[27px] pt-[24px] [scrollbar-width:thin] ${
-          mode === 'plan' ? 'bottom-[110px]' : 'bottom-[24px]'
+          mode === 'plan' ? 'bottom-[110px]' : paging ? 'bottom-[100px]' : 'bottom-[24px]'
         }`}
       >
         {mode === 'request' && request ? (
@@ -175,6 +196,9 @@ export function RequestDetails({
           />
         )}
       </div>
+      {mode === 'request' && paging ? (
+        <RequestPagingRow paging={paging} motionOn={motionOn} />
+      ) : null}
       {mode === 'plan' && engineer ? (
         <div className="absolute inset-x-[27px] bottom-[24px] flex gap-[12px]">
           <button
@@ -184,17 +208,80 @@ export function RequestDetails({
           >
             {t('figma-dashboard.RequestDetails.f07be04268')}
           </button>
+          {/* Opens the engineer's own dialogue; the button was behind a «Скоро»
+              although the chat contour has carried it from the start. */}
           <button
             type="button"
-            disabled
-            title={t('figma-dashboard.RequestDetails.72c299e0d6')}
-            className="h-[52px] flex-1 cursor-not-allowed rounded-[16px] bg-white/15 font-semibold text-[16px] text-white/45"
+            disabled={!onWriteToEngineer}
+            onClick={() => void onWriteToEngineer?.()}
+            className="h-[52px] flex-1 rounded-[16px] bg-white/15 font-semibold text-[16px] text-white disabled:cursor-not-allowed disabled:text-white/45"
           >
             {t('figma-dashboard.RequestDetails.3214e286d7')}
           </button>
         </div>
       ) : null}
     </motion.aside>
+  );
+}
+
+/** Arrows in the panel's bottom corners, paging through the neighbours of one scope. */
+function RequestPagingRow({ paging, motionOn }: { paging: RequestPaging; motionOn: boolean }) {
+  const scope =
+    paging.scope === 'route'
+      ? t('figma-dashboard.RequestDetails.a1f4d6c2e0')
+      : t('figma-dashboard.RequestDetails.b7c3e9a41d');
+  return (
+    <div className="absolute inset-x-[27px] bottom-[24px] flex items-center justify-between">
+      <StepButton
+        direction="prev"
+        motionOn={motionOn}
+        label={t('figma-dashboard.RequestDetails.c85f0a7d32')}
+        onClick={paging.onPrev}
+      />
+      <p className="px-[12px] text-center font-semibold text-[16px] tracking-[-0.3px] text-white/60">
+        {t('figma-dashboard.RequestDetails.d4e81b6f95', {
+          value0: paging.at,
+          value1: paging.total,
+          value2: scope,
+        })}
+      </p>
+      <StepButton
+        direction="next"
+        motionOn={motionOn}
+        label={t('figma-dashboard.RequestDetails.f6a2d0c518')}
+        onClick={paging.onNext}
+      />
+    </div>
+  );
+}
+
+function StepButton({
+  direction,
+  label,
+  motionOn,
+  onClick,
+}: {
+  direction: 'prev' | 'next';
+  label: string;
+  motionOn: boolean;
+  onClick: (() => void) | null;
+}) {
+  const Arrow = direction === 'prev' ? ChevronLeft : ChevronRight;
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={onClick === null}
+      onClick={() => onClick?.()}
+      className="flex shrink-0 items-center justify-center rounded-full bg-white text-figma-ink disabled:bg-white/15 disabled:text-white/40"
+      style={{ width: STEP_BUTTON_SIZE, height: STEP_BUTTON_SIZE }}
+      whileHover={motionOn && onClick ? { scale: 1.08 } : undefined}
+      whileTap={motionOn && onClick ? { scale: 0.94 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      <Arrow size={26} strokeWidth={2.25} />
+    </motion.button>
   );
 }
 

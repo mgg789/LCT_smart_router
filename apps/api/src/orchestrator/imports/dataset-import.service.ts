@@ -13,6 +13,7 @@ import {
   equipmentWithSpares,
   readEquipmentSettings,
 } from '../equipment/equipment-policy';
+import { workDateAnchor } from '../live/live-clock';
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   type DispatcherSettings,
@@ -67,7 +68,8 @@ export interface PreparedOfficialRegion {
   readonly engineerLimit: number | null;
 }
 
-const geocodePackageSchema = z
+/** Contract of the versioned offline coordinate catalogue in `data/dataset/geocoded`. */
+export const geocodePackageSchema = z
   .object({
     schema_version: z.string().min(1).optional(),
     /** Compatibility name used by the prepared Core scenario resources. */
@@ -127,12 +129,14 @@ export class DatasetImportService {
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
   ): Promise<ImportBatchSummary> {
+    const horizonNow = await this.liveHorizonNow(context, timeZoneOffsetSec);
     const prepared = this.prepareRegions(
       context,
       regions,
       datasetRoot,
       timeZoneOffsetSec,
       engineerCountPerRegion,
+      horizonNow,
     );
     return this.importPreparedRegions(context, prepared, timeZoneOffsetSec);
   }
@@ -144,18 +148,34 @@ export class DatasetImportService {
     datasetRoot: string,
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
+    horizonNow: number = context.now,
   ): PreparedOfficialRegion[] {
     return regions.map((region) =>
       serializePreparedRegion(
         this.prepareRegion(
-          context,
           region,
           datasetRoot,
           timeZoneOffsetSec,
           engineerCountPerRegion[region] ?? null,
+          horizonNow,
         ),
       ),
     );
+  }
+
+  /**
+   * Clock used to place official windows.
+   *
+   * A running LIVE day keeps the package on that calendar date, even when the
+   * wall clock is already evening. Without a running day the wall clock is used.
+   */
+  async liveHorizonNow(context: OperationContext, offsetSec: number): Promise<number> {
+    const day = await context.tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { workDate: true },
+    });
+    return day ? workDateAnchor(day.workDate, offsetSec) : context.now;
   }
 
   /** Applies only the immutable JSON-safe batch captured during prepare. */
@@ -297,12 +317,15 @@ export class DatasetImportService {
     equipmentSettings?: DispatcherSettings,
   ): Promise<number> {
     const now = BigInt(context.now);
-    const workDate = localDate(context.now, timeZoneOffsetSec);
-    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     const horizonStart = Math.min(
       ...prepared.parsed.requests.map((request) => request.windowStartAt),
     );
     const horizonEnd = Math.max(...prepared.parsed.requests.map((request) => request.windowEndAt));
+    // Keyed to the day the rebased requests land on, not to "now": those differ once
+    // the set's own opening hour has already passed today, and a shift row filed under
+    // the wrong date leaves the crew with no working day at all.
+    const workDate = localDate(horizonStart, timeZoneOffsetSec);
+    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     const equipmentByBrigade = allocateMorningEquipment(
       prepared.parsed.requests,
       prepared.brigades,
@@ -405,11 +428,11 @@ export class DatasetImportService {
   }
 
   private prepareRegion(
-    context: OperationContext,
     region: DatasetRegion,
     datasetRoot: string,
     timeZoneOffsetSec: number,
     engineerLimit: number | null,
+    horizonNow: number,
   ): PreparedRegion {
     const syntheticPath = resolve(datasetRoot, `${region}_synthetic_data.csv`);
     const controlPath = resolve(datasetRoot, `${region}_control_distribution.csv`);
@@ -420,7 +443,7 @@ export class DatasetImportService {
     const syntheticBytes = readFileSync(syntheticPath);
     const controlBytes = readFileSync(controlPath);
     const parsedSource = parseSyntheticFile(region, syntheticBytes, timeZoneOffsetSec);
-    const parsed = rebaseToLiveHorizon(parsedSource, context.now);
+    const parsed = rebaseToLiveHorizon(parsedSource, horizonNow);
     const allBrigades = parseBrigades(region, controlBytes);
     if (engineerLimit !== null && engineerLimit > allBrigades.length) {
       throw new SysError('VALIDATION_FAILED', 'Engineer count exceeds crews in the dataset', {
@@ -497,7 +520,8 @@ export class DatasetImportService {
 
     const horizonStart = Math.min(...parsed.requests.map((request) => request.windowStartAt));
     const horizonEnd = Math.max(...parsed.requests.map((request) => request.windowEndAt));
-    const workDate = localDate(context.now, timeZoneOffsetSec);
+    // See `upsertImportedDays`: the shift belongs to the day its own requests fall on.
+    const workDate = localDate(horizonStart, timeZoneOffsetSec);
     const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     let engineersCreated = 0;
     for (const brigade of brigades) {
@@ -511,6 +535,24 @@ export class DatasetImportService {
         },
       });
       let engineerId = mapped?.internalId ?? null;
+      if (!engineerId) {
+        const named = await context.tx.engineer.findFirst({
+          where: { region: brigade.region, displayName: brigade.name, archivedAt: null },
+          select: { id: true },
+        });
+        if (named) {
+          engineerId = named.id;
+          await context.tx.externalIdMap.create({
+            data: {
+              source,
+              entityType: 'engineer',
+              externalId: brigade.name,
+              internalId: named.id,
+              createdAt: now,
+            },
+          });
+        }
+      }
       if (!engineerId) {
         const synthesized = synthesizeCrew(brigade.inputOrder);
         const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`
@@ -752,8 +794,18 @@ function deserializePreparedRegion(item: PreparedOfficialRegion): PreparedRegion
   };
 }
 
-/** Moves a historical benchmark to a future horizon without changing relative windows. */
-function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
+/**
+ * Moves a historical benchmark to a future horizon without changing relative windows.
+ *
+ * The shift is a whole number of days, so every window keeps the local time of day it
+ * was quoted for. Anchoring it to the wall-clock minute instead -- which is what this
+ * did before -- dragged a set quoted for 10:00-22:00 to whatever minute the import was
+ * run and wrapped the rest of it past midnight: importing at 20:26 put about half the
+ * ТЗ set between 00:00 and 08:00 and gave every crew a 20:27-08:27 night shift, so
+ * almost nothing could be planned. The regional offset is a fixed number of seconds
+ * (`DATASET_TIME_ZONE_OFFSET_SEC`), so whole days preserve the clock time exactly.
+ */
+export function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
   const constrained = parsed.requests.filter(
     (request) =>
       request.windowOrigin !== 'declared_full_day' &&
@@ -762,7 +814,7 @@ function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
   const anchors = constrained.length > 0 ? constrained : parsed.requests;
   const sourceStart = Math.min(...anchors.map((request) => request.windowStartAt));
   const sourceEnd = Math.max(...anchors.map((request) => request.windowEndAt));
-  const targetStart = now + 60;
+  const targetStart = nextWholeDayAtOrAfter(sourceStart, now + 60);
   const targetEnd = targetStart + (sourceEnd - sourceStart);
 
   return {
@@ -780,6 +832,13 @@ function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
       };
     }),
   };
+}
+
+/** First occurrence of `moment`'s time of day that is not before `notBefore`. */
+function nextWholeDayAtOrAfter(moment: number, notBefore: number): number {
+  const day = 24 * 60 * 60;
+  if (moment >= notBefore) return moment;
+  return moment + Math.ceil((notBefore - moment) / day) * day;
 }
 
 function localDate(now: number, offsetSec: number): string {

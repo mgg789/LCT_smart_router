@@ -313,9 +313,6 @@ function ChatThread({
     }
   }
 
-  const history = chat.messages.filter((message) => message.seq <= chat.handoff.startSeq);
-  const afterHandoff = chat.messages.filter((message) => message.seq > chat.handoff.startSeq);
-
   return (
     <div className="flex min-h-[24rem] flex-col overflow-hidden rounded-2xl border border-line">
       <div className="flex items-center justify-between gap-2 border-b border-line bg-canvas px-4 py-2.5">
@@ -352,32 +349,13 @@ function ChatThread({
         {chat.messages.length === 0 ? (
           <p className="text-sm text-muted">{t('components.ChatsPage.91e2c2161e')}</p>
         ) : (
-          <>
-            {history.length > 0 ? (
-              <>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {t('components.ChatsPage.6aefc25387')}
-                </p>
-                {history.map((message) => (
-                  <MessageBubble
-                    key={message.id}
-                    message={message}
-                    roleProfile={chat.conversation.roleProfile}
-                  />
-                ))}
-                <p className="border-t border-dashed border-line pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                  {t('components.ChatsPage.910778e14c')}
-                </p>
-              </>
-            ) : null}
-            {afterHandoff.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                roleProfile={chat.conversation.roleProfile}
-              />
-            ))}
-          </>
+          chat.messages.map((message) => (
+            <MessageBubble
+              key={message.id}
+              message={message}
+              roleProfile={chat.conversation.roleProfile}
+            />
+          ))
         )}
         <ChatBottomSpacer />
       </div>

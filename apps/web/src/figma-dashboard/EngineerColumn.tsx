@@ -10,7 +10,9 @@ import { TintIcon } from './TintIcon';
 import { TRANSPORT_ICONS } from './transport';
 
 const SEARCH_CONTROL_SIZE = 40;
-const SEARCH_OPEN_WIDTH = 351;
+const COMPARE_GAP = 8;
+/** The old search pill filled the row. The compare circle keeps the same row and shortens the pill. */
+const SEARCH_OPEN_WIDTH = 351 - SEARCH_CONTROL_SIZE - COMPARE_GAP;
 const PANEL_TOP = 154 - 16;
 const PANEL_HEIGHT = 893 + 16;
 const UNASSIGNED_TOP = 778 + 16;
@@ -33,6 +35,7 @@ export function EngineerColumn({
   motionOn,
   onSearchToggle,
   onSearchChange,
+  onOpenCompare,
   onSelect,
   onSelectUnassigned,
 }: {
@@ -49,6 +52,7 @@ export function EngineerColumn({
   motionOn: boolean;
   onSearchToggle: () => void;
   onSearchChange: (value: string) => void;
+  onOpenCompare: () => void;
   onSelect: (id: string) => void;
   onSelectUnassigned: () => void;
 }) {
@@ -114,46 +118,66 @@ export function EngineerColumn({
             </motion.div>
           ) : null}
         </AnimatePresence>
-        <motion.div
-          className="absolute right-0 top-[calc(50%-2px)] box-border flex -translate-y-1/2 items-center overflow-hidden rounded-[20px] border border-solid border-figma-ink bg-white"
-          style={{
-            height: SEARCH_CONTROL_SIZE,
-            minHeight: SEARCH_CONTROL_SIZE,
-            maxHeight: SEARCH_CONTROL_SIZE,
-          }}
-          initial={false}
-          animate={{ width: searchOpen ? SEARCH_OPEN_WIDTH : SEARCH_CONTROL_SIZE }}
-          transition={motionOn ? { duration: 0.4, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+        <div
+          className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center"
+          style={{ gap: COMPARE_GAP }}
         >
-          <input
-            ref={inputRef}
-            value={searchQuery}
-            onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={t('figma-dashboard.EngineerColumn.6614a726f7')}
-            tabIndex={searchOpen ? 0 : -1}
-            aria-hidden={!searchOpen}
-            className="box-border h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent py-0 pl-[18px] pr-[40px] font-medium leading-none text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint"
-          />
-          <button
+          <motion.div
+            className="relative box-border flex items-center overflow-hidden rounded-[20px] border border-solid border-figma-ink bg-white"
+            style={{
+              height: SEARCH_CONTROL_SIZE,
+              minHeight: SEARCH_CONTROL_SIZE,
+              maxHeight: SEARCH_CONTROL_SIZE,
+            }}
+            initial={false}
+            animate={{ width: searchOpen ? SEARCH_OPEN_WIDTH : SEARCH_CONTROL_SIZE }}
+            whileHover={motionOn && !searchOpen ? { scale: 1.06 } : undefined}
+            transition={motionOn ? { duration: 0.4, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+          >
+            <input
+              ref={inputRef}
+              value={searchQuery}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={t('figma-dashboard.EngineerColumn.6614a726f7')}
+              tabIndex={searchOpen ? 0 : -1}
+              aria-hidden={!searchOpen}
+              className="box-border h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent py-0 pl-[18px] pr-[40px] font-medium leading-none text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint"
+            />
+            <motion.button
+              type="button"
+              aria-label={
+                searchOpen
+                  ? t('figma-dashboard.EngineerColumn.28b28dba9e')
+                  : t('figma-dashboard.EngineerColumn.6614a726f7')
+              }
+              onClick={onSearchToggle}
+              whileHover={motionOn && searchOpen ? { scale: 1.06 } : undefined}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute right-0 top-0 flex items-center justify-center"
+              style={{ width: SEARCH_CONTROL_SIZE, height: SEARCH_CONTROL_SIZE }}
+            >
+              <FigmaIcon
+                src={FIGMA_ASSETS.searchPanel}
+                alt=""
+                width={22}
+                height={22}
+                className="translate-x-[1px] -translate-y-[1px]"
+              />
+            </motion.button>
+          </motion.div>
+          <motion.button
             type="button"
-            aria-label={
-              searchOpen
-                ? t('figma-dashboard.EngineerColumn.28b28dba9e')
-                : t('figma-dashboard.EngineerColumn.6614a726f7')
-            }
-            onClick={onSearchToggle}
-            className="absolute right-0 top-0 flex items-center justify-center"
+            aria-label={t('figma-dashboard.EngineerColumn.compare')}
+            onClick={onOpenCompare}
+            whileHover={motionOn ? { scale: 1.06 } : undefined}
+            whileTap={motionOn ? { scale: 0.96 } : undefined}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="flex shrink-0 items-center justify-center rounded-[20px] border border-solid border-figma-ink bg-white"
             style={{ width: SEARCH_CONTROL_SIZE, height: SEARCH_CONTROL_SIZE }}
           >
-            <FigmaIcon
-              src={FIGMA_ASSETS.searchPanel}
-              alt=""
-              width={22}
-              height={22}
-              className="translate-x-[1px] -translate-y-[1px]"
-            />
-          </button>
-        </motion.div>
+            <FigmaIcon src={FIGMA_ASSETS.scale} alt="" width={20} height={20} />
+          </motion.button>
+        </div>
       </div>
       <div className="absolute inset-x-0 top-[158px] bottom-[132px] z-20 overflow-y-auto px-[30px] pt-[12px] [scrollbar-width:thin]">
         <div className="flex flex-col gap-[20px] pb-[8px]">
@@ -262,8 +286,7 @@ function EngineerRow({
         </span>
         <span className="size-[3px] rounded-full bg-figma-muted" />
         <span className="figma-nowrap">
-          {engineer.requestCount}
-          {t('figma-dashboard.EngineerColumn.a7b7ba4108')}
+          {t('common.requests', { count: engineer.requestCount })}
         </span>
       </div>
       <div className="absolute left-[15px] top-[81px] h-[8px] w-[321px] rounded-[13px] bg-figma-track" />

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
+import { NotificationsService } from '../../notifications';
 import { type Tx, UnitOfWork } from '../../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -13,6 +14,7 @@ import {
   RouterClient,
 } from '../../routing/router-gateway/router-client.port';
 import { LiveDayState } from '../live/live-day-state';
+import { logisticsParticipants } from './logistics';
 
 /** Durable search queue: network previews run between two short, fenced transactions. */
 @Injectable()
@@ -26,6 +28,7 @@ export class EquipmentLogisticsService {
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
     private readonly days: LiveDayState,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Polls persisted attempts; process restarts and concurrent callers are harmless. */
@@ -47,7 +50,15 @@ export class EquipmentLogisticsService {
           where: { id: row.requestId },
           select: { lifecycle: true },
         });
-        if (request && !['completed', 'cancelled'].includes(request.lifecycle)) continue;
+        const requestOpen = request && !['completed', 'cancelled'].includes(request.lifecycle);
+        const offline = await tx.engineerDay.count({
+          where: {
+            workDate: row.workDate,
+            engineerId: { in: logisticsParticipants(row) },
+            availability: 'offline',
+          },
+        });
+        if (requestOpen && offline === 0) continue;
         await tx.equipmentLogistics.update({
           where: { id: row.id },
           data: { status: 'cancelled', updatedAt: BigInt(wallNow) },
@@ -103,6 +114,7 @@ export class EquipmentLogisticsService {
           if (!fresh || fresh.fingerprint !== capture.fingerprint) return;
           const now = this.days.liveNow(fresh.day, this.clock.nowSeconds());
           if (witness.status === 'none') {
+            const current = fresh.request;
             await tx.request.update({
               where: { id: row.requestId },
               data: {
@@ -111,6 +123,46 @@ export class EquipmentLogisticsService {
                 cancelledAt: BigInt(now),
                 updatedAt: BigInt(now),
                 version: { increment: 1 },
+              },
+            });
+            await tx.requestConditionHistory.create({
+              data: {
+                requestId: row.requestId,
+                changedAt: BigInt(now),
+                previous: {
+                  windowStartAt: Number(current.windowStartAt),
+                  windowEndAt: Number(current.windowEndAt),
+                  priority: current.priority,
+                  requiredEquipment: current.requiredEquipment,
+                  version: current.version,
+                },
+                reason: 'не найдено оборудование',
+              },
+            });
+            await this.notifications.record(tx, now, {
+              category: 'request_cancelled',
+              businessEventKey: `request_cancelled:${row.requestId}`,
+              recipientAccountId: current.clientAccountId,
+              payload: { requestId: row.requestId, reason: 'не найдено оборудование' },
+            });
+            await tx.alert.create({
+              data: {
+                dedupKey: `equipment:none:${row.workDate}:${row.requestId}`,
+                kind: 'notice',
+                code: 'EQUIPMENT_LOGISTICS_NONE',
+                severity: 'warning',
+                engineerIds: [row.receiverEngineerId],
+                requestIds: [row.requestId],
+                reasons: [
+                  {
+                    code: 'EQUIPMENT_LOGISTICS_NONE',
+                    text: 'Заявка отменена: не найдено оборудование для доставки.',
+                    facts: { requestId: row.requestId },
+                  },
+                ],
+                workDate: row.workDate,
+                isBlocking: false,
+                createdAt: BigInt(now),
               },
             });
             await tx.liveEngineerState.updateMany({

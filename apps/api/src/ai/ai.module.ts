@@ -97,7 +97,7 @@ function buildProvider(
       });
       return kind === 'agents'
         ? new AgentsSdkProvider(client, clock)
-        : new OpenAiChatProvider(client, clock, config.get('LLM_CHAT_REASONING_EFFORT'));
+        : new OpenAiChatProvider(client, clock, connection.reasoningEffort);
     });
   }
   switch (kind) {

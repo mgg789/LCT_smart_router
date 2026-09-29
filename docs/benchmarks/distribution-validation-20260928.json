@@ -1,0 +1,97 @@
+{
+  "date": "2026-09-28",
+  "service": "https://distribute.droidje.com",
+  "server": {
+    "backup_directory": "/home/mgg/navix-distribution-backups/20260928-1700",
+    "old_image": "sha256:d812d2069f8ff5ba03e941108854c10daa3f661d03e8a9c5eede02cac32945df",
+    "new_image": "sha256:fb663bd35d7e1df820ad3ed9c81b7e3e87aeb3231e2b687c1cc891e1bc629ed8",
+    "payload_preserved": true,
+    "non_release_configuration_preserved": true,
+    "database_backup_integrity": "ok",
+    "other_container_changes": [],
+    "source_sha256": "5162d854e51d0a20b0c39f911c32750e1d1e6556a586d414ded5b9238fc35d46"
+  },
+  "sourcecraft_release": {
+    "tag": "v1.7",
+    "status": "published",
+    "is_latest": true,
+    "is_pre_release": false,
+    "commit": "b885a08861e8d0c1fa7e22ef73b6f4907c7a07ef",
+    "requires_sourcecraft_access": true
+  },
+  "certificate": {
+    "not_before": "2026-09-27T19:37:22Z",
+    "not_after": "2026-12-26T19:37:21Z",
+    "server_certificate_changed": false
+  },
+  "database": {
+    "integrity": "ok",
+    "previous_events_preserved": true,
+    "previous_event_count": 2435,
+    "current_event_count": 2445
+  },
+  "windows_client": {
+    "public_status": true,
+    "current_development_check": {
+      "status": "development",
+      "current": "1.7.0",
+      "latest": "1.7.0",
+      "download_url": "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7",
+      "source": "network",
+      "checked_at": 1790615520,
+      "development": true
+    },
+    "old_package": {
+      "status": "update_available",
+      "current": "1.6.0",
+      "latest": "1.7.0",
+      "download_url": "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7",
+      "source": "network",
+      "checked_at": 1790615520,
+      "development": false
+    },
+    "old_package_message": "Версия пакета: 1.6.0. Доступна 1.7.0. Рекомендуем скачать новую версию: https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7",
+    "current_package": {
+      "status": "current",
+      "current": "1.7.0",
+      "latest": "1.7.0",
+      "download_url": "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7",
+      "source": "network",
+      "checked_at": 1790615520,
+      "development": false
+    },
+    "offline_cached": {
+      "status": "current",
+      "current": "1.7.0",
+      "latest": "1.7.0",
+      "download_url": "https://sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22/releases/v1.7",
+      "source": "cache",
+      "checked_at": 1790615520,
+      "development": false
+    },
+    "invalid_certificates_rejected": {
+      "expired_leaf": "certificate has expired",
+      "wrong_hostname": "Hostname mismatch, certificate is not valid for 'wrong.host.badssl.com'."
+    }
+  },
+  "windows_gui": {
+    "verification": "user_performed_and_backend_state_readback",
+    "user_report": "Navix запущен, окно работает",
+    "installation_status": "running",
+    "redis_ready": true,
+    "last_success_at": 1790616096,
+    "version_cache_checked_at": 1790616077,
+    "database_marker_preserved": true,
+    "runtime_build": "6869c6f85f04",
+    "launcher_tls_fix_applied": true,
+    "agent_gui_automation_completed": false
+  },
+  "validation": {
+    "launcher_windows_tests": 32,
+    "launcher_linux_xvfb_tests": 32,
+    "distribution_server_tests": 5,
+    "distribution_linux_tests": 5,
+    "final_local_smoke_passed": 21,
+    "final_local_smoke_total": 21
+  }
+}

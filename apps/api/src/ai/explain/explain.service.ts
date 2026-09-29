@@ -35,7 +35,7 @@ import {
   normalizeAssignmentReasons,
 } from './case-explanation';
 import { EvidenceReader } from './evidence.reader';
-import type { CandidateEvidence, RequestEvidence } from './evidence.schema';
+import type { RequestEvidence } from './evidence.schema';
 
 export interface ExplainRequestInput {
   readonly scope: 'request' | 'engineer' | 'route' | 'alert' | 'policy' | 'plan' | 'degraded';
@@ -47,25 +47,25 @@ export interface ExplainRequestInput {
 }
 
 /**
- * The system prompt of the explainer micro-agent.
+ * System prompt of the explanation contour only. Not the assistant.
  *
- * Both sentences below are load-bearing (task brief for `src/ai/explain/**`): the model
- * must never introduce a number, name or code the context did not already contain, and it
- * must keep `constraint_check` (a verified rule) distinct from `calculation_outcome` (a
- * bounded search that found nothing -- a limit of the search, not a proof of impossibility,
- * `docs/knowledge/dispatcher-situations.md`'s own point about this exact failure mode).
+ * The model restates facts the server already calculated: three or four short
+ * Russian sentences, no markdown, no solver field names, no full request ids.
+ * A bounded search is a limit of that search, not proof that no assignment exists.
  */
 const EXPLAIN_SYSTEM_PROMPT = [
-  'You are the dispatcher explanation assistant for the Navix field-engineer router.',
-  'You never make a planning decision and you never invent a reason (AGENTS.md section 9.5, decisions D-11 and D-3).',
-  'Every number, name and code in your answer must already appear in the context below;',
-  'if a fact was not given to you, say plainly that it was not calculated -- never guess, estimate or round it yourself.',
-  'The context distinguishes two kinds of grounds: "basis": "constraint_check" is a verified rule that actually ruled something out,',
-  'while "basis": "calculation_outcome" only means a bounded search did not find a variant -- that is a limit of the search,',
-  'not proof that no such variant exists, and your answer must say so explicitly whenever it relies on a calculation_outcome reason.',
-  'Rephrase the given facts for a human dispatcher in Russian, in the shape Facts -> Influence -> Result; do not add analysis the context does not contain.',
-  'Formulate the cause from explicit facts and verified constraints, not only from a ready-made reason code. If all suitable engineers are offline, explain that no suitable engineer is available now. Do not then claim that the cause is unknown merely because solver reasons are empty. Distinguish a current verified blocker from an unverified historical solver decision; never invent missing facts.',
+  'Ты объясняешь диспетчеру уже посчитанное решение. Решений не принимаешь.',
+  'Пиши только по-русски, обычными предложениями: факт, как он повлиял, что из этого вышло.',
+  'Три или четыре коротких предложения. Без списков, заголовков, звёздочек, решёток и любой разметки.',
+  'Не используй внутренние коды, имена полей и служебные термины расчёта.',
+  'Номер заявки — только первые 8 символов, и только если без номера фраза непонятна.',
+  'Время пиши часами и минутами. Длительность — минутами. Расстояние — километрами.',
+  'Не выдумывай числа, имена и причины. Если причины в контексте нет — одна фраза: в контексте причины нет.',
+  'Если в контексте сказано, что поиск был ограничен, скажи, что в этом расчёте место не нашлось, и не называй это невозможностью.',
 ].join(' ');
+
+/** Hard cap so an explanation stays a short paragraph even if the chat budget is larger. */
+const EXPLAIN_OUTPUT_TOKEN_CAP = 280;
 
 /**
  * Assembles the deterministic, calculation-backed context for one explanation and starts
@@ -193,7 +193,10 @@ export class ExplainService {
     handle: RunHandle,
   ): Promise<void> {
     const model = this.connections?.current.llm.model ?? this.config.get('LLM_MODEL');
-    const maxOutputTokens = this.config.get('LLM_MAX_OUTPUT_TOKENS');
+    const maxOutputTokens = Math.min(
+      this.config.get('LLM_MAX_OUTPUT_TOKENS'),
+      EXPLAIN_OUTPUT_TOKEN_CAP,
+    );
     const maxAttempts = this.config.get('LLM_MAX_ATTEMPTS');
     const messageId = randomUUID();
 
@@ -239,6 +242,7 @@ export class ExplainService {
       if (finalState === 'stopped') {
         await this.bus.emit(handle, { type: 'stopped', reason: handle.stopReason ?? 'user' });
       } else {
+        text = plainExplanation(text);
         const messageRow = await this.uow.run((tx) =>
           this.conversations.appendMessage(tx, conversationId, this.clock.nowSeconds(), {
             author: 'assistant',
@@ -397,7 +401,7 @@ export class ExplainService {
     const evidencePair = this.evidence.forRequest(routerResultPayload, requestId);
 
     return renderContext({
-      title: `Заявка ${requestId}`,
+      title: `Заявка ${shortExplainId(requestId)}`,
       caseExplanation: explanation,
       reasons: assignment?.reasons.assignment?.factors ?? [],
       requestEvidence: evidencePair.main,
@@ -406,7 +410,7 @@ export class ExplainService {
   }
 
   private async contextForEngineer(engineerId: string): Promise<string> {
-    const { snapshot, routerResultPayload } = await this.loadSnapshot();
+    const { snapshot } = await this.loadSnapshot();
     const engineer = snapshot.engineers.find((item) => item.id === engineerId) ?? null;
     if (!engineer) {
       throw SysError.notFound('Engineer', { engineerId });
@@ -414,24 +418,10 @@ export class ExplainService {
     const route = snapshot.plan.plan?.routes.find((item) => item.engineerId === engineerId) ?? null;
     const explanation = explainSelection(snapshot, null, null, engineer, route);
 
-    // For an idle engineer this is exactly what answers "why is this engineer empty":
-    // this engineer's own candidate row (skill/transport/equipment match, availability,
-    // and blockers[]) inside every leftover request's evidence.
-    const main = this.evidence.planEvidence(routerResultPayload, 'main');
-    const candidateRows: Array<{ requestId: string; candidate: CandidateEvidence | undefined }> = (
-      main?.requests ?? []
-    )
-      .filter((item) => item.status === 'unassigned' || item.engineer_id === engineerId)
-      .map((item) => ({
-        requestId: item.request_id,
-        candidate: item.candidates.find((candidate) => candidate.engineer_id === engineerId),
-      }));
-
     return renderContext({
-      title: `Инженер ${engineer.displayName} (${engineerId})`,
+      title: `Инженер ${engineer.displayName}`,
       caseExplanation: explanation,
       reasons: [],
-      candidateRows,
     });
   }
 
@@ -446,10 +436,8 @@ export class ExplainService {
       : null;
 
     const lines = [
-      `Алерт ${alertId}, код "${alert.code}", важность "${alert.severity}".`,
-      `Инженеры: ${alert.engineerIds.join(', ') || 'нет'}. Заявки: ${alert.requestIds.join(', ') || 'нет'}.`,
-      `Причины (сырые данные решателя): ${JSON.stringify(alert.reasons)}`,
-      `Вариант восстановления (restoreOption): ${alert.restoreOption ? JSON.stringify(alert.restoreOption) : 'не рассчитан (null)'}`,
+      `Уведомление, важность: ${alert.severity}.`,
+      `Заявки: ${alert.requestIds.map(shortExplainId).join(', ') || 'нет'}.`,
     ];
     if (requestContext) {
       lines.push('', 'Контекст связанной заявки:', requestContext);
@@ -464,13 +452,14 @@ export class ExplainService {
     try {
       const comparison = await this.router.getPolicyComparison();
       const rows = comparison.rows
-        .map(
-          (row) =>
-            `- ${row.strategyId} (${row.kind}): usable=${row.isUsable}, assigned=${row.metrics.assignedCount}/${row.metrics.requestsTotal}, engineers=${row.metrics.engineersUsed}, distanceKm=${row.metrics.distanceKm}, travelTimeSec=${row.metrics.travelTimeSec}, totalLatenessSec=${row.metrics.totalLatenessSec}, minWindowSlackSec=${row.metrics.minWindowSlackSec ?? 'null'}`,
-        )
+        .map((row) => {
+          const roadMin = Math.round(row.metrics.travelTimeSec / 60);
+          const lateMin = Math.round(row.metrics.totalLatenessSec / 60);
+          return `${row.strategyId}: назначено ${row.metrics.assignedCount} из ${row.metrics.requestsTotal}, инженеров ${row.metrics.engineersUsed}, ${row.metrics.distanceKm} км, дорога ${roadMin} мин, опоздание ${lateMin} мин.`;
+        })
         .join('\n');
-      const focus = policyId ? `\n\nДиспетчер спрашивает про политику "${policyId}".` : '';
-      return `Сравнение политик на текущей задаче (inputHash ${comparison.inputHash}, computedAt ${comparison.computedAt}):\n${rows}${focus}`;
+      const focus = policyId ? `\n\nДиспетчер спрашивает про политику «${policyId}».` : '';
+      return `Сравнение политик на текущей задаче:\n${rows}${focus}\nОтвет: три или четыре коротких предложения, без списков и без разметки.`;
     } catch (error) {
       return `Сравнение политик не рассчитано: ${error instanceof Error ? error.message : String(error)}.`;
     }
@@ -488,7 +477,7 @@ export class ExplainService {
     if (!row) {
       return 'Оценка ручного плана не рассчитывалась.';
     }
-    return `Оценка ручного плана (сырые данные): ${JSON.stringify(row.value)}`;
+    return 'Оценка ручного плана сохранена. В текст объяснения служебные поля не входят.';
   }
 }
 
@@ -509,11 +498,11 @@ export function renderPlanContext(snapshot: ExplainSnapshot): string {
     'Текущий применённый план. Только проверенные данные из System Layer:',
     `Активная политика: ${snapshot.policyId}.`,
     `Заявок в плане: ${plan.assignments.length}; назначено, выполняется или выполнено: ${assigned}; без назначения: ${unassigned.length}.`,
-    `Инженеров с заявками: ${engineersUsed}; длина маршрутов: ${distanceKm} км; время в пути: ${travelTimeSec} секунд.`,
+    `Инженеров с заявками: ${engineersUsed}; длина маршрутов: ${distanceKm} км; время в пути: ${Math.round(travelTimeSec / 60)} минут.`,
     unassigned.length > 0
       ? `Первые заявки без назначения: ${unassigned
           .slice(0, 10)
-          .map((item) => item.requestId)
+          .map((item) => shortExplainId(item.requestId))
           .join(', ')}.`
       : 'Заявок без назначения нет.',
     'Вероятности опозданий и оценка надёжности в этом контексте не рассчитывались; не называй их и не объясняй причину цветовой оценки.',
@@ -526,74 +515,69 @@ function renderContext(input: {
   readonly reasons: ReadonlyArray<{ code?: string; facts?: Record<string, unknown> }>;
   readonly requestEvidence?: RequestEvidence | null;
   readonly baselineEvidence?: RequestEvidence | null;
-  readonly candidateRows?: ReadonlyArray<{
-    requestId: string;
-    candidate: CandidateEvidence | undefined;
-  }>;
 }): string {
   const parts: string[] = [input.title, ''];
 
   if (input.caseExplanation) {
     parts.push(
-      '[Детерминированное объяснение (rule-based, не от модели)]',
-      `Заголовок: ${input.caseExplanation.title}`,
-      `Факты: ${input.caseExplanation.facts.join(' | ')}`,
+      `Факты: ${input.caseExplanation.facts.join(' ')}`,
       `Влияние: ${input.caseExplanation.influence}`,
       `Итог: ${input.caseExplanation.result}`,
       '',
     );
   } else {
-    parts.push('[Детерминированное объяснение недоступно для этого сочетания параметров.]', '');
+    parts.push('Готового объяснения для этого сочетания нет.', '');
   }
 
-  if (input.reasons.length > 0) {
+  if (searchWasBounded(input)) {
     parts.push(
-      '[Причины решателя (code/basis/facts)]',
-      ...input.reasons.map(
-        (reason) =>
-          `- code=${reason.code ?? 'unknown'} facts=${JSON.stringify(reason.facts ?? {})}`,
-      ),
+      'Поиск в этом расчёте был ограничен по времени. Отсутствие варианта не доказывает, что его не существует.',
       '',
     );
   }
 
-  if (input.requestEvidence) {
-    parts.push('[Evidence: main]', formatRequestEvidence(input.requestEvidence), '');
-  } else if (input.requestEvidence === null) {
-    parts.push('[Evidence: main] не рассчитан для этого результата.', '');
-  }
-  if (input.baselineEvidence) {
-    parts.push('[Evidence: baseline]', formatRequestEvidence(input.baselineEvidence), '');
-  }
-
-  if (input.candidateRows && input.candidateRows.length > 0) {
-    parts.push(
-      '[Кандидат-строки инженера по каждой заявке остатка (candidates[]/blockers[])]',
-      ...input.candidateRows.map(({ requestId, candidate }) =>
-        candidate
-          ? `- заявка ${requestId}: skill_match=${candidate.skill_match} transport_match=${candidate.transport_match} equipment_match=${candidate.equipment_match} available=${candidate.available} solo_feasible=${candidate.solo_feasible} append_at_route_end_feasible=${candidate.append_at_route_end_feasible} blockers=${JSON.stringify(candidate.blockers)}`
-          : `- заявка ${requestId}: evidence для этого инженера не рассчитан.`,
-      ),
-      '',
-    );
-  }
-
+  parts.push('Ответ: три или четыре коротких предложения по-русски, без списков и без разметки.');
   return parts.join('\n');
 }
 
-function formatRequestEvidence(evidence: RequestEvidence): string {
-  const lines = [
-    `status=${evidence.status} engineer_id=${evidence.engineer_id ?? 'null'} predecessor_request_id=${evidence.predecessor_request_id ?? 'null'}`,
-    `arrival_at=${evidence.arrival_at ?? 'null'} start_at=${evidence.start_at ?? 'null'} end_at=${evidence.end_at ?? 'null'} waiting_time_sec=${evidence.waiting_time_sec ?? 'null'}`,
-    `window_start_offset_sec=${evidence.window_start_offset_sec ?? 'null'} window_end_margin_sec=${evidence.window_end_margin_sec ?? 'null'} travel_time_sec=${evidence.travel_time_sec ?? 'null'} distance_km=${evidence.distance_km ?? 'null'}`,
-    `reasons=${JSON.stringify(evidence.reasons)}`,
-    'candidates:',
-    ...evidence.candidates.map(
-      (candidate) =>
-        `  - ${candidate.engineer_id} (${candidate.label ?? 'без имени'}): skill_match=${candidate.skill_match} transport_match=${candidate.transport_match} equipment_match=${candidate.equipment_match} available=${candidate.available} solo_feasible=${candidate.solo_feasible} append_at_route_end_feasible=${candidate.append_at_route_end_feasible} assigned_job_count=${candidate.assigned_job_count} blockers=${JSON.stringify(candidate.blockers)}`,
+/** True when a ground is only a bounded search, not a verified rule. */
+function searchWasBounded(input: {
+  readonly reasons: ReadonlyArray<{ facts?: Record<string, unknown> }>;
+  readonly requestEvidence?: RequestEvidence | null;
+  readonly baselineEvidence?: RequestEvidence | null;
+}): boolean {
+  const grounds = [
+    ...input.reasons.map((item) =>
+      item.facts !== undefined && typeof item.facts.basis === 'string' ? item.facts.basis : null,
     ),
+    ...(input.requestEvidence?.reasons ?? []).map((item) => item.basis),
+    ...(input.baselineEvidence?.reasons ?? []).map((item) => item.basis),
   ];
-  return lines.join('\n');
+  return grounds.includes('calculation_outcome');
+}
+
+/** First 8 characters of a UUID. Short fixture ids stay whole. */
+export function shortExplainId(id: string): string {
+  const trimmed = id.trim();
+  return /^[0-9a-f]{8}-/i.test(trimmed) ? trimmed.slice(0, 8) : trimmed;
+}
+
+/**
+ * Drops markup, full request ids and list markers from an explanation.
+ * The final message replaces the live stream, so the panel shows this text.
+ */
+export function plainExplanation(text: string): string {
+  const withoutMarkup = text
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```/g, ''))
+    .replace(/[*_`#>]/g, '')
+    .replace(/^\s*[-•]\s+/gm, '')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, (id) =>
+      shortExplainId(id),
+    );
+  return withoutMarkup
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function legsOf(raw: unknown): ExplainPlanLegView[] {

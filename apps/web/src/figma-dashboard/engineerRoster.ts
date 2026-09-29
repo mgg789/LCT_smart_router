@@ -54,6 +54,7 @@ export type EngineerProfile = {
   readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
   readonly region: string | null;
   readonly officeLabel: string;
+  readonly shiftPattern: 'two_two' | 'five_two';
   readonly assignedCount: number;
   readonly cardStatus: string;
   readonly photoIndex: number;
@@ -257,6 +258,7 @@ export function engineerProfilesFromSnapshot(
         transportType: engineer.transportType,
         region: engineer.region,
         officeLabel: engineerOfficeLabel(engineer.region),
+        shiftPattern: engineer.shiftPattern ?? 'two_two',
         assignedCount,
         cardStatus: cardStatus(activity, engineer.day?.availability ?? null, assignedCount),
         photoIndex: engineerPortraitIndex(engineer.id, engineer.displayName),

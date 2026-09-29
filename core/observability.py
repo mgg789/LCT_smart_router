@@ -1,14 +1,16 @@
 """Opt-in, payload-free telemetry for the private Router HTTP boundary."""
 
+import hmac
 import logging
 import math
 import os
+import re
 import time
 import traceback
 from contextlib import nullcontext
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 LOGGER = logging.getLogger(__name__)
@@ -31,6 +33,9 @@ class RouterObservability:
         self.duration = None
         if enabled("ROUTER_METRICS_ENABLED"):
             try:
+                token = os.getenv("ROUTER_METRICS_TOKEN", "")
+                if not 32 <= len(token) <= 512 or not re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token):
+                    raise ValueError("invalid metrics token")
                 from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
                 from prometheus_client.exposition import CONTENT_TYPE_LATEST
 
@@ -47,8 +52,16 @@ class RouterObservability:
                 )
 
                 @app.get("/metrics", include_in_schema=False)
-                def metrics() -> Response:
-                    """Expose only bounded HTTP series on the private Router network."""
+                def metrics(request: Request) -> Response:
+                    """Require one exact scraper credential after routing has normalized the path."""
+                    headers = request.headers.getlist("authorization")
+                    match = (
+                        re.fullmatch(r"(?i:Bearer) ([A-Za-z0-9._~+/-]+=*)", headers[0])
+                        if len(headers) == 1 and len(headers[0]) <= 519
+                        else None
+                    )
+                    if match is None or not hmac.compare_digest(match[1], token):
+                        return Response(status_code=401, headers={"WWW-Authenticate": "Bearer"})
                     return Response(
                         generate_latest(registry), headers={"Content-Type": CONTENT_TYPE_LATEST}
                     )

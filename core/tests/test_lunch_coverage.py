@@ -1,7 +1,7 @@
 """Lunch alerts require an independently feasible coverage witness."""
 
-from core.contracts import RouterTaskSnapshot
-from core.geo import GraphTravel
+from core.contracts import RouterTaskSnapshot, RouterTechnicalSettings
+from core.geo import GraphTravel, configure_travel
 from core.schedule import assemble_plan, baseline, fixed_order, lunch_coverage_alerts, validate_plan
 
 
@@ -26,7 +26,7 @@ def test_lunch_witness_preserves_actual_plan(snapshot, graph):
             location=engineer["start_location"],
         )
     task = RouterTaskSnapshot.model_validate(data)
-    travel = GraphTravel(graph)
+    travel = configure_travel(GraphTravel(graph), RouterTechnicalSettings(strict_time_windows=False), start)
     route = fixed_order(task, task.engineers[0], [task.requests[0].request_id], travel)
     assert route is not None
     plan = assemble_plan(task, [route])

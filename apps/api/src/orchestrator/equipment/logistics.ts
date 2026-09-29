@@ -76,6 +76,14 @@ export async function persistLogistics(
         job.start_at < stop.end_at
       )
         throw new SysError('RESULT_NOT_APPLICABLE', 'Invalid office pickup witness');
+      const reserved = await tx.equipmentLogistics.findUnique({
+        where: { workDate_requestId: { workDate, requestId: metadata.request_id } },
+      });
+      if (reserved)
+        throw new SysError(
+          'RESULT_NOT_APPLICABLE',
+          'Equipment action duplicates a reservation for this request',
+        );
       await tx.equipmentLogistics.create({
         data: {
           id: metadata.logistics_id,
@@ -97,6 +105,20 @@ export async function persistLogistics(
   const pending = await tx.equipmentLogistics.findMany({ where: { workDate, status: 'assigned' } });
   if (pending.some((row) => !seen.has(row.id)))
     throw new SysError('RESULT_NOT_APPLICABLE', 'A pending equipment action was removed');
+}
+
+/**
+ * Engineers whose working availability an assigned action depends on.
+ *
+ * Router treats an assigned action as a frozen stop of these routes; once any of
+ * them is off the line the stop cannot be scheduled and the whole solve fails.
+ */
+export function logisticsParticipants(
+  row: Pick<EquipmentLogistics, 'donorEngineerId' | 'receiverEngineerId'>,
+): string[] {
+  return row.donorEngineerId === null
+    ? [row.receiverEngineerId]
+    : [row.donorEngineerId, row.receiverEngineerId];
 }
 
 /** Durable, role-sensitive projection for the one-sided logistics cards. */

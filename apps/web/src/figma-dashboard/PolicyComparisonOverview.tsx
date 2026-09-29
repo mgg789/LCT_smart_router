@@ -9,6 +9,8 @@ import {
   strategyLabel,
   usesReserve,
 } from '../lib/policyComparison';
+import { formatClock } from '../lib/time';
+import { STRATEGY_COLORS } from './PolicyStrategyMap';
 
 const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
 const COST_MEASURES = {
@@ -41,7 +43,13 @@ const LATE_SHARE_MEASURE = {
 type CostMeasure = keyof typeof COST_MEASURES;
 
 /** Coverage, travel, lateness and staffing comparisons with the same FIFO reference. */
-export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyComparisonRow[] }) {
+export function PolicyComparisonOverview({
+  rows,
+  currentPolicyId = null,
+}: {
+  rows: readonly PolicyComparisonRow[];
+  currentPolicyId?: string | null;
+}) {
   const [measure, setMeasure] = useState<CostMeasure>('kmPerJob');
   const [includeReserve, setIncludeReserve] = useState(false);
   const reserveToggle = useRef<HTMLLabelElement>(null);
@@ -80,6 +88,15 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
   const bestCount = policies.length
     ? Math.max(...policies.map((row) => row.metrics.assignedCount))
     : null;
+  const higherCoverageWithMoreKm =
+    fifo && bestCount !== null
+      ? policies.find(
+          (row) =>
+            row.metrics.assignedCount === bestCount &&
+            row.metrics.assignedCount > fifo.metrics.assignedCount &&
+            row.metrics.distanceKm > fifo.metrics.distanceKm,
+        )
+      : null;
   const bestOnTime = policies.length
     ? Math.max(...policies.map((row) => comparisonValue(row, 'onTime') ?? 0))
     : null;
@@ -141,6 +158,14 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
           ? t('figma-dashboard.PolicyComparisonOverview.42a0a48819')
           : ''}
       </p>
+      {higherCoverageWithMoreKm && fifo ? (
+        <p className="text-[15px] leading-[22px] text-figma-muted">
+          {t('figma-dashboard.PolicyComparisonOverview.coverageDistanceNote', {
+            value0: higherCoverageWithMoreKm.metrics.assignedCount,
+            value1: fifo.metrics.assignedCount,
+          })}
+        </p>
+      ) : null}
       <div className="grid grid-cols-1 gap-[20px] lg:grid-cols-2">
         <ComparisonBars
           rows={visible}
@@ -199,6 +224,13 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
           description={t('figma-dashboard.PolicyComparisonOverview.e1f1918822')}
           better="min"
         />
+        <CompletionChart
+          rows={rows.filter((row) => {
+            if (!row.isUsable) return false;
+            if (usesReserve(row)) return includeReserve || currentPolicyId === 'covering';
+            return true;
+          })}
+        />
       </div>
       {reserve ? (
         <label
@@ -229,6 +261,148 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
         </label>
       ) : null}
     </div>
+  );
+}
+
+/** Plot height is 2.5× the first 180px chart so close policies separate. */
+const CHART_HEIGHT = 450;
+/** Each completion rises over about half an hour instead of a vertical step. */
+const SMOOTH_SIGMA_SEC = 12 * 60;
+
+/**
+ * Smooth cumulative completions.
+ *
+ * A raw series jumps by one at every job end, so close policies draw on top of
+ * each other as stairs. Each end contributes a normal rise of `sigma` seconds.
+ * The result stays between 0 and the job count and never decreases.
+ */
+function smoothedCount(times: readonly number[], at: number, sigma: number): number {
+  let total = 0;
+  for (const end of times) total += normalCdf((at - end) / sigma);
+  return total;
+}
+
+/** Abramowitz-Stegun approximation of the error function, enough for a chart. */
+function erf(value: number): number {
+  const sign = Math.sign(value);
+  const abs = Math.abs(value);
+  const t = 1 / (1 + 0.3275911 * abs);
+  const polynomial =
+    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t;
+  return sign * (1 - polynomial * Math.exp(-abs * abs));
+}
+
+function normalCdf(z: number): number {
+  return 0.5 * (1 + erf(z / Math.SQRT2));
+}
+
+function CompletionChart({ rows }: { rows: readonly PolicyComparisonRow[] }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [plotWidth, setPlotWidth] = useState(960);
+  const halfHour = 30 * 60;
+  const ends = rows.flatMap((row) => row.jobEnds ?? []);
+  useLayoutEffect(() => {
+    if (ends.length === 0) return;
+    const node = host.current;
+    if (!node) return;
+    const apply = () => setPlotWidth(Math.max(480, Math.floor(node.clientWidth)));
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ends.length]);
+  const origin = ends.length ? Math.floor(Math.min(...ends) / halfHour) * halfHour : 0;
+  const finish = ends.length
+    ? Math.ceil(Math.max(...ends) / halfHour) * halfHour
+    : origin + halfHour;
+  const span = Math.max(halfHour, finish - origin);
+  const ticks: number[] = [];
+  for (let at = origin; at <= finish; at += halfHour) ticks.push(at);
+  const maxCount = Math.max(1, ...rows.map((row) => (row.jobEnds ?? []).length));
+  const width = plotWidth;
+  const height = CHART_HEIGHT;
+  const padLeft = 28;
+  const padRight = 28;
+  const padTop = 16;
+  const padBottom = 32;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const xOf = (at: number) => padLeft + ((at - origin) / span) * plotW;
+  const yOf = (count: number) => padTop + plotH - (count / maxCount) * plotH;
+  const legend = rows.filter((row) => (row.jobEnds ?? []).length > 0);
+  return (
+    <section className="w-full rounded-[20px] bg-figma-soft p-[24px] lg:col-span-2">
+      <div className="mb-[12px] flex flex-wrap items-start justify-between gap-x-[24px] gap-y-[10px]">
+        <div className="min-w-[240px]">
+          <p className="text-[16px] font-semibold text-figma-ink">
+            {t('figma-dashboard.PolicyComparisonOverview.completionChart')}
+          </p>
+          <p className="mt-[4px] text-[14px] text-figma-muted">
+            {t('figma-dashboard.PolicyComparisonOverview.completionChartNote')}
+          </p>
+        </div>
+        {legend.length > 0 ? (
+          <ul className="grid w-full grid-cols-2 gap-x-[16px] gap-y-[6px] min-[1100px]:flex min-[1100px]:w-auto min-[1100px]:flex-wrap min-[1100px]:items-center min-[1100px]:justify-end">
+            {legend.map((row) => (
+              <li
+                key={row.strategyId}
+                className="text-[13px] leading-[18px] font-semibold"
+                style={{ color: STRATEGY_COLORS[row.strategyId] ?? '#272930' }}
+              >
+                {strategyLabel(row.strategyId)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      {ends.length === 0 ? (
+        <p className="text-[14px] text-figma-muted">
+          {t('figma-dashboard.PolicyComparisonOverview.completionChartEmpty')}
+        </p>
+      ) : (
+        <div ref={host} className="w-full">
+          <svg viewBox={`0 0 ${width} ${height}`} className="block h-[450px] w-full" role="img">
+            <title>{t('figma-dashboard.PolicyComparisonOverview.completionChart')}</title>
+            {ticks.map((at) => (
+              <g key={at}>
+                <line
+                  x1={xOf(at)}
+                  x2={xOf(at)}
+                  y1={padTop}
+                  y2={padTop + plotH}
+                  stroke="#d5d6d8"
+                  strokeDasharray="3 4"
+                />
+                <text x={xOf(at)} y={height - 8} textAnchor="middle" fontSize="13" fill="#727478">
+                  {formatClock(at)}
+                </text>
+              </g>
+            ))}
+            {rows.map((row) => {
+              const times = [...(row.jobEnds ?? [])].sort((left, right) => left - right);
+              if (times.length === 0) return null;
+              const points: string[] = [];
+              for (let at = origin; at <= finish; at += 60) {
+                const x = xOf(at).toFixed(1);
+                const y = yOf(smoothedCount(times, at, SMOOTH_SIGMA_SEC)).toFixed(1);
+                points.push(`${x},${y}`);
+              }
+              return (
+                <polyline
+                  key={row.strategyId}
+                  fill="none"
+                  stroke={STRATEGY_COLORS[row.strategyId] ?? '#272930'}
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  points={points.join(' ')}
+                />
+              );
+            })}
+          </svg>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -293,9 +467,7 @@ function ComparisonBars({
             <li key={row.strategyId}>
               <div className="mb-[6px] flex flex-wrap items-baseline justify-between gap-x-[12px] gap-y-[4px] text-[14px]">
                 <span className="font-semibold text-figma-ink">
-                  {row.strategyId === 'baseline'
-                    ? t('figma-dashboard.PolicyComparisonOverview.badc218718')
-                    : strategyLabel(row.strategyId)}
+                  {strategyLabel(row.strategyId)}
                   {usesReserve(row) ? ` (+${row.additionalEngineers})` : ''}
                 </span>
                 <span
@@ -305,7 +477,10 @@ function ComparisonBars({
                 >
                   {value === null
                     ? t('figma-dashboard.PolicyComparisonOverview.3afae954a4')
-                    : `${number.format(value)} ${unit}`}
+                    : measure === 'assigned'
+                      ? // A count of requests, so it declines: «4 заявки», not «4 заявок».
+                        t('common.requests', { count: value })
+                      : `${number.format(value)} ${unit}`}
                   {delta === null
                     ? ''
                     : t('figma-dashboard.PolicyComparisonOverview.dc2e5dbe5c', { value0: delta })}

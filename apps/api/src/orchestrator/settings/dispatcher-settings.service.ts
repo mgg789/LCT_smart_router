@@ -17,6 +17,7 @@ import {
   mergeDispatcherSettings,
   moscowMinutesToUnix,
   parseDispatcherSettings,
+  shiftWindowMinutes,
   toDispatcherSettingsView,
 } from './dispatcher-settings';
 
@@ -108,7 +109,10 @@ export class DispatcherSettingsService {
     });
 
     const dayChanged =
-      current.dayStartMin !== next.dayStartMin || current.dayEndMin !== next.dayEndMin;
+      current.fiveTwoStartMin !== next.fiveTwoStartMin ||
+      current.fiveTwoEndMin !== next.fiveTwoEndMin ||
+      current.twoTwoStartMin !== next.twoTwoStartMin ||
+      current.twoTwoEndMin !== next.twoTwoEndMin;
     if (dayChanged) {
       await this.applyDayBounds(context, next);
     } else if (capacityChanged) {
@@ -127,18 +131,29 @@ export class DispatcherSettingsService {
   ): Promise<void> {
     const timeZone = this.config.get('APP_TIME_ZONE');
     const workDate = workDateOf(context.now, timeZone);
-    const shiftStartAt = moscowMinutesToUnix(workDate, settings.dayStartMin);
-    const shiftEndAt = moscowMinutesToUnix(workDate, settings.dayEndMin);
-    const updated = await context.tx.engineerDay.updateMany({
+    const days = await context.tx.engineerDay.findMany({
       where: { workDate },
-      data: {
-        shiftStartAt: BigInt(shiftStartAt),
-        shiftEndAt: BigInt(shiftEndAt),
-        updatedAt: BigInt(context.now),
-        version: { increment: 1 },
-      },
+      include: { engineer: { select: { shiftPattern: true, origin: true } } },
     });
-    if (updated.count === 0) {
+    let rewritten = 0;
+    for (const day of days) {
+      // Official and imported crews keep the clocks that came with the package.
+      if (day.engineer.origin === 'import' || day.engineer.origin === 'synthesized') {
+        continue;
+      }
+      const window = shiftWindowMinutes(settings, day.engineer.shiftPattern);
+      rewritten += 1;
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data: {
+          shiftStartAt: BigInt(moscowMinutesToUnix(workDate, window.startMin)),
+          shiftEndAt: BigInt(moscowMinutesToUnix(workDate, window.endMin)),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+    }
+    if (rewritten === 0) {
       return;
     }
     await this.publisher.publishIfChanged(

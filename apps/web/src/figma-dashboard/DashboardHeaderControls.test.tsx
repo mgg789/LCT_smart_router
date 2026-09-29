@@ -16,6 +16,7 @@ describe('dashboard user menu layering', () => {
         onToggle={noop}
         onSettings={noop}
         onOpenPreviousPlan={noop}
+        onDownloadPlan={noop}
         onEndDay={noop}
         onRestartDay={noop}
         onReset={noop}
@@ -38,6 +39,7 @@ describe('dashboard user menu layering', () => {
         onToggle={noop}
         onSettings={noop}
         onOpenPreviousPlan={noop}
+        onDownloadPlan={noop}
         onEndDay={noop}
         onRestartDay={noop}
         onReset={noop}
@@ -47,6 +49,7 @@ describe('dashboard user menu layering', () => {
 
     expect(html).toContain('class="absolute z-[90]"');
     expect(html).toContain('Прошлый план');
+    expect(html.indexOf('Прошлый план')).toBeLessThan(html.indexOf('Скачать план'));
   });
 });
 
@@ -63,6 +66,7 @@ it('shows priorities only in manual mode immediately after settings', () => {
         onToggle={noop}
         onSettings={noop}
         onOpenPreviousPlan={noop}
+        onDownloadPlan={noop}
         onEndDay={noop}
         onRestartDay={noop}
         onReset={noop}

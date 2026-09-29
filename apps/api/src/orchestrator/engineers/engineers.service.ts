@@ -29,6 +29,7 @@ export interface CreateEngineerInput {
   readonly region?: string | null;
   readonly homeLat?: number | null;
   readonly homeLon?: number | null;
+  readonly shiftPattern?: 'two_two' | 'five_two';
 }
 
 export interface UpdateEngineerInput {
@@ -38,6 +39,7 @@ export interface UpdateEngineerInput {
   readonly region?: string | null;
   readonly homeLat?: number | null;
   readonly homeLon?: number | null;
+  readonly shiftPattern?: 'two_two' | 'five_two';
 }
 
 export interface WorkdayInput {
@@ -124,6 +126,7 @@ export class EngineersService {
         skills: input.skills,
         transportType: input.transportType,
         region: input.region ?? null,
+        shiftPattern: input.shiftPattern ?? 'two_two',
         homeLat: input.homeLat ?? null,
         homeLon: input.homeLon ?? null,
         origin: 'manual',
@@ -462,6 +465,7 @@ export class EngineersService {
         // there; it is a planning parameter, not an observation (context/42 DF-06).
         homeLat: input.homeLat === undefined ? current.homeLat : input.homeLat,
         homeLon: input.homeLon === undefined ? current.homeLon : input.homeLon,
+        shiftPattern: input.shiftPattern ?? current.shiftPattern,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -747,9 +751,9 @@ export class EngineersService {
   /**
    * The working day the engineer is currently in.
    *
-   * Created on demand from the configured zone when it does not exist yet. The shift
-   * bounds are left at the day's edges until the dispatcher sets real ones, and the
-   * absence of a real shift is visible rather than papered over with a plausible default.
+   * Created on demand when the row does not exist yet. A missing shift stays
+   * zero-length (`start = end = now`) so the snapshot treats the engineer as off
+   * duty. A real window comes only from an import or an explicit dispatcher edit.
    */
   async currentDay(context: OperationContext, engineerId: string): Promise<EngineerDay> {
     const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
@@ -776,7 +780,11 @@ export class EngineersService {
   /** Explicit app heartbeat/check-in. Reading a screen never becomes an attendance fact. */
   async recordAttendance(context: OperationContext, engineerId: string): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
-    if (context.now < Number(day.shiftStartAt) || context.now > Number(day.shiftEndAt)) {
+    if (
+      day.shiftEndAt <= day.shiftStartAt ||
+      context.now < Number(day.shiftStartAt) ||
+      context.now > Number(day.shiftEndAt)
+    ) {
       throw new SysError('VALIDATION_FAILED', 'Attendance can only be recorded during the shift');
     }
     return context.tx.engineerDay.update({

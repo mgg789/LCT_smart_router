@@ -115,12 +115,13 @@ export class DispatchChatsController {
           dto.text,
         );
         return {
-          handoffId: opened.handoff.id,
+          handoffId: opened.handoff?.id ?? null,
           messageIds: opened.messages.map((message) => message.id),
           created: opened.created,
         };
       },
     );
+    if (!outcome.result.handoffId) return { chat: null };
     const chat = await this.requireChat(outcome.result.handoffId);
     if (!outcome.replayed) {
       if (outcome.result.created) this.publishChatState(chat);
@@ -157,7 +158,13 @@ export class DispatchChatsController {
       },
     );
     const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) this.publishChatMessages(chat, [outcome.result.messageId]);
+    if (!outcome.replayed) {
+      this.publishChatMessages(chat, [outcome.result.messageId]);
+      // The reply is what moves the handoff from `waiting` to `answered` and stamps
+      // `firstReplyAt` (`dispatch-chats.service.ts#reply`). Without publishing that,
+      // the phone keeps showing «Передали диспетчеру» after a human already replied.
+      this.publishChatState(chat);
+    }
     return {
       message: toMessageView(this.requireChatMessage(chat, outcome.result.messageId)),
       chat: toDispatchChatView(chat),
@@ -187,14 +194,11 @@ export class DispatchChatsController {
           id,
           dispatcherAccountId,
         );
-        return { handoffId: written.handoff.id, messageId: written.message.id };
+        return { handoffId: written.handoff.id };
       },
     );
     const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) {
-      this.publishChatMessages(chat, [outcome.result.messageId]);
-      this.publishChatState(chat);
-    }
+    if (!outcome.replayed) this.publishChatState(chat);
     return { conversation: toConversationView(chat.conversation), chat: toDispatchChatView(chat) };
   }
 

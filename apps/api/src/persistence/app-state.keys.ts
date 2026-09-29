@@ -31,6 +31,11 @@ export const APP_STATE_KEYS = {
    * pin hash. The pin value itself never lands here.
    */
   MCP_SETTINGS: 'dispatcher.mcp',
+  /**
+   * Router switches captured the moment a personal policy is selected, so leaving
+   * that policy can put the previous switches back.
+   */
+  POLICY_PERSONAL_ROUTER_BACKUP: 'policy.personal.router-preset-backup',
 } as const;
 
 export type AppStateKey = (typeof APP_STATE_KEYS)[keyof typeof APP_STATE_KEYS];

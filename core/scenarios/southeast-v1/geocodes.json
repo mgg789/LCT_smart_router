@@ -1,690 +1,690 @@
 {
   "schema_version": "1.0",
-  "source": "Deterministic district-centroid projection for offline Router acceptance; not rooftop geocoding.",
+  "source": "LocationIQ coordinates from data/dataset/geocoded when the address is in the checked package; otherwise the district-centroid projection. Not a live geocode.",
   "entries": [
     {
       "address": "Город Москва, б-р.Ореховый, д. 11 к 1",
       "node_id": "southeast-000",
       "location": {
-        "lat": 55.619915,
-        "lon": 37.705761
+        "lat": 55.6108754,
+        "lon": 37.7128459
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, б-р.Ореховый, д. 35 к 1",
       "node_id": "southeast-001",
       "location": {
-        "lat": 55.608041,
-        "lon": 37.745173
+        "lat": 55.6149375,
+        "lon": 37.7354256
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, б-р.Ореховый, д. 61 к 1",
       "node_id": "southeast-002",
       "location": {
-        "lat": 55.608025,
-        "lon": 37.741617
+        "lat": 55.6170816,
+        "lon": 37.7583887
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, б-р.Ореховый, д. 7 к 1",
       "node_id": "southeast-003",
       "location": {
-        "lat": 55.614522,
-        "lon": 37.704244
+        "lat": 55.6096657,
+        "lon": 37.7060471
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, пр-кт.Пролетарский, д. 14А",
       "node_id": "southeast-004",
       "location": {
-        "lat": 55.618778,
-        "lon": 37.673763
+        "lat": 55.636107,
+        "lon": 37.6531988
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, пр-кт.Пролетарский, д. 18 к 4",
       "node_id": "southeast-005",
       "location": {
-        "lat": 55.61823,
-        "lon": 37.666425
+        "lat": 55.6338547,
+        "lon": 37.6538396
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Борисовский, д. 44 к 3",
       "node_id": "southeast-006",
       "location": {
-        "lat": 55.616199,
-        "lon": 37.703533
+        "lat": 55.6144125,
+        "lon": 37.7226952
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Востряковский, д. 15 к 2",
       "node_id": "southeast-007",
       "location": {
-        "lat": 55.58386,
-        "lon": 37.64327
+        "lat": 55.5760549,
+        "lon": 37.6461681
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Востряковский, д. 15 к 4",
       "node_id": "southeast-008",
       "location": {
-        "lat": 55.585382,
-        "lon": 37.639914
+        "lat": 55.5768738,
+        "lon": 37.6492402
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Гурьевский, д. 19 к 2",
       "node_id": "southeast-009",
       "location": {
-        "lat": 55.598821,
-        "lon": 37.731905
+        "lat": 55.607134,
+        "lon": 37.7503407
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Гурьевский, д. 23 к 1",
       "node_id": "southeast-010",
       "location": {
-        "lat": 55.603888,
-        "lon": 37.735049
+        "lat": 55.6074243,
+        "lon": 37.7536622
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Загорьевский, д. 7 к 2",
       "node_id": "southeast-011",
       "location": {
-        "lat": 55.593543,
-        "lon": 37.672265
+        "lat": 55.574132,
+        "lon": 37.6663646
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Загорьевский, д. 9",
       "node_id": "southeast-012",
       "location": {
-        "lat": 55.593177,
-        "lon": 37.677656
+        "lat": 55.5780853,
+        "lon": 37.6775523
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Ореховый, д. 23 к 1",
       "node_id": "southeast-013",
       "location": {
-        "lat": 55.608602,
-        "lon": 37.749684
+        "lat": 55.6228247,
+        "lon": 37.7313782
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Ореховый, д. 41",
       "node_id": "southeast-014",
       "location": {
-        "lat": 55.609384,
-        "lon": 37.749756
+        "lat": 55.6165342,
+        "lon": 37.7307244
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, проезд.Шипиловский, д. 59 к 2",
       "node_id": "southeast-015",
       "location": {
-        "lat": 55.603638,
-        "lon": 37.734194
+        "lat": 55.6060564,
+        "lon": 37.7067109
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.6-я Радиальная, д. 5 к 3",
       "node_id": "southeast-016",
       "location": {
-        "lat": 55.595488,
-        "lon": 37.683769
+        "lat": 55.6048694,
+        "lon": 37.6607974
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.6-я Радиальная, д. 7/1 к 2",
       "node_id": "southeast-017",
       "location": {
-        "lat": 55.592051,
-        "lon": 37.676956
+        "lat": 55.6037747,
+        "lon": 37.6510228
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Бирюлёвская, д. 39",
       "node_id": "southeast-018",
       "location": {
-        "lat": 55.597521,
-        "lon": 37.682331
+        "lat": 55.5881256,
+        "lon": 37.6658771
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Бирюлёвская, д. 58 к 3",
       "node_id": "southeast-019",
       "location": {
-        "lat": 55.592838,
-        "lon": 37.674716
+        "lat": 55.5806701,
+        "lon": 37.6681476
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Борисовские Пруды, д. 20 к 1",
       "node_id": "southeast-020",
       "location": {
-        "lat": 55.635848,
-        "lon": 37.765294
+        "lat": 55.6379834,
+        "lon": 37.7518423
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Борисовские Пруды, д. 48 к 2",
       "node_id": "southeast-021",
       "location": {
-        "lat": 55.631717,
-        "lon": 37.769278
+        "lat": 55.6418225,
+        "lon": 37.7747995
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Братеевская, д. 16 к 1",
       "node_id": "southeast-022",
       "location": {
-        "lat": 55.63261,
-        "lon": 37.76902
+        "lat": 55.6343465,
+        "lon": 37.7658937
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Братеевская, д. 18 к 1",
       "node_id": "southeast-023",
       "location": {
-        "lat": 55.636458,
-        "lon": 37.767603
+        "lat": 55.6362442,
+        "lon": 37.7692583
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Булатниковская, д. 4 к 1",
       "node_id": "southeast-024",
       "location": {
-        "lat": 55.586496,
-        "lon": 37.641009
+        "lat": 55.5812013,
+        "lon": 37.6475142
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Весёлая, д. 33 к 7",
       "node_id": "southeast-025",
       "location": {
-        "lat": 55.619389,
-        "lon": 37.669528
+        "lat": 55.6235129,
+        "lon": 37.6631328
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Генерала Белова, д. 45 к 2",
       "node_id": "southeast-026",
       "location": {
-        "lat": 55.604392,
-        "lon": 37.724842
+        "lat": 55.6072105,
+        "lon": 37.7261342
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Домодедовская, д. 31",
       "node_id": "southeast-027",
       "location": {
-        "lat": 55.599112,
-        "lon": 37.726915
+        "lat": 55.6039003,
+        "lon": 37.7161258
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Ереванская, д. 29",
       "node_id": "southeast-028",
       "location": {
-        "lat": 55.622595,
-        "lon": 37.670376
+        "lat": 55.629584,
+        "lon": 37.6790583
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Кантемировская, д. 5 к 2",
       "node_id": "southeast-029",
       "location": {
-        "lat": 55.622241,
-        "lon": 37.67435
+        "lat": 55.6351144,
+        "lon": 37.6773965
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Кустанайская, д. 8 к 1",
       "node_id": "southeast-030",
       "location": {
-        "lat": 55.613371,
-        "lon": 37.744693
+        "lat": 55.6188601,
+        "lon": 37.7516036
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Кустанайская, д. 9 к 1",
       "node_id": "southeast-031",
       "location": {
-        "lat": 55.611627,
-        "lon": 37.745579
+        "lat": 55.6180751,
+        "lon": 37.7543157
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Луганская, д. 1",
       "node_id": "southeast-032",
       "location": {
-        "lat": 55.618007,
-        "lon": 37.665815
+        "lat": 55.6287028,
+        "lon": 37.6637203
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Луганская, д. 3 к 1",
       "node_id": "southeast-033",
       "location": {
-        "lat": 55.616224,
-        "lon": 37.673608
+        "lat": 55.6278364,
+        "lon": 37.664554
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Луганская, д. 4 к 1",
       "node_id": "southeast-034",
       "location": {
-        "lat": 55.618199,
-        "lon": 37.665705
+        "lat": 55.6248172,
+        "lon": 37.665112
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Маршала Захарова, д. 18 к 1",
       "node_id": "southeast-035",
       "location": {
-        "lat": 55.615628,
-        "lon": 37.708598
+        "lat": 55.6204412,
+        "lon": 37.6958848
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Медынская, д. 5 к 1",
       "node_id": "southeast-036",
       "location": {
-        "lat": 55.58732,
-        "lon": 37.638827
+        "lat": 55.5899951,
+        "lon": 37.6483741
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Москворечье, д. 4 к 6",
       "node_id": "southeast-037",
       "location": {
-        "lat": 55.640085,
-        "lon": 37.677579
+        "lat": 55.643317,
+        "lon": 37.6548482
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Мусы Джалиля, д. 9 к 1",
       "node_id": "southeast-038",
       "location": {
-        "lat": 55.612537,
-        "lon": 37.748673
+        "lat": 55.6274499,
+        "lon": 37.7437967
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Паромная, д. 9 к 1",
       "node_id": "southeast-039",
       "location": {
-        "lat": 55.637206,
-        "lon": 37.762524
+        "lat": 55.6369125,
+        "lon": 37.7630982
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Севанская, д. 15 к 1",
       "node_id": "southeast-040",
       "location": {
-        "lat": 55.623662,
-        "lon": 37.666645
+        "lat": 55.6234951,
+        "lon": 37.6538926
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ул.Шипиловская, д. 38",
       "node_id": "southeast-041",
       "location": {
-        "lat": 55.617846,
-        "lon": 37.706594
+        "lat": 55.6205105,
+        "lon": 37.7245073
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ш.Каширское, д. 136",
       "node_id": "southeast-042",
       "location": {
-        "lat": 55.605928,
-        "lon": 37.732247
+        "lat": 55.5996618,
+        "lon": 37.7219087
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Город Москва, ш.Каширское, д. 94 к 1",
       "node_id": "southeast-043",
       "location": {
-        "lat": 55.615041,
-        "lon": 37.707118
+        "lat": 55.614969,
+        "lon": 37.7137838
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, проезд.Кутузовский, д. 16",
       "node_id": "southeast-044",
       "location": {
-        "lat": 55.440339,
-        "lon": 37.76657
+        "lat": 55.4371874,
+        "lon": 37.7619456
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Домодедово, проезд.Советский 1-й, д. 1А",
       "node_id": "southeast-045",
       "location": {
-        "lat": 55.437924,
-        "lon": 37.766863
+        "lat": 55.4434696,
+        "lon": 37.7693792
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "highway:residential"
     },
     {
       "address": "Домодедово, ул.1-я Коммунистическая, д. 39",
       "node_id": "southeast-046",
       "location": {
-        "lat": 55.442749,
-        "lon": 37.773979
+        "lat": 55.4546029,
+        "lon": 37.7444395
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Домодедово, ул.Гагарина, д. 55/2",
       "node_id": "southeast-047",
       "location": {
-        "lat": 55.438119,
-        "lon": 37.76406
+        "lat": 55.4512022,
+        "lon": 37.7488993
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "highway:tertiary"
     },
     {
       "address": "Домодедово, ул.Зеленая, д. 85",
       "node_id": "southeast-048",
       "location": {
-        "lat": 55.441562,
-        "lon": 37.77163
+        "lat": 55.425109,
+        "lon": 37.7700594
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, ул.Ильюшина, д. 11 к 2",
       "node_id": "southeast-049",
       "location": {
-        "lat": 55.439718,
-        "lon": 37.772469
+        "lat": 55.4144868,
+        "lon": 37.8424754
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, ул.Ильюшина, д. 20",
       "node_id": "southeast-050",
       "location": {
-        "lat": 55.439498,
-        "lon": 37.772135
+        "lat": 55.4105367,
+        "lon": 37.8378227
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, ул.Корнеева, д. 40",
       "node_id": "southeast-051",
       "location": {
-        "lat": 55.43685,
-        "lon": 37.768802
+        "lat": 55.4255128,
+        "lon": 37.7783486
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, ул.Корнеева, д. 48",
       "node_id": "southeast-052",
       "location": {
-        "lat": 55.436554,
-        "lon": 37.764346
+        "lat": 55.4235837,
+        "lon": 37.7782889
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Домодедово, ул.Корнеева, д. 50",
       "node_id": "southeast-053",
       "location": {
-        "lat": 55.439231,
-        "lon": 37.772411
+        "lat": 55.4226672,
+        "lon": 37.7779539
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Кашира, ул.8 Марта, д. 22",
       "node_id": "southeast-054",
       "location": {
-        "lat": 54.836545,
-        "lon": 38.149964
+        "lat": 54.8041762,
+        "lon": 38.2768274
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Кашира, ул.Кржижановского, д. 7",
       "node_id": "southeast-055",
       "location": {
-        "lat": 54.839841,
-        "lon": 38.149974
+        "lat": 54.8398702,
+        "lon": 38.2399045
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Кашира, ул.Ленина, д. 11 к 3",
       "node_id": "southeast-056",
       "location": {
-        "lat": 54.836066,
-        "lon": 38.150792
+        "lat": 54.8429121,
+        "lon": 38.1907273
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Кашира, ул.Металлургов, д. 5 к 3",
       "node_id": "southeast-057",
       "location": {
-        "lat": 54.83629,
-        "lon": 38.154527
+        "lat": 54.8409976,
+        "lon": 38.1897638
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Кашира, ул.Победы, д. 9",
       "node_id": "southeast-058",
       "location": {
-        "lat": 54.843579,
-        "lon": 38.148706
+        "lat": 54.8386455,
+        "lon": 38.1934317
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Кашира, ул.Садовая, д. 18",
       "node_id": "southeast-059",
       "location": {
-        "lat": 54.84139,
-        "lon": 38.153491
+        "lat": 54.8423286,
+        "lon": 38.2453976
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Кашира, ул.Садовая, д. 2/11",
       "node_id": "southeast-060",
       "location": {
-        "lat": 54.836372,
-        "lon": 38.155572
+        "lat": 54.8500604,
+        "lon": 38.2443522
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Кашира, ул.Юбилейная, д. 8",
       "node_id": "southeast-061",
       "location": {
-        "lat": 54.841585,
-        "lon": 38.1511
+        "lat": 54.8419626,
+        "lon": 38.248056
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "Кашира, ул.Юбилейная, д. 9",
       "node_id": "southeast-062",
       "location": {
-        "lat": 54.838624,
-        "lon": 38.147084
+        "lat": 54.8400884,
+        "lon": 38.2494867
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "МО, г. Кашира Кржижановского ул. д. 5/1",
       "node_id": "southeast-063",
       "location": {
-        "lat": 54.839764,
-        "lon": 38.153115
+        "lat": 54.8404598,
+        "lon": 38.2404648
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "МО, г. Кашира Кржижановского ул. д. 5/2",
       "node_id": "southeast-064",
       "location": {
-        "lat": 54.837631,
-        "lon": 38.145324
+        "lat": 54.8406569,
+        "lon": 38.2420016
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "МО, г. Кашира Кржижановского ул. д. 5/3",
       "node_id": "southeast-065",
       "location": {
-        "lat": 54.840823,
-        "lon": 38.146943
+        "lat": 54.8408174,
+        "lon": 38.242988
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "МО, г. Кашира Кржижановского ул. д. 7к2",
       "node_id": "southeast-066",
       "location": {
-        "lat": 54.843602,
-        "lon": 38.149479
+        "lat": 54.8399225,
+        "lon": 38.2415926
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "МО, г. Кашира Центральная ул. д. 19",
       "node_id": "southeast-067",
       "location": {
-        "lat": 54.837968,
-        "lon": 38.155474
+        "lat": 54.8415134,
+        "lon": 38.2407727
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:yes"
     },
     {
       "address": "МО, г. Кашира Центральная ул. д. 21",
       "node_id": "southeast-068",
       "location": {
-        "lat": 54.836046,
-        "lon": 38.154482
+        "lat": 54.8421235,
+        "lon": 38.2397671
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "МО, г. Ступино Андропова ул. д. 33",
       "node_id": "southeast-069",
       "location": {
-        "lat": 54.896842,
-        "lon": 38.074707
+        "lat": 54.8857555,
+        "lon": 38.082999
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "МО, г. Ступино Андропова ул. д. 37",
       "node_id": "southeast-070",
       "location": {
-        "lat": 54.898079,
-        "lon": 38.065434
+        "lat": 54.8858274,
+        "lon": 38.0821597
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Москва Бирюлевская ул. д. 44",
       "node_id": "southeast-071",
       "location": {
-        "lat": 55.594185,
-        "lon": 37.675141
+        "lat": 55.5864357,
+        "lon": 37.664566
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Москва Булатниковский пр-зд. д. 6к1",
       "node_id": "southeast-072",
       "location": {
-        "lat": 55.58406,
-        "lon": 37.648051
+        "lat": 55.5936117,
+        "lon": 37.6513869
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "Ступино, ул.Калинина, д. 34",
       "node_id": "southeast-073",
       "location": {
-        "lat": 54.901282,
-        "lon": 38.064919
+        "lat": 54.8917937,
+        "lon": 38.0692054
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     },
     {
       "address": "г. Москва, ул Бирюлёвская, д 1с1",
       "node_id": "southeast-074",
       "location": {
-        "lat": 55.598,
-        "lon": 37.675
+        "lat": 55.5889273,
+        "lon": 37.6646136
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "highway:tertiary"
     },
     {
       "address": "обл.Московская область, г.Домодедово, пгт.Востряково-1, ул.Жуковского, д. 14/18",
       "node_id": "southeast-075",
       "location": {
-        "lat": 55.44381,
-        "lon": 37.764882
+        "lat": 55.4118698,
+        "lon": 37.8397236
       },
-      "match_level": "district_centroid_projection"
+      "match_level": "building:apartments"
     }
   ]
 }

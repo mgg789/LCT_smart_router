@@ -45,7 +45,7 @@ export function toRequestView(
     receivedAt: nullableNumber(request.receivedAt),
     requiredSkill: request.requiredSkill,
     requiredEquipment: request.requiredEquipment,
-    geocodeQuality: geocodeQualityOf(request.origin, request.region),
+    geocodeQuality: geocodeQualityOf(request.origin),
     normProfileCode: request.normProfileCode,
     normativeTravelDurationSec: request.normativeTravelDurationSec,
     technicalDurationSec: request.technicalDurationSec,
@@ -72,11 +72,16 @@ export function toRequestView(
   };
 }
 
-function geocodeQualityOf(origin: string, region: string | null): string | null {
+/**
+ * Imported points always come from the versioned geocode package
+ * (`data/dataset/geocoded/<region>.json`), which carries real address-level
+ * geocodes for every official region — hence `address_match` for all imports.
+ */
+function geocodeQualityOf(origin: string): string | null {
   if (origin !== 'import') {
     return null;
   }
-  return region === 'east' ? 'address_match' : 'district_centroid_projection';
+  return 'address_match';
 }
 
 /** Returns confirmed on-site duration only when both engineer facts are present. */

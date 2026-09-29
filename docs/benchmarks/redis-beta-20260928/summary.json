@@ -1,0 +1,118 @@
+{
+  "date": "2026-09-28",
+  "host_cpu": "Intel Core Ultra 7 265KF",
+  "docker_cpus": 20,
+  "docker_memory_bytes": 16567869440,
+  "cgroup": "v1",
+  "worker_cpus": 2,
+  "worker_memory_mib": 1536,
+  "budget_ms": 1000,
+  "code_version": "a273a5b5abf8472af1d8",
+  "quality_equal_all_ten": true,
+  "p95_method": "pooled nearest rank ceil(0.95*n)-1",
+  "groups": {
+    "off": {
+      "trials": 3,
+      "ready_ms": 6020.063,
+      "first_catalog_ms": 14133.784,
+      "first_range_ms": [
+        12166.634,
+        14724.776
+      ],
+      "warm_catalog_ms": 495.582,
+      "status_p95_ms": 1.818,
+      "result_p95_ms": 165.982,
+      "catalog_cpu_sec": 14.676,
+      "total_cpu_sec": 25.028,
+      "worker_peak_mib": 707.758,
+      "redis_rss_mib": 20.832,
+      "redis_cpu_sec": 0.094
+    },
+    "miss": {
+      "trials": 3,
+      "ready_ms": 5357.657,
+      "first_catalog_ms": 11539.869,
+      "first_range_ms": [
+        11537.908,
+        12091.977
+      ],
+      "warm_catalog_ms": 425.439,
+      "status_p95_ms": 1.472,
+      "result_p95_ms": 170.082,
+      "catalog_cpu_sec": 11.94,
+      "total_cpu_sec": 19.974,
+      "worker_peak_mib": 720.094,
+      "redis_rss_mib": 20.969,
+      "redis_cpu_sec": 0.078
+    },
+    "hit": {
+      "trials": 3,
+      "ready_ms": 5687.404,
+      "first_catalog_ms": 569.691,
+      "first_range_ms": [
+        546.322,
+        737.291
+      ],
+      "warm_catalog_ms": 431.441,
+      "status_p95_ms": 1.437,
+      "result_p95_ms": 42.737,
+      "catalog_cpu_sec": 0.531,
+      "total_cpu_sec": 9.153,
+      "worker_peak_mib": 565.836,
+      "redis_rss_mib": 21.559,
+      "redis_cpu_sec": 0.051
+    },
+    "outage": {
+      "trials": 1,
+      "ready_ms": 5317.582,
+      "first_catalog_ms": 12316.367,
+      "first_range_ms": [
+        12316.367,
+        12316.367
+      ],
+      "warm_catalog_ms": 418.331,
+      "status_p95_ms": 1.008,
+      "result_p95_ms": 154.566,
+      "catalog_cpu_sec": 11.762,
+      "total_cpu_sec": 19.766,
+      "worker_peak_mib": 719.172
+    }
+  },
+  "quality": [
+    {
+      "strategy_id": "fast",
+      "assigned": 59,
+      "urgent_assigned": 9
+    },
+    {
+      "strategy_id": "compact",
+      "assigned": 59,
+      "urgent_assigned": 9
+    },
+    {
+      "strategy_id": "sla",
+      "assigned": 59,
+      "urgent_assigned": 9
+    },
+    {
+      "strategy_id": "balanced",
+      "assigned": 59,
+      "urgent_assigned": 9
+    },
+    {
+      "strategy_id": "eco",
+      "assigned": 59,
+      "urgent_assigned": 9
+    },
+    {
+      "strategy_id": "covering",
+      "assigned": 66,
+      "urgent_assigned": 13
+    },
+    {
+      "strategy_id": "baseline",
+      "assigned": 27,
+      "urgent_assigned": 1
+    }
+  ]
+}

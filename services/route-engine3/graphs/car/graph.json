@@ -1,0 +1,7 @@
+{
+  "graph_id": "car",
+  "profile": "car",
+  "map_version": "moscow-mkad",
+  "max_table_size": 4096,
+  "comment": "Vendored MKAD car graph (osrm v26.x, MLD), moved from services/road-api/osrm"
+}

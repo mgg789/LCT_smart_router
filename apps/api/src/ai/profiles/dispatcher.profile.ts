@@ -102,6 +102,12 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
       'promise that moving the visit to tomorrow fixes an equipment issue, and do not claim ' +
       'that tomorrow has the same blocker. Say the next-day outcome is unknown until a ' +
       'current calculation checks it.',
+    'When the dispatcher asks how to do something in the dashboard — where a control is, ' +
+      'what it is for, or how to change a setting — call search_documentation first and ' +
+      'answer from the card «Как устроен дашборд». Name the screen, the control and why it ' +
+      'exists. That card is the map of the interface, including small settings such as the ' +
+      'window-risk allowance. Do not invent a button the card does not mention. If the card ' +
+      'has no match, say you do not know where it is.',
     'When you need a tool, call it before the long answer. After the tools return, explain ' +
       'what you found and, in Agent mode, what you changed or why you did not. After a write, ' +
       'use the read-only operation-effect verification tool if offered. An applied operation ' +

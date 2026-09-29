@@ -10,6 +10,7 @@ import {
   lockWorkingSetGeneration,
 } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { MANUAL_STATE_KEY } from '../../routing/router-gateway/manual-state';
 
 export type ResetKind = 'demo' | 'empty';
 
@@ -199,6 +200,12 @@ export class ResetService {
     // The MCP pin was an integration key, and the keys are gone above: the pointer must
     // not survive, or the dashboard keeps promising a pin that no longer opens anything.
     await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.MCP_SETTINGS } });
+    // A priority pointing at a deleted request blocks the next day's prioritize action,
+    // and a manual session still lists decisions for engineers that no longer exist.
+    await tx.appState.deleteMany({
+      where: { key: { startsWith: 'policy.request-priority:' } },
+    });
+    await tx.appState.deleteMany({ where: { key: MANUAL_STATE_KEY } });
 
     // Accounts last, and only the ones that are not the dispatcher: that account is
     // restored from configuration, and deleting it would lock the Dashboard out.

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -31,4 +31,34 @@ test('explicit test database prevents loading developer service settings', () =>
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('integration tests fail before boot without an isolated test database', () => {
+  const helper = resolve(__dirname, '../support/env.js');
+  const result = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(helper)})`], {
+    encoding: 'utf8',
+    env: { DATABASE_URL: 'postgresql://unused/developer' },
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /TEST_DATABASE_URL is required/);
+});
+
+test('unit coverage imports Nest configuration without a developer environment or database', () => {
+  const helper = resolve(__dirname, '../support/unit-env.js');
+  const config = resolve(__dirname, '../../src/common/config/config.module.js');
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--require',
+      helper,
+      '-e',
+      `require(${JSON.stringify(config)}); setImmediate(() => process.stdout.write(JSON.stringify({ mode: process.env.NODE_ENV, database: process.env.DATABASE_URL })));`,
+    ],
+    { cwd: process.cwd(), encoding: 'utf8', env: {} },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    mode: 'test',
+    database: 'postgresql://unit:unit@127.0.0.1:1/unit_coverage',
+  });
 });

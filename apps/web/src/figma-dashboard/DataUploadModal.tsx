@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { type ChangeEvent, type DragEvent, useEffect, useId, useRef, useState } from 'react';
 import { ImportCancelledError } from '../api/client';
+import { downloadRequestTemplate } from '../api/exports';
 import type {
   DataUploadFile,
   DataUploadSummary,
@@ -37,7 +38,7 @@ export function DataUploadModal({
   motionOn,
   onClose,
   onUpload,
-  onImportOfficial,
+  onOpenReadyPacks,
   onRoadImport,
 }: {
   open: boolean;
@@ -48,7 +49,7 @@ export function DataUploadModal({
   motionOn: boolean;
   onClose: () => void;
   onUpload: (file: DataUploadFile, review?: ReviewImportQuality) => Promise<DataUploadSummary>;
-  onImportOfficial: (review?: ReviewImportQuality) => Promise<OfficialImportSummary>;
+  onOpenReadyPacks: () => void;
   onRoadImport: (payloadBase64: string) => Promise<RoadImportSummary>;
 }) {
   const inputId = useId();
@@ -316,15 +317,34 @@ export function DataUploadModal({
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="mt-[16px] flex h-[56px] items-center justify-center self-center rounded-[20px] border border-figma-ink/15 bg-white px-[28px] transition-transform duration-150 hover:scale-[1.01]"
-        >
-          <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.4px] text-figma-ink">
-            {t('figma-dashboard.DataUploadModal.85d1a8e468')}
-          </span>
-        </button>
+        <div className="mt-[16px] flex items-center justify-center gap-[12px]">
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex h-[56px] items-center justify-center rounded-[20px] border border-figma-ink/15 bg-white px-[28px] transition-transform duration-150 hover:scale-[1.01]"
+          >
+            <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.4px] text-figma-ink">
+              {t('figma-dashboard.DataUploadModal.85d1a8e468')}
+            </span>
+          </button>
+          <button
+            type="button"
+            disabled={!token}
+            title={!token ? t('figma-dashboard.DataUploadModal.5e8b1dd7bc') : undefined}
+            onClick={() => {
+              if (!token) return;
+              void downloadRequestTemplate(token).catch(() =>
+                setIssues((current) => [
+                  ...current,
+                  t('figma-dashboard.DataUploadModal.templateFailed'),
+                ]),
+              );
+            }}
+            className="flex h-[56px] items-center justify-center rounded-[20px] border border-figma-ink/15 bg-white px-[28px] font-semibold text-[18px] tracking-[-0.4px] text-figma-ink transition-transform duration-150 hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {t('figma-dashboard.DataUploadModal.downloadTemplate')}
+          </button>
+        </div>
 
         <div className="mt-[16px] flex items-center justify-between gap-[16px] rounded-[20px] bg-figma-soft px-[20px] py-[14px]">
           <div className="min-w-0">
@@ -440,19 +460,7 @@ export function DataUploadModal({
                 return;
               }
               setSubmitError(null);
-              setCandidates([]);
-              setIssues([]);
-              void onImportOfficial(reviewQuality)
-                .then(setResult)
-                .catch((error: unknown) =>
-                  setSubmitError(
-                    error instanceof ImportCancelledError
-                      ? null
-                      : error instanceof Error
-                        ? error.message
-                        : t('figma-dashboard.DataUploadModal.bbc31f0cba'),
-                  ),
-                );
+              onOpenReadyPacks();
             }}
             className="flex h-[56px] items-center justify-center rounded-[20px] bg-figma-bee px-[24px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
           >
@@ -564,8 +572,7 @@ function UploadPreview({ file }: { file: DataUploadFile }) {
         {file.mode === 'new_region'
           ? t('figma-dashboard.DataUploadModal.6ee32b0951')
           : t('figma-dashboard.DataUploadModal.0207074be4')}{' '}
-        · {file.requests.length}
-        {t('figma-dashboard.DataUploadModal.a7b7ba4108')}
+        · {t('common.requests', { count: file.requests.length })}
       </p>
     </div>
   );

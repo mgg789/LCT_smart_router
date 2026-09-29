@@ -135,6 +135,18 @@ test('alert quality uses the accepted fastest/timely/slow ordinal boundaries', (
   assert.equal(interventionQuality(attribution('ai_run', 1_000, 1_601)).score, 40);
 });
 
+test('a system action after 17:00 scores zero, not the end-day bonus', () => {
+  const afterEnd = Math.floor(Date.parse('2026-09-22T17:01:00+03:00') / 1000);
+  const row = attribution('ui', afterEnd - 601, afterEnd);
+  assert.equal(
+    interventionQuality({
+      ...row,
+      firstAction: row.firstAction ? { ...row.firstAction, actorKind: 'system' } : row.firstAction,
+    }).score,
+    0,
+  );
+});
+
 test('end-day quality is ten only after 17:00 Moscow and over ten minutes', () => {
   const beforeEnd = Math.floor(Date.parse('2026-09-22T16:59:00+03:00') / 1000);
   const afterEnd = Math.floor(Date.parse('2026-09-22T17:01:00+03:00') / 1000);

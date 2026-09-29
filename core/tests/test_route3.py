@@ -1,0 +1,421 @@
+"""route-engine3 core adapter: quotes, prepared matrices, verification."""
+
+
+import pytest
+from core.contracts import GeoPoint
+from core.geo import TravelUnavailable
+from core.route3 import (
+    PreparedRoute3Matrix,
+    Route3Client,
+    prepare_route3,
+    quote_from_route3,
+)
+from pydantic import ValidationError
+
+A = GeoPoint(lat=55.75, lon=37.60)
+B = GeoPoint(lat=55.78, lon=37.66)
+VERSIONS = {"car": "car-v1", "foot": "foot-v1", "metro": "metro-v1", "model": "engine-v1"}
+
+
+def test_quote_from_route3_provenance_and_segments():
+    road = quote_from_route3(
+        {
+            "mode": "road",
+            "duration_s": 600.4,
+            "distance_m": 5000.1,
+            "effective_factor": 1.5,
+            "traffic_applied": True,
+            "geometry": [[55.75, 37.60], [55.78, 37.66]],
+        },
+        A,
+        B,
+    )
+    assert road.provenance == "traffic_api"
+    assert road.duration_sec == 601
+    assert road.traffic_factor == 1.5
+    assert road.traffic_prepriced is True
+    assert road.geometry_exact is True
+    composite = quote_from_route3(
+        {
+            "mode": "metro_composite",
+            "duration_s": 1500.0,
+            "distance_m": 6000.0,
+            "geometry": [[55.75, 37.60]],
+            "segments": [
+                {"kind": "walk", "duration_s": 400, "distance_m": 500, "geometry": [[55.75, 37.60]]},
+                {"kind": "metro", "duration_s": 1100, "distance_m": 5500},
+            ],
+        },
+        A,
+        B,
+    )
+    assert composite.provenance == "metro"
+    assert [segment.provenance for segment in composite.segments] == ["route_api", "metro"]
+    assert composite.segments[0].points[0] == GeoPoint(lat=55.75, lon=37.60)
+    residual = quote_from_route3(
+        {
+            "mode": "metro_composite",
+            "duration_s": 1500.2,
+            "distance_m": 6000.4,
+            "segments": [
+                {"kind": "walk", "duration_s": 400.2, "distance_m": 500.2},
+                {"kind": "metro", "duration_s": 1100.1, "distance_m": 5500.1},
+            ],
+        },
+        A,
+        B,
+    )
+    assert residual is not None
+    assert sum(segment.duration_sec for segment in residual.segments) == residual.duration_sec
+    assert sum(segment.distance_m for segment in residual.segments) == residual.distance_m
+    straight = quote_from_route3({"mode": "straight", "duration_s": 10, "distance_m": 100,
+                                  "traffic_applied": True}, A, B)
+    assert straight.provenance == "approximate" and straight.geometry_exact is False
+    assert straight.traffic_prepriced is True
+    from core.route3 import VerifiedRoute3
+    from core.traffic_engine import ForecastTrafficTravel
+    verified = VerifiedRoute3(_Base(), {(A.lat, A.lon, B.lat, B.lon, "car", 1786946400): straight})
+    assert ForecastTrafficTravel(verified, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 10
+    assert quote_from_route3({"mode": "unreachable"}, A, B) is None
+
+
+def _matrix_body(profile, durations):
+    return {
+        "profile": profile,
+        "points": [[A.lat, A.lon], [B.lat, B.lon]],
+        "matrix": durations,
+        "versions": VERSIONS,
+    }
+
+
+def test_prepared_route3_matrix_car_bands_and_walk_flat():
+    car = _matrix_body(
+        "car",
+        [
+            [{"mode": "self"}, {"mode": "road", "base_duration_s": 600, "distance_m": 5000,
+                                "duration_s": 690,
+                                "forecast_duration_s": [600, 800, 690, 610]}],
+            [{"mode": "unreachable"}, {"mode": "self"}],
+        ],
+    )
+    car["forecast_band_starts"] = [0, 420, 630, 960]
+    walk = _matrix_body(
+        "walk",
+        [
+            [{"mode": "self"}, {"mode": "road", "duration_s": 3600, "distance_m": 5000}],
+            [{"mode": "unreachable"}, {"mode": "self"}],
+        ],
+    )
+    matrix = PreparedRoute3Matrix("client-v1", {"car": car, "walk": walk}, [A, B])
+    assert matrix.profiles == frozenset({"car", "walk"})
+    night = matrix.quote_at(A, B, "car", 1786924800)  # 03:00 Moscow → band 0
+    assert night.duration_sec == 600
+    peak = matrix.quote_at(A, B, "car", 1786946400)  # 09:00 Moscow → morning band
+    assert peak.duration_sec == 800 and peak.traffic_factor == round(800 / 600, 2)
+    walk_quote = matrix.quote_at(A, B, "walk", 0)
+    assert walk_quote.duration_sec == 3600
+    assert matrix.quote_at(B, A, "car", 0) is None  # unreachable is honest NoRoute
+    with pytest.raises(TravelUnavailable):
+        matrix.quote_at(GeoPoint(lat=1.0, lon=2.0), B, "car", 0)
+    with pytest.raises(TravelUnavailable):
+        matrix.quote_at(A, B, "bike", 0)  # profile not prepared
+
+
+def test_prepared_straight_matrix_stays_approximate_without_double_traffic():
+    from core.traffic_engine import ForecastTrafficTravel
+
+    car = _matrix_body("car", [
+        [{"mode": "self"}, {"mode": "straight", "base_duration_s": 600,
+                             "duration_s": 900, "distance_m": 6000,
+                             "forecast_duration_s": [600, 900]}],
+        [{"mode": "unreachable"}, {"mode": "self"}],
+    ])
+    car["forecast_band_starts"] = [0, 420]
+    prepared = PreparedRoute3Matrix("client", {"car": car}, [A, B])
+    quote = prepared.quote_at(A, B, "car", 1786946400)
+    assert quote.provenance == "approximate"
+    assert quote.geometry_exact is False
+    assert quote.duration_sec == 900
+    assert ForecastTrafficTravel(prepared, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 900
+    car["matrix"][0][1]["forecast_duration_s"] = [600, 600]
+    car["matrix"][0][1]["duration_s"] = 600
+    neutral = PreparedRoute3Matrix("client", {"car": car}, [A, B])
+    assert neutral.quote_at(A, B, "car", 1786946400).traffic_prepriced
+    assert ForecastTrafficTravel(neutral, 1786946400).quote_at(A, B, "car", 1786946400).duration_sec == 600
+
+
+class _Base:
+    version = "base-v1"
+    provenance = "road_matrix"
+
+    def __init__(self):
+        self.asked = []
+
+    def quote(self, origin, destination, profile):
+        from core.geo import TravelQuote
+
+        self.asked.append(profile)
+        return TravelQuote(99, 999, (origin, destination), "road_matrix")
+
+
+def test_pedestrian_search_costs_come_from_the_route3_foot_graph():
+    from core.route3 import Route3PedestrianTravel
+
+    walk = _matrix_body(
+        "walk",
+        [
+            [{"mode": "self"}, {"mode": "road", "duration_s": 1446, "distance_m": 2008.3}],
+            [{"mode": "unreachable"}, {"mode": "self"}],
+        ],
+    )
+    base = _Base()
+    travel = Route3PedestrianTravel(base, PreparedRoute3Matrix("client-v1", {"walk": walk}, [A, B]))
+    foot = travel.quote(A, B, "walk")
+    assert (foot.duration_sec, foot.distance_m) == (1446, 2009)
+    assert base.asked == []
+    # A car and an out-of-graph foot cell keep the base estimate: no edge disappears.
+    assert travel.quote(A, B, "car").duration_sec == 99
+    assert travel.quote(B, A, "walk").duration_sec == 99
+    assert base.asked == ["car", "walk"]
+
+
+def test_verified_metro_composite_is_not_a_walk_only_answer():
+    from core.geo import TravelQuote
+    from core.route3 import VerifiedRoute3
+
+    composite = TravelQuote(1500, 6000, (A, B), "metro")
+    corrections = {(A.lat, A.lon, B.lat, B.lon, "transit"): composite}
+    verified = VerifiedRoute3(_Base(), corrections)
+    assert verified.quote(A, B, "walk").provenance == "road_matrix"
+    assert verified.quote(A, B, "transit") is composite
+
+
+def test_verified_quotes_are_bound_to_departure_epoch():
+    from core.geo import TravelQuote
+    from core.route3 import VerifiedRoute3
+
+    morning = TravelQuote(600, 5000, (A, B), "traffic_api")
+    evening = TravelQuote(1200, 5000, (A, B), "traffic_api")
+    corrections = {
+        (A.lat, A.lon, B.lat, B.lon, "car", 100): morning,
+        (A.lat, A.lon, B.lat, B.lon, "car", 200): evening,
+    }
+    verified = VerifiedRoute3(_Base(), corrections)
+    assert verified.quote_at(A, B, "car", 100) is morning
+    assert verified.quote_at(A, B, "car", 200) is evening
+    assert verified.quote_at(A, B, "car", 300).duration_sec == 99
+
+
+def test_route3_offline_route_uses_versioned_disk_cache(tmp_path, monkeypatch):
+    client = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path, offline=True)
+    client._versions = dict(VERSIONS)
+    identity = client._identity("route", [A.lat, A.lon, B.lat, B.lon, "car", True, False, 100])
+    body = {
+        "mode": "road",
+        "duration_s": 600,
+        "distance_m": 5000,
+        "geometry": [[A.lat, A.lon], [B.lat, B.lon]],
+        "versions": VERSIONS,
+    }
+    client._write_disk_body("route", identity, body)
+    monkeypatch.setattr("core.route3.httpx.get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    assert client.route(A, B, "car", traffic=True, departure=100) == body
+
+
+def test_route3_same_url_new_service_version_refetches_route(tmp_path, monkeypatch):
+    """A graph replacement must invalidate disk data even when the URL is unchanged."""
+    from core.route_cache import install_route_cache
+
+    install_route_cache(None)
+    current = {"car": "car-v1"}
+    calls = []
+
+    def fake_get(url, params=None, timeout=10, trust_env=False):
+        calls.append(url)
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                versions = {**VERSIONS, "car": current["car"]}
+                if url.endswith("/versions3"):
+                    return {"versions": versions}
+                return {
+                    "mode": "road",
+                    "duration_s": 600 if current["car"] == "car-v1" else 900,
+                    "distance_m": 5000,
+                    "geometry": [[A.lat, A.lon], [B.lat, B.lon]],
+                    "versions": versions,
+                }
+
+        return Response()
+
+    monkeypatch.setattr("core.route3.httpx.get", fake_get)
+    first = Route3Client("http://route3.test", cache_dir=tmp_path)
+    first_body = first.route(A, B, "car", departure=100)
+    current["car"] = "car-v2"
+    second = Route3Client("http://route3.test", cache_dir=tmp_path)
+    second_body = second.route(A, B, "car", departure=100)
+
+    assert first_body["duration_s"] == 600
+    assert second_body["duration_s"] == 900
+    assert calls.count("http://route3.test/versions3") == 2
+    assert calls.count("http://route3.test/route3") == 2
+
+
+def test_verification_asks_metro_only_for_transit_when_enabled():
+    from types import SimpleNamespace
+
+    from core.route3 import verify_plan_with_route3
+
+    calls = []
+
+    class Client:
+        def route(self, origin, destination, profile, *, traffic, metro, departure):
+            calls.append((profile, metro))
+            return {"mode": "road", "duration_s": 60, "distance_m": 100, "geometry": []}
+
+    def snapshot(profile):
+        engineer = SimpleNamespace(engineer_id="e", travel_profile=lambda: profile)
+        return SimpleNamespace(engineers=[engineer], requests=[], planning_as_of=0)
+
+    stop = SimpleNamespace(stop_id="s", kind="job", request_id="r", location=B, arrival_at=0)
+    leg = SimpleNamespace(to_stop_id="s", from_stop_id=None, departure_at=0, travel_time_sec=60)
+    plan = SimpleNamespace(
+        routes=[SimpleNamespace(engineer_id="e", start_location=A, stops=[stop], legs=[leg])]
+    )
+    verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=True)
+    verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=False)
+    verify_plan_with_route3(Client(), snapshot("walk"), plan, metro=True)
+    assert calls == [("transit", True), ("transit", False), ("walk", False)]
+
+
+@pytest.mark.parametrize("actual_duration,breach_end", [(60, None), (600, 9900)])
+def test_verification_uses_actual_leg_before_window_wait(actual_duration, breach_end):
+    from types import SimpleNamespace
+
+    from core.route3 import verify_plan_with_route3
+
+    calls = []
+
+    class Client:
+        def route(self, origin, destination, profile, *, traffic, metro, departure):
+            calls.append((origin, destination, departure))
+            return {"mode": "road", "duration_s": actual_duration, "distance_m": 100, "geometry": []}
+
+    engineer = SimpleNamespace(engineer_id="e", travel_profile=lambda: "transit")
+    snapshot = SimpleNamespace(engineers=[engineer], requests=[SimpleNamespace(request_id="r", window_end_at=9500)], planning_as_of=0)
+    wait = SimpleNamespace(stop_id="wait", kind="wait", request_id=None, location=B, arrival_at=9060, start_at=9060, end_at=9100)
+    job = SimpleNamespace(stop_id="job", kind="job", request_id="r", location=B, arrival_at=9060, start_at=9100, end_at=9400)
+    leg = SimpleNamespace(to_stop_id="wait", from_stop_id=None, departure_at=9000, travel_time_sec=60)
+    plan = SimpleNamespace(routes=[SimpleNamespace(
+        engineer_id="e", start_location=A, stops=[wait, job], legs=[leg],
+    )])
+    report = verify_plan_with_route3(Client(), snapshot, plan)
+    assert calls == [(A, B, 9000)]
+    assert (A.lat, A.lon, B.lat, B.lon, "transit", 9000) in report["corrections"]
+
+    breach = report["routes"][0]["window_breach"]
+    assert (None if breach is None else breach["corrected_end_at"]) == breach_end
+
+
+def test_prepared_route3_matrix_rejects_mismatch():
+    bad = _matrix_body("car", [[{"mode": "nonsense"}], [{"mode": "self"}]])
+    with pytest.raises((ValueError, ValidationError)):
+        PreparedRoute3Matrix("client-v1", {"car": bad}, [A, B])
+
+
+def test_prepare_route3_caches_per_profile_and_degrades(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROUTE3_ALLOW_PUBLIC", raising=False)
+    client = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "cache")
+    client._versions = dict(VERSIONS)
+    calls = []
+
+    def matrix(points, profile, *, traffic, planning, departure):
+        calls.append(profile)
+        body = _matrix_body(
+            profile,
+            [[{"mode": "self"}, {"mode": "road", "duration_s": 600, "distance_m": 5000}],
+             [{"mode": "unreachable"}, {"mode": "self"}]],
+        )
+        if profile == "car" and traffic:
+            body["forecast_band_starts"] = [0, 420, 630, 960, 1230]
+        return body
+
+    monkeypatch.setattr(client, "matrix", matrix)
+    prepared = prepare_route3(client, [A, B], departure=1786946400)
+    assert prepared is not None and prepared.profiles == frozenset({"car", "walk", "bike"})
+    assert calls == ["car", "walk", "bike"]
+    warm = prepare_route3(client, [A, B], departure=1786946400)
+    assert warm is not None and calls == ["car", "walk", "bike"]  # no new HTTP
+
+    def failing(points, profile, *, traffic, planning, departure):
+        raise ConnectionError("engine down")
+
+    monkeypatch.setattr(client, "matrix", failing)
+    cold = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "cold")
+    cold._versions = dict(VERSIONS)
+    monkeypatch.setattr(cold, "matrix", failing)
+    degraded = prepare_route3(cold, [A, B], departure=1786946400)
+    assert degraded is None  # cold cache + dead engine = no route3 source
+
+    offline = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "offline", offline=True)
+    offline._versions = dict(VERSIONS)
+    assert prepare_route3(offline, [A, B], departure=1786946400) is None
+
+
+def test_validate_route3_base_blocks_public_hosts(monkeypatch):
+    import socket
+
+    from core.route3 import _validate_route3_base
+
+    monkeypatch.delenv("ROUTE3_ALLOW_PUBLIC", raising=False)
+    assert _validate_route3_base("http://127.0.0.1:8124") == "http://127.0.0.1:8124"
+    assert _validate_route3_base("http://localhost:8124") == "http://localhost:8124"
+    # Compose aliases resolve into private container addresses on deploy.
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, **_: [(socket.AF_INET, None, None, "", ("172.18.0.5", 0))],
+    )
+    assert _validate_route3_base("http://route-engine3:8124") == "http://route-engine3:8124"
+    # Public DNS answers make the endpoint a rejected SSRF pivot.
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda host, port, **_: [(socket.AF_INET, None, None, "", ("93.184.216.34", 0))],
+    )
+    with pytest.raises(ValueError):
+        _validate_route3_base("https://example.com/route3")
+    monkeypatch.setenv("ROUTE3_ALLOW_PUBLIC", "1")
+    assert _validate_route3_base("https://example.com/route3") == "https://example.com/route3"
+
+
+def test_route3_from_env_degrades_on_rejected_url(monkeypatch, tmp_path):
+    from core.route3 import route3_from_env
+
+    monkeypatch.delenv("ROUTE3_ALLOW_PUBLIC", raising=False)
+    monkeypatch.delenv("ROUTE3_URL", raising=False)
+    assert route3_from_env() is None
+    monkeypatch.setenv("ROUTE3_URL", "http://127.0.0.1:8124")
+    monkeypatch.setenv("ROUTE3_CACHE", str(tmp_path))
+    client = route3_from_env()
+    assert client is not None and client.base_url == "http://127.0.0.1:8124"
+    # A public endpoint disables the adapters instead of failing the router.
+    monkeypatch.setenv("ROUTE3_URL", "https://example.com/route3")
+    assert route3_from_env() is None
+
+
+def test_car_matrix_forecast_is_not_multiplied_twice():
+    from core.traffic_engine import ForecastTrafficTravel
+
+    car = _matrix_body('car', [
+        [{'mode': 'self'}, {'mode': 'road', 'base_duration_s': 600, 'distance_m': 5000,
+                           'duration_s': 800, 'forecast_duration_s': [600, 800]}],
+        [{'mode': 'unreachable'}, {'mode': 'self'}],
+    ])
+    car['forecast_band_starts'] = [0, 420]
+    prepared = PreparedRoute3Matrix('client', {'car': car}, [A, B])
+    forecast = ForecastTrafficTravel(prepared, 1786946400)
+    assert forecast.quote_at(A, B, 'car', 1786946400).duration_sec == 800

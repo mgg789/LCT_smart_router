@@ -11,14 +11,16 @@ from __future__ import annotations
 import argparse
 import gzip
 import hashlib
+import heapq
 import json
 import math
 import re
 import tempfile
 import unicodedata
+from collections.abc import Iterable
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Iterable
-
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_SOURCE = Path("/tmp/navix-metro-data")
@@ -30,7 +32,11 @@ ROUTE_FILE = "moscow_subway_routes.json"
 BOUNDARY_FILE = "moscow_boundary_nominatim.json"
 
 EARTH_RADIUS_M = 6_371_000.0
-RIDE_SPEED_MPS = 41_000.0 / 3_600.0
+# Moscow metro commercial speed incl. stops is ~48–50 km/h on the long
+# straight sections; the 1.15 stretch compensates the haversine underestimating
+# curved tunnels. 2026-09-28: 41 km/h made every ride ~1.6x slower than the
+# real timetable (Кожуховская → Таганская: 20.5 predicted vs ~12 actual).
+RIDE_SPEED_MPS = 50_000.0 / 3_600.0
 RIDE_STRETCH = 1.15
 WALK_SPEED_MPS = 1.4
 MIN_RIDE_SEC = 60
@@ -159,7 +165,7 @@ def mean_point(points: Iterable[tuple[float, float]]) -> tuple[float, float]:
 
 
 def estimate_ride(distance_m: float) -> int:
-    """Estimate a ride duration using the documented 41 km/h * 1.15 rule."""
+    """Estimate a ride duration using the 50 km/h * 1.15 chord rule."""
     return max(MIN_RIDE_SEC, math.ceil(distance_m * RIDE_STRETCH / RIDE_SPEED_MPS))
 
 
@@ -168,8 +174,184 @@ def estimate_transfer(distance_m: float) -> int:
     return max(MIN_TRANSFER_SEC, math.ceil(distance_m / WALK_SPEED_MPS))
 
 
+def _drop_group_outliers(points: list[tuple[float, float]], max_span_m: float = 400.0) -> list[tuple[float, float]]:
+    """Keep the densest 400 m cluster of a platform group.
+
+    One wrongly referenced stop node (a station entrance on a far square, a
+    stale name) drags the group mean hundreds of metres off the real station;
+    the densest cluster is the platform group itself.
+    """
+    if len(points) <= 2:
+        return points
+    best_cluster = None
+    for anchor in points:
+        cluster = [p for p in points if haversine_m(anchor, p) <= max_span_m]
+        if best_cluster is None or len(cluster) > len(best_cluster):
+            best_cluster = cluster
+    return best_cluster
+
+
 def _pair_key(first: str, second: str) -> tuple[str, str]:
     return (first, second) if first < second else (second, first)
+
+
+def _chain_line_ways(ways: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
+    """Chain one line's member ways into maximal connected track segments.
+
+    OSM subway relations reference their track ways in arbitrary order; two
+    ways connect when an endpoint coincides. Branches, small snapshot gaps and
+    sidings produce several segments — ride edges pick the segment that
+    actually covers both stations, so nothing here blocks the build.
+    """
+    segments: list[list[tuple[float, float]]] = []
+    remaining = [list(way) for way in ways]
+    while remaining:
+        chain = remaining.pop(0)
+        extended = True
+        while extended and remaining:
+            extended = False
+            for index, way in enumerate(remaining):
+                if way[0] == chain[-1]:
+                    chain.extend(way[1:])
+                elif way[-1] == chain[-1]:
+                    chain.extend(point for point in reversed(way[:-1]))
+                elif way[-1] == chain[0]:
+                    chain = way[:-1] + chain
+                elif way[0] == chain[0]:
+                    chain = list(reversed(way[1:])) + chain
+                else:
+                    continue
+                remaining.pop(index)
+                extended = True
+                break
+        segments.append(chain)
+    return segments
+
+
+def _nearest_distance(chain: list[tuple[float, float]], point: tuple[float, float]) -> float:
+    """Distance from one point to the nearest chain node."""
+    return min(haversine_m(node, point) for node in chain) if chain else math.inf
+
+
+def _nearest_distance_any(
+    segments: list[list[tuple[float, float]]], point: tuple[float, float]
+) -> float:
+    """Distance from one point to the nearest node across all track segments."""
+    return min((_nearest_distance(chain, point) for chain in segments), default=math.inf)
+
+
+def _simplify(points: list[tuple[float, float]], min_step_m: float = 20.0) -> list[tuple[float, float]]:
+    """Drop intermediate points closer than `min_step_m` to the previous kept one.
+
+    Parallel track ways sit ~30–60 m apart; without this the sliced polyline
+    zigzags between them at way joints. Real curves have gentler steps and
+    survive.
+    """
+    kept = [points[0]]
+    for point in points[1:]:
+        if haversine_m(kept[-1], point) >= min_step_m:
+            kept.append(point)
+    kept.append(points[-1])
+    return kept
+
+
+MAX_TRACK_STEP_M = 400.0  # a real track never teleports between nodes
+
+
+def _candidate_indices(
+    chain: list[tuple[float, float]], point: tuple[float, float], tolerance_m: float
+) -> list[int]:
+    """All chain indices whose node lies within `tolerance_m` of the point."""
+    return [index for index, node in enumerate(chain) if haversine_m(node, point) <= tolerance_m]
+
+
+def _track_spans(
+    chain: list[tuple[float, float]],
+) -> list[tuple[list[tuple[float, float]], list[float]]]:
+    """Cut a chained track into continuous spans with per-span length prefixes.
+
+    Chained ways may interleave the parallel directional tracks with offsets; a
+    span boundary at every oversized step guarantees each span is one
+    continuous polyline, so any slice inside it never teleports. The prefix
+    gives O(1) slice length when choosing the shortest span between stations.
+    """
+    spans: list[tuple[list[tuple[float, float]], list[float]]] = []
+    current: list[tuple[float, float]] = [chain[0]]
+    prefix: list[float] = [0.0]
+    for node in chain[1:]:
+        step = haversine_m(current[-1], node)
+        if step > MAX_TRACK_STEP_M:
+            spans.append((current, prefix))
+            current = [node]
+            prefix = [0.0]
+        else:
+            current.append(node)
+            prefix.append(prefix[-1] + step)
+    spans.append((current, prefix))
+    return spans
+
+
+def _edge_geometry(
+    polylines: Iterable[list[tuple[float, float]]],
+    source_point: tuple[float, float],
+    target_point: tuple[float, float],
+) -> list[list[float]] | None:
+    """Follow connected OSM track edges, never sort an unordered cloud of nodes.
+
+    Virtual station endpoints attach to track nodes within 100 metres. A small
+    access penalty prefers the nearest platform while allowing either track of
+    a bidirectional line. Dijkstra preserves topology and cannot create cycles.
+    Disconnected or implausibly long paths return None (an explicit chord), not
+    an incomplete line patched with a kilometre-long connector at runtime.
+    """
+    adjacency: dict[tuple[float, float], dict[tuple[float, float], float]] = {}
+    for way in polylines:
+        for start, end in pairwise(way):
+            if start == end:
+                continue
+            distance = haversine_m(start, end)
+            adjacency.setdefault(start, {})[end] = distance
+            adjacency.setdefault(end, {})[start] = distance
+    sources = {p: haversine_m(source_point, p) for p in adjacency}
+    targets = {p: haversine_m(target_point, p) for p in adjacency}
+    sources = {p: d for p, d in sources.items() if d <= 100}
+    targets = {p: d for p, d in targets.items() if d <= 100}
+    if not sources or not targets:
+        return None
+    distances = {p: d * 4 for p, d in sources.items()}
+    previous: dict[tuple[float, float], tuple[float, float]] = {}
+    queue = [(d, p) for p, d in distances.items()]
+    heapq.heapify(queue)
+    best_cost, best_end = math.inf, None
+    max_cost = haversine_m(source_point, target_point) * 2.5 + 800
+    while queue:
+        cost, point = heapq.heappop(queue)
+        if cost != distances[point]:
+            continue
+        if cost >= min(best_cost, max_cost):
+            break
+        if point in targets and cost + 4 * targets[point] < best_cost:
+            best_cost, best_end = cost + 4 * targets[point], point
+        for nxt, length in adjacency[point].items():
+            candidate = cost + length
+            if candidate < distances.get(nxt, math.inf):
+                distances[nxt] = candidate
+                previous[nxt] = point
+                heapq.heappush(queue, (candidate, nxt))
+    if best_end is None:
+        return None
+    path = [best_end]
+    while path[-1] in previous:
+        path.append(previous[path[-1]])
+    path.reverse()
+    # Exact station endpoints make independently built directed edges meet.
+    points = [source_point, *_simplify(path), target_point]
+    result: list[list[float]] = []
+    for point in points:
+        rounded = [round(point[0], 7), round(point[1], 7)]
+        if not result or rounded != result[-1]:
+            result.append(rounded)
+    return result if len(result) >= 3 else None
 
 
 def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str, Any]:
@@ -199,10 +381,43 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
     # station platform groups first so opposite directions converge on one node.
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     sequences: list[list[tuple[str, str, tuple[float, float]]]] = []
+    # Track geometry: one way-id-keyed collection per line so opposite
+    # directions (which reference the same OSM ways) deduplicate naturally.
+    ways_index = {
+        element["id"]: element for element in elements if element.get("type") == "way"
+    }
+    line_ways: dict[str, dict[int, list[tuple[float, float]]]] = {}
+    for relation in relations:
+        raw_line = line_id(relation.get("tags", {}).get("ref") or "")
+        if not raw_line:
+            continue
+        line_polylines = line_ways.setdefault(raw_line, {})
+        for member in relation.get("members", []):
+            way = ways_index.get(member.get("ref")) if member.get("type") == "way" else None
+            if way is None:
+                continue
+            polyline = [
+                (float(nodes[ref]["lat"]), float(nodes[ref]["lon"]))
+                for ref in way.get("nodes", [])
+                if ref in nodes and "lat" in nodes[ref]
+            ]
+            if len(polyline) >= 2:
+                line_polylines[way["id"]] = polyline
+    # A platform must sit on its line's own track: OSM occasionally carries
+    # stop nodes named for a station but placed kilometres away (renamed or
+    # planned stations). Such a phantom drags the group's mean point to a
+    # wrong location and inflates every ride estimate through it.
+    line_segments = {
+        line: _chain_line_ways(list(polylines.values())) for line, polylines in line_ways.items()
+    }
+    PLATFORM_TRACK_TOLERANCE_M = 300.0
+    dropped_stops: list[str] = []
     for relation in relations:
         raw_ref = relation.get("tags", {}).get("ref")
         if not raw_ref:
             raise ValueError(f"subway relation {relation.get('id')} has no ref")
+        raw_line = line_id(raw_ref)
+        segments = line_segments.get(raw_line, [])
         sequence: list[tuple[str, tuple[float, float]]] = []
         for member in relation.get("members", []):
             if member.get("type") != "node" or not str(member.get("role", "")).startswith("stop"):
@@ -214,8 +429,11 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
             name = tags.get("name")
             if not name or "lat" not in node or "lon" not in node:
                 raise ValueError(f"incomplete stop node {member.get('ref')}")
-            normalized = normalize_name(name)
             point = (float(node["lat"]), float(node["lon"]))
+            if segments and _nearest_distance_any(segments, point) > PLATFORM_TRACK_TOLERANCE_M:
+                dropped_stops.append(f"{raw_line}:{name}@{point[0]:.4f},{point[1]:.4f}")
+                continue
+            normalized = normalize_name(name)
             # The 4A branch shares its ordinary stops with line 4 but also has
             # branch-only stops. Keep those unique stops on raw line 4A so all
             # 17 raw line families remain represented.
@@ -231,6 +449,14 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         if len(sequence) < 2:
             raise ValueError(f"subway relation {relation.get('id')} has too few stops")
         sequences.append(sequence)
+    if dropped_stops:
+        print(f"dropped {len(dropped_stops)} off-track stop nodes: {', '.join(dropped_stops)}")
+
+    for key, group in grouped.items():
+        kept = _drop_group_outliers(group["points"])
+        if len(kept) != len(group["points"]):
+            print(f"station {key[0]}:{group['name']} — dropped {len(group['points']) - len(kept)} outlier stop nodes")
+        group["points"] = kept
 
     station_ids = {
         key: f"m{key[0]}:{station_slug(group['name'])}"
@@ -273,6 +499,16 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
                 "duration_sec": estimate_ride(distance),
                 "distance_m": distance,
                 "kind": "ride",
+                # Track-following geometry; the chord between stations stays
+                # the runtime fallback when the line chain cannot resolve it.
+                "geometry": _edge_geometry(
+                    {
+                        **line_ways.get(source_station["line_id"], {}),
+                        **line_ways.get(target_station["line_id"], {}),
+                    }.values(),
+                    source_point,
+                    target_point,
+                ),
             }
 
     transfer_pairs: set[tuple[str, str]] = set()
@@ -321,7 +557,7 @@ def build_resource(route: dict[str, Any], boundary: dict[str, Any]) -> dict[str,
         raise ValueError("Nominatim boundary must contain a MultiPolygon geometry")
     return {
         "schema_version": "1.0",
-        "version": "moscow-osm-2026-09-22",
+        "version": "moscow-osm-2026-09-22-topology-v2",
         "source": "OpenStreetMap Overpass 2026-09-22T08:15:26Z; Nominatim boundary admin 102269",
         "boundary_geojson": {"type": "MultiPolygon", "coordinates": geometry["coordinates"]},
         "stations": stations,
@@ -383,8 +619,8 @@ def main() -> None:
             "line_ids": sorted({station["line_id"] for station in resource["stations"]}),
         },
         "method": {
-            "ride_duration": "ceil(distance_m * 1.15 / 41 km/h), minimum 60 sec",
-            "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 240 sec",
+            "ride_duration": "ceil(distance_m * 1.15 / 50 km/h), minimum 60 sec",
+            "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 60 sec and timetable waiting",
             "station_grouping": "normalized line/name across platform directions; shared line 4А stops canonicalized to line 4",
             "boundary": "Nominatim geometry for OSM relation 102269, includes New Moscow",
         },

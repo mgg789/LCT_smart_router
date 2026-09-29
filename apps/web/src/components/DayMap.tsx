@@ -64,6 +64,23 @@ export interface LiveProgressSegment {
   readonly to: LiveRouteProgress['anchor'];
 }
 
+/**
+ * A finished or cancelled visit stays the geometry of the outgoing edge, but it is
+ * no longer a map pin. Leaving it drawn kept a completed emergency on the map
+ * after the engineer had already left.
+ */
+export function showLiveJobPin(
+  request: {
+    readonly lifecycle: string;
+    readonly assumedCompletedAt?: number | null;
+  } | null,
+): boolean {
+  if (!request) return true;
+  if (request.lifecycle === 'completed' || request.lifecycle === 'cancelled') return false;
+  if (request.assumedCompletedAt != null) return false;
+  return true;
+}
+
 /** Interpolated position on the current factual edge at the LIVE business time. */
 export function liveProgressPosition(
   progress: LiveRouteProgress,
@@ -390,6 +407,7 @@ export function DayMap({
     }
     let fallback = forceLocal;
     const markReady = () => setMapReady(true);
+    map.on('load', markReady);
     map.on('idle', markReady);
     const activateLocalMap = () => {
       if (fallback) return;
@@ -417,6 +435,7 @@ export function DayMap({
     return () => {
       observer.disconnect();
       stopWatching();
+      map.off('load', markReady);
       map.off('idle', markReady);
       map.remove();
       mapRef.current = null;
@@ -615,7 +634,8 @@ export function DayMap({
           if (!node.requestId) {
             return [];
           }
-          const request = snapshot.requests.find((item) => item.id === node.requestId);
+          const request = snapshot.requests.find((item) => item.id === node.requestId) ?? null;
+          if (!showLiveJobPin(request)) return [];
           const anchorAlreadyDone =
             progress?.anchor.kind === 'job' &&
             progress.phase !== 'on_site' &&
