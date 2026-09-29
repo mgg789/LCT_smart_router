@@ -69,6 +69,18 @@ function unregisterBackground(key: symbol) {
   }
 }
 
+/**
+ * How many modal dialogs currently hold the screen, native ones included.
+ *
+ * The layer stack is already the app's single record of what is modal, so a screen that
+ * wants to raise a dialog *on its own* -- not because the dispatcher asked -- can ask here
+ * first instead of keeping a second tally. Popping a dialog over a dialog buries whatever
+ * the dispatcher was in the middle of.
+ */
+export function openModalCount(): number {
+  return layers.length + (document.querySelector('dialog:modal') ? 1 : 0);
+}
+
 const focusable = 'a[href],button,input,select,textarea,[tabindex],[contenteditable="true"]';
 
 function tabStops(root: HTMLElement): HTMLElement[] {
