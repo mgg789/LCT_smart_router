@@ -5,6 +5,7 @@ import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
+import { neighbourAt, requestNeighbours } from '../domain/dashboard';
 import { isNavixOffline } from '../domain/mapAvailability';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { clearAssistantSessions } from '../hooks/useAssistantChat';
@@ -55,7 +56,7 @@ import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaText } from './primitives';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
-import { RequestDetails } from './RequestDetails';
+import { RequestDetails, type RequestPaging } from './RequestDetails';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
 import { SettingsModal, type SettingsTab } from './SettingsModal';
@@ -265,6 +266,24 @@ export function MainDashboardPage() {
     regionLabel,
     panelExplanation,
   } = presentation;
+
+  const openRequestId = dash.selectedRequest?.id ?? null;
+  /**
+   * The arrows in the open request card. They walk the engineer's own route when the
+   * request is assigned and the unassigned pile when it is not, so a step never quietly
+   * moves the dispatcher to another engineer's day.
+   */
+  const requestPaging = useMemo<RequestPaging | null>(() => {
+    if (panelMode !== 'request' || !visibleSnapshot || !openRequestId) return null;
+    const { scope, ids } = requestNeighbours(visibleSnapshot, openRequestId);
+    const at = ids.indexOf(openRequestId);
+    if (at < 0 || ids.length < 2) return null;
+    const step = (direction: 1 | -1) => {
+      const target = neighbourAt(ids, openRequestId, direction);
+      return target === null ? null : () => dash.selectRequest(target);
+    };
+    return { at: at + 1, total: ids.length, scope, onPrev: step(-1), onNext: step(1) };
+  }, [dash.selectRequest, openRequestId, panelMode, visibleSnapshot]);
 
   useEffect(() => {
     if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
@@ -1403,6 +1422,7 @@ export function MainDashboardPage() {
                             request={dash.selectedRequest}
                             engineer={dash.selectedEngineer}
                             explanation={panelExplanation}
+                            paging={requestPaging}
                             token={dash.token}
                             roster={(dash.snapshot?.engineers ?? []).slice(0, 8).map((item) => ({
                               name: item.displayName,

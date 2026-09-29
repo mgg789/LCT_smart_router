@@ -10,12 +10,14 @@ import {
   engineerSummaries,
   equipmentLoadout,
   isExpectedRebuildApplied,
+  neighbourAt,
   plannedActivity,
   planWithLunches,
   reconcileDashboardFocus,
   regionalDistanceKm,
   remainingRouteForLiveMap,
   requestById,
+  requestNeighbours,
   routeVertices,
   unassignedRequests,
   withLunches,
@@ -307,5 +309,44 @@ describe('dev dashboard fixture', () => {
     expect(router?.stock).toBe(3);
     expect(router?.spare).toBe(Math.max(0, 3 - (router?.demand ?? 0)));
     expect(lines).toHaveLength(3);
+  });
+});
+
+describe('paging through the open request card', () => {
+  it('walks the owning route in visiting order and never wraps past its ends', () => {
+    const snapshot = createDevSnapshot();
+    const route = snapshot.plan.plan?.routes[0];
+    const stops = route?.stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])) ?? [];
+    const first = stops[0];
+    const second = stops[1];
+    const last = stops.at(-1);
+    if (!first || !second || !last || stops.length < 3) throw new Error('fixture route too short');
+
+    const { scope, ids } = requestNeighbours(snapshot, first);
+    expect(scope).toBe('route');
+    expect(ids).toEqual([...new Set(stops)]);
+    expect(neighbourAt(ids, first, 1)).toBe(second);
+    expect(neighbourAt(ids, first, -1)).toBeNull();
+    expect(neighbourAt(ids, last, 1)).toBeNull();
+  });
+
+  it('walks the unassigned pile for a request no engineer holds', () => {
+    const snapshot = createDevSnapshot();
+    const pile = unassignedRequests(snapshot).map((item) => item.id);
+    const [first, next] = pile;
+    if (!first || !next) throw new Error('fixture needs two unassigned requests');
+    const { scope, ids } = requestNeighbours(snapshot, first);
+    expect(scope).toBe('unassigned');
+    expect(ids).toEqual(pile);
+    expect(neighbourAt(ids, first, 1)).toBe(next);
+  });
+
+  it('offers nothing for a request that is not on this day', () => {
+    const snapshot = createDevSnapshot();
+    expect(requestNeighbours(snapshot, 'not-a-request')).toEqual({
+      scope: 'unassigned',
+      ids: [],
+    });
+    expect(neighbourAt([], 'not-a-request', 1)).toBeNull();
   });
 });
