@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # Build the vendored MKAD pedestrian/cyclist OSRM graph (../graphs/foot).
 #
 # Stages:

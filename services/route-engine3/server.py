@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """route-engine3: universal multi-graph OSRM routing service.
 
 One container serves every OSRM graph dropped into the graphs root. Each

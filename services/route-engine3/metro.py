@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Metro path service for route-engine3: stations, Dijkstra rides, constants.
 
 Loads the versioned metro artifact produced by data/metro/build_moscow.py

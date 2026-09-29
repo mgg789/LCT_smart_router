@@ -62,3 +62,12 @@ curl "http://localhost:8124/route3?a=...&b=...&profile=walk&metro=1"
 
 За пределами покрытия графа — режим `straight`: хорда с disclosed-скоростью,
 в ответе помечена `mode=straight`.
+
+## Сторонний код
+
+Lua-профили в `graph-tools/profiles/` (включая `lib/`) вендорены из
+[project-osrm/osrm-backend](https://github.com/project-osrm/osrm-backend)
+и остаются под их лицензией (BSD 2-clause) — SPDX на них не проставляется.
+Собственные файлы движка (`server.py`, `graphs.py`, `metro.py`, `traffic.py`,
+`graph-tools/build_foot_graph.sh`, `graph-tools/cut_mkad_foot_graph.py`,
+`Dockerfile`) помечены `SPDX-License-Identifier: Apache-2.0`.

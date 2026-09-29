@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 FROM ghcr.io/project-osrm/osrm-backend:latest
 
 # The engine supervises osrm-routed children itself (graphs.py), so the image

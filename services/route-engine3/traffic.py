@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Departure-time traffic model for route-engine3 (v2, car profile only).
 
 Vendored copy of services/road-api/traffic.py so this service stays a
