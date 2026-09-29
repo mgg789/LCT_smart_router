@@ -251,13 +251,43 @@ def test_verification_asks_metro_only_for_transit_when_enabled():
         return SimpleNamespace(engineers=[engineer], requests=[], planning_as_of=0)
 
     stop = SimpleNamespace(stop_id="s", kind="job", request_id="r", location=B, arrival_at=0)
+    leg = SimpleNamespace(to_stop_id="s", from_stop_id=None, departure_at=0, travel_time_sec=60)
     plan = SimpleNamespace(
-        routes=[SimpleNamespace(engineer_id="e", start_location=A, stops=[stop], legs=[])]
+        routes=[SimpleNamespace(engineer_id="e", start_location=A, stops=[stop], legs=[leg])]
     )
     verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=True)
     verify_plan_with_route3(Client(), snapshot("transit"), plan, metro=False)
     verify_plan_with_route3(Client(), snapshot("walk"), plan, metro=True)
     assert calls == [("transit", True), ("transit", False), ("walk", False)]
+
+
+@pytest.mark.parametrize("actual_duration,breach_end", [(60, None), (600, 9900)])
+def test_verification_uses_actual_leg_before_window_wait(actual_duration, breach_end):
+    from types import SimpleNamespace
+
+    from core.route3 import verify_plan_with_route3
+
+    calls = []
+
+    class Client:
+        def route(self, origin, destination, profile, *, traffic, metro, departure):
+            calls.append((origin, destination, departure))
+            return {"mode": "road", "duration_s": actual_duration, "distance_m": 100, "geometry": []}
+
+    engineer = SimpleNamespace(engineer_id="e", travel_profile=lambda: "transit")
+    snapshot = SimpleNamespace(engineers=[engineer], requests=[SimpleNamespace(request_id="r", window_end_at=9500)], planning_as_of=0)
+    wait = SimpleNamespace(stop_id="wait", kind="wait", request_id=None, location=B, arrival_at=9060, start_at=9060, end_at=9100)
+    job = SimpleNamespace(stop_id="job", kind="job", request_id="r", location=B, arrival_at=9060, start_at=9100, end_at=9400)
+    leg = SimpleNamespace(to_stop_id="wait", from_stop_id=None, departure_at=9000, travel_time_sec=60)
+    plan = SimpleNamespace(routes=[SimpleNamespace(
+        engineer_id="e", start_location=A, stops=[wait, job], legs=[leg],
+    )])
+    report = verify_plan_with_route3(Client(), snapshot, plan)
+    assert calls == [(A, B, 9000)]
+    assert (A.lat, A.lon, B.lat, B.lon, "transit", 9000) in report["corrections"]
+
+    breach = report["routes"][0]["window_breach"]
+    assert (None if breach is None else breach["corrected_end_at"]) == breach_end
 
 
 def test_prepared_route3_matrix_rejects_mismatch():

@@ -1,0 +1,270 @@
+{
+  "east": {
+    "settings": {
+      "time_limit_ms": 10000,
+      "solution_limit": 10000,
+      "lunches_enabled": false,
+      "traffic_enabled": true,
+      "equipment_enabled": true,
+      "equipment_transfers_enabled": false,
+      "metro_enabled": true,
+      "strict_time_windows": true,
+      "window_lateness_tolerance_sec": 600,
+      "departure_lateness_tolerance_sec": 0,
+      "task_start_lateness_tolerance_sec": 0,
+      "travel_time_mode": "graph_with_access_buffer",
+      "access_buffer_sec": 600,
+      "fixed_travel_time_sec": 1200,
+      "early_finish_replan_threshold_sec": 900,
+      "task_overrun_tolerance_sec": 600,
+      "verify_time_limit_ms": 0,
+      "comparison_time_limit_ms": 0,
+      "tolerance_sec": null
+    },
+    "matrix_only": true,
+    "metrics": {
+      "strategy": "router_matrix_budget10000",
+      "usable": true,
+      "elapsed_ms": 6890.2,
+      "requests_total": 66,
+      "assigned_count": 59,
+      "coverage_pct": 89.4,
+      "urgent_total": 13,
+      "urgent_assigned_count": 9,
+      "unassigned_count": 7,
+      "late_assigned_count": 0,
+      "total_lateness_sec": 0,
+      "travel_time_sec": 79812,
+      "distance_km": 217.169,
+      "engineers_used": 12,
+      "min_window_slack_sec": 76,
+      "plan_sha256": "0d7bf542854fffb3f40e9dbb58bf75908041823e1a0aba7f040a22518849277c"
+    },
+    "unassigned_feasible_alone": {
+      "98182": [
+        "east-team-01",
+        "east-team-02",
+        "east-team-03",
+        "east-team-05",
+        "east-team-07",
+        "east-team-09",
+        "east-team-10"
+      ],
+      "21571": [
+        "east-team-02",
+        "east-team-08",
+        "east-team-12"
+      ],
+      "47670": [
+        "east-team-08"
+      ],
+      "76643": [
+        "east-team-02",
+        "east-team-08",
+        "east-team-12"
+      ],
+      "60720": [
+        "east-team-01",
+        "east-team-02",
+        "east-team-03",
+        "east-team-05",
+        "east-team-07",
+        "east-team-08",
+        "east-team-10",
+        "east-team-12"
+      ],
+      "68476": [
+        "east-team-01",
+        "east-team-02",
+        "east-team-03",
+        "east-team-05",
+        "east-team-07",
+        "east-team-10",
+        "east-team-12"
+      ],
+      "54964": [
+        "east-team-01",
+        "east-team-05",
+        "east-team-09",
+        "east-team-10",
+        "east-team-12"
+      ]
+    }
+  },
+  "southeast": {
+    "settings": {
+      "time_limit_ms": 10000,
+      "solution_limit": 10000,
+      "lunches_enabled": false,
+      "traffic_enabled": true,
+      "equipment_enabled": true,
+      "equipment_transfers_enabled": false,
+      "metro_enabled": true,
+      "strict_time_windows": true,
+      "window_lateness_tolerance_sec": 600,
+      "departure_lateness_tolerance_sec": 0,
+      "task_start_lateness_tolerance_sec": 0,
+      "travel_time_mode": "graph_with_access_buffer",
+      "access_buffer_sec": 600,
+      "fixed_travel_time_sec": 1200,
+      "early_finish_replan_threshold_sec": 900,
+      "task_overrun_tolerance_sec": 600,
+      "verify_time_limit_ms": 0,
+      "comparison_time_limit_ms": 0,
+      "tolerance_sec": null
+    },
+    "matrix_only": true,
+    "metrics": {
+      "strategy": "router_matrix_budget10000",
+      "usable": true,
+      "elapsed_ms": 2567.0,
+      "requests_total": 51,
+      "assigned_count": 45,
+      "coverage_pct": 88.2,
+      "urgent_total": 14,
+      "urgent_assigned_count": 13,
+      "unassigned_count": 6,
+      "late_assigned_count": 0,
+      "total_lateness_sec": 0,
+      "travel_time_sec": 71640,
+      "distance_km": 176.199,
+      "engineers_used": 12,
+      "min_window_slack_sec": 458,
+      "plan_sha256": "414d692c3cae5b31b078ef1f27454addef4e7bad69a375107d1dde117c68be60"
+    },
+    "unassigned_feasible_alone": {
+      "44117": [
+        "southeast-team-01",
+        "southeast-team-02",
+        "southeast-team-03",
+        "southeast-team-05",
+        "southeast-team-07",
+        "southeast-team-09",
+        "southeast-team-10"
+      ],
+      "14494": [
+        "southeast-team-01",
+        "southeast-team-02",
+        "southeast-team-03",
+        "southeast-team-05",
+        "southeast-team-10"
+      ],
+      "89067": [],
+      "33880": [
+        "southeast-team-04",
+        "southeast-team-06"
+      ],
+      "11899": [
+        "southeast-team-01",
+        "southeast-team-02",
+        "southeast-team-03",
+        "southeast-team-05",
+        "southeast-team-07",
+        "southeast-team-09",
+        "southeast-team-12"
+      ],
+      "95692": [
+        "southeast-team-01",
+        "southeast-team-02",
+        "southeast-team-03",
+        "southeast-team-05",
+        "southeast-team-12"
+      ]
+    }
+  },
+  "south_central": {
+    "settings": {
+      "time_limit_ms": 10000,
+      "solution_limit": 10000,
+      "lunches_enabled": false,
+      "traffic_enabled": true,
+      "equipment_enabled": true,
+      "equipment_transfers_enabled": false,
+      "metro_enabled": true,
+      "strict_time_windows": true,
+      "window_lateness_tolerance_sec": 600,
+      "departure_lateness_tolerance_sec": 0,
+      "task_start_lateness_tolerance_sec": 0,
+      "travel_time_mode": "graph_with_access_buffer",
+      "access_buffer_sec": 600,
+      "fixed_travel_time_sec": 1200,
+      "early_finish_replan_threshold_sec": 900,
+      "task_overrun_tolerance_sec": 600,
+      "verify_time_limit_ms": 0,
+      "comparison_time_limit_ms": 0,
+      "tolerance_sec": null
+    },
+    "matrix_only": true,
+    "metrics": {
+      "strategy": "router_matrix_budget10000",
+      "usable": true,
+      "elapsed_ms": 4767.8,
+      "requests_total": 56,
+      "assigned_count": 47,
+      "coverage_pct": 83.9,
+      "urgent_total": 16,
+      "urgent_assigned_count": 8,
+      "unassigned_count": 9,
+      "late_assigned_count": 0,
+      "total_lateness_sec": 0,
+      "travel_time_sec": 69948,
+      "distance_km": 211.223,
+      "engineers_used": 11,
+      "min_window_slack_sec": 297,
+      "plan_sha256": "5974a6806a1127c6ea6a81964856c9e770dd30644415629db40d4d76fe19058a"
+    },
+    "unassigned_feasible_alone": {
+      "97770": [
+        "south_central-team-04",
+        "south_central-team-06",
+        "south_central-team-08"
+      ],
+      "27023": [
+        "south_central-team-02",
+        "south_central-team-06",
+        "south_central-team-08",
+        "south_central-team-11"
+      ],
+      "26177": [
+        "south_central-team-06",
+        "south_central-team-08"
+      ],
+      "24132": [
+        "south_central-team-06",
+        "south_central-team-08"
+      ],
+      "99841": [
+        "south_central-team-02",
+        "south_central-team-06",
+        "south_central-team-08",
+        "south_central-team-11"
+      ],
+      "95501": [
+        "south_central-team-06",
+        "south_central-team-08"
+      ],
+      "92618": [
+        "south_central-team-02",
+        "south_central-team-06",
+        "south_central-team-08",
+        "south_central-team-11"
+      ],
+      "80308": [
+        "south_central-team-01",
+        "south_central-team-02",
+        "south_central-team-03",
+        "south_central-team-05",
+        "south_central-team-10",
+        "south_central-team-11"
+      ],
+      "46513": [
+        "south_central-team-01",
+        "south_central-team-02",
+        "south_central-team-03",
+        "south_central-team-05",
+        "south_central-team-10",
+        "south_central-team-11"
+      ]
+    }
+  }
+}

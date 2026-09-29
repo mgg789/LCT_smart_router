@@ -137,6 +137,7 @@ const engineerSchema = z.object({
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
   transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
+  shiftPattern: z.enum(['two_two', 'five_two']).default('two_two'),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
   hasAccount: z.boolean().optional().default(false),
@@ -488,6 +489,9 @@ const technicalSettingsSchema = z.object({
   fixedTravelTimeSec: z.number().int().positive(),
   earlyFinishReplanThresholdSec: z.number().int().nonnegative(),
   taskOverrunToleranceSec: z.number().int().nonnegative(),
+  solveTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  verifyTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  comparisonTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
   routerContextVersion: z.string().min(1),
 });
 
@@ -517,7 +521,7 @@ const policyComparisonSchema = z.object({
   inputHash: z.string().min(1),
   routerContextVersion: z.string().min(1),
   computedAt: z.number().int(),
-  searchBudgetMs: z.number().int().positive().max(8_000),
+  searchBudgetMs: z.number().int().positive().max(120_000),
   rows: z
     .array(
       z.object({
@@ -526,6 +530,7 @@ const policyComparisonSchema = z.object({
         additionalEngineers: z.number().int().nonnegative().default(0),
         isUsable: z.boolean(),
         calculationMs: z.number().nonnegative(),
+        jobEnds: z.array(z.number().int().nonnegative()).default([]),
         metrics: z.object({
           requestsTotal: z.number().int().nonnegative(),
           assignedCount: z.number().int().nonnegative(),
@@ -809,6 +814,10 @@ const engineerProfileSchema = engineerSchema.omit({ day: true });
 const dispatcherSettingsSchema = z.object({
   dayStartMin: z.number().int(),
   dayEndMin: z.number().int(),
+  fiveTwoStartMin: z.number().int().default(9 * 60),
+  fiveTwoEndMin: z.number().int().default(18 * 60),
+  twoTwoStartMin: z.number().int().default(10 * 60),
+  twoTwoEndMin: z.number().int().default(22 * 60),
   noShowSec: z.number().int(),
   overdueSec: z.number().int(),
   timeRiskSec: z.number().int(),
@@ -881,6 +890,50 @@ export async function geocodeAddress(
   return result.hits;
 }
 
+export interface DatasetGeocodePoint {
+  readonly address: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly level: 'house' | 'street' | 'approximate';
+}
+
+/** LocationIQ dataset geocode. `available: false` means the contour has no token. */
+export function geocodeDataset(
+  token: string,
+  addresses: readonly string[],
+  timeoutMs: number,
+): Promise<{
+  available: boolean;
+  house: number;
+  street: number;
+  approximate: number;
+  points: DatasetGeocodePoint[];
+}> {
+  return requestJson(
+    '/api/v1/dispatch/geocode/dataset',
+    z.object({
+      available: z.boolean(),
+      house: z.number().int().nonnegative(),
+      street: z.number().int().nonnegative(),
+      approximate: z.number().int().nonnegative(),
+      points: z.array(
+        z.object({
+          address: z.string(),
+          lat: z.number(),
+          lon: z.number(),
+          level: z.enum(['house', 'street', 'approximate']),
+        }),
+      ),
+    }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ addresses }),
+    },
+    timeoutMs,
+  );
+}
+
 /** Cancels a visit that has not started. */
 export function cancelDispatchRequest(
   token: string,
@@ -947,11 +1000,18 @@ export function updateDispatchEngineerProfile(
   token: string,
   engineerId: string,
   expectedVersion: number,
-  patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
-): Promise<unknown> {
+  patch: {
+    region?: string;
+    transportType?: 'car' | 'walk' | 'bike' | 'transit';
+    shiftPattern?: 'two_two' | 'five_two';
+  },
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema>; scheduleDeferred?: boolean }> {
   return requestJson(
     `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
-    z.object({ engineer: engineerProfileSchema }),
+    z.object({
+      engineer: engineerProfileSchema,
+      scheduleDeferred: z.boolean().optional(),
+    }),
     token,
     {
       method: 'PATCH',
@@ -1175,6 +1235,9 @@ export async function updateRouterTechnicalSettings(
         fixedTravelTimeSec: settings.fixedTravelTimeSec,
         earlyFinishReplanThresholdSec: settings.earlyFinishReplanThresholdSec,
         taskOverrunToleranceSec: settings.taskOverrunToleranceSec,
+        solveTimeLimitMs: settings.solveTimeLimitMs ?? 6000,
+        verifyTimeLimitMs: settings.verifyTimeLimitMs ?? 6000,
+        comparisonTimeLimitMs: settings.comparisonTimeLimitMs ?? 6000,
       }),
     },
   );

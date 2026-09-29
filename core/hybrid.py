@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from core.contracts import RouterTaskSnapshot
 from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
@@ -105,6 +105,7 @@ def hybrid_plan(
                 metro=settings.technical().metro_enabled,
                 traffic=settings.technical().traffic_enabled,
                 known=corrections,
+                technical=settings.technical(),
             )
         except Exception as exc:  # noqa: BLE001 — publication requires verified evidence
             log.error("ROUTE3_VERIFICATION_UNAVAILABLE code=%s", type(exc).__name__)
@@ -122,7 +123,8 @@ def hybrid_plan(
             snapshot.planning_as_of,
         )
         try:
-            chosen = solve(snapshot, corrected_provider, settings, memory, context_version)
+            verify_settings = replace(settings, time_limit_ms=settings.resolved_verify_ms())
+            chosen = solve(snapshot, corrected_provider, verify_settings, memory, context_version)
         except Exception as exc:  # noqa: BLE001 — a bad verified quote cannot be published
             log.error("ROUTE3_RESOLVE_FAILED code=%s", type(exc).__name__)
             raise HybridVerificationError("ROUTE3_RESOLVE_FAILED") from exc

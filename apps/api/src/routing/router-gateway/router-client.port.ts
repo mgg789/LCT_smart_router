@@ -123,6 +123,12 @@ export interface RouterTechnicalSettings {
   readonly earlyFinishReplanThresholdSec: number;
   /** Allowed on-site overrun before the engineer is removed from free capacity. */
   readonly taskOverrunToleranceSec: number;
+  /** Main search budget, milliseconds. */
+  readonly solveTimeLimitMs?: number;
+  /** One hybrid route re-check, milliseconds. */
+  readonly verifyTimeLimitMs?: number;
+  /** Policy comparison budget, milliseconds. */
+  readonly comparisonTimeLimitMs?: number;
 }
 
 /** Dispatcher view of the Redis-beta route-response cache. */
@@ -266,6 +272,7 @@ export interface PolicyComparison {
     readonly additionalEngineers?: number;
     readonly isUsable: boolean;
     readonly calculationMs: number;
+    readonly jobEnds: readonly number[];
     readonly metrics: PolicyComparisonMetrics;
   }>;
 }

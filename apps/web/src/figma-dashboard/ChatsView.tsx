@@ -606,12 +606,12 @@ function ChatRow({
       className="absolute block w-[390px] text-left"
       style={{ left: 7, top, height: ROW_HEIGHT }}
     >
-      {/* Past the clock: the scroller is 417 and this button starts 7 in, so 410 lands on its edge. */}
+      {/* Short of the scroller edge so the plate does not sit flush against the card. */}
       {selected ? (
         <span
           aria-hidden
           className="pointer-events-none absolute rounded-[26px] bg-[#e7e9ed]"
-          style={{ left: 0, top: -4, width: 410, height: 96 }}
+          style={{ left: 0, top: -4, width: 392, height: 96 }}
         />
       ) : null}
       <img
@@ -689,7 +689,7 @@ function EngineerStartRow({
         <span
           aria-hidden
           className="pointer-events-none absolute rounded-[26px] bg-[#e7e9ed]"
-          style={{ left: 0, top: -4, width: 410, height: 96 }}
+          style={{ left: 0, top: -4, width: 392, height: 96 }}
         />
       ) : null}
       <img

@@ -38,13 +38,14 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from core.contracts import GeoPoint, RouterTaskSnapshot
+from core.contracts import GeoPoint, RouterTaskSnapshot, RouterTechnicalSettings
 from core.geo import (
     TravelQuote,
     TravelSegment,
     TravelSource,
     TravelUnavailable,
     content_hash,
+    haversine_m,
     joined_segments,
 )
 
@@ -397,6 +398,7 @@ def verify_plan_with_route3(
     metro: bool = True,
     traffic: bool = True,
     known: dict | None = None,
+    technical: RouterTechnicalSettings | None = None,
 ) -> dict:
     """Verify every chosen leg of a plan against /route3.
 
@@ -407,8 +409,9 @@ def verify_plan_with_route3(
     when ``metro`` is on, so a disabled metro setting is not bypassed here.
     ``traffic`` follows the technical planning setting and prevents verification
     from introducing traffic costs when the planner explicitly disabled them.
-    The window check applies the route's total duration drift to every stop
-    after the corrected leg — a deliberately conservative estimate.
+    The diagnostic replays duration drift through waits and checks job completion.
+    ``technical`` aligns corrected costs with access buffers and weather scaling;
+    the re-solved plan validator remains the feasibility authority.
     ``known`` carries pairs verified in earlier rounds: they are reused, not
     re-requested, and ``new_legs`` counts only the pairs this call added.
     """
@@ -423,47 +426,62 @@ def verify_plan_with_route3(
         profile = profile_of_engineer.get(route.engineer_id, "car")
         straight_total = corrected_total = 0
         breach = None
-        stops = [
-            stop
-            for stop in route.stops
-            if stop.kind in ("job", "lunch", "handoff", "delivery", "office_pickup")
-        ]
-        legs_by_stop = {leg.to_stop_id: leg for leg in route.legs}
-        previous = route.start_location
-        for stop in stops:
-            leg = legs_by_stop.get(stop.stop_id)
-            departure = leg.departure_at if leg is not None else snapshot.planning_as_of
-            key = (previous.lat, previous.lon, stop.location.lat, stop.location.lon, profile, departure)
+        stops_by_id = {stop.stop_id: stop for stop in route.stops}
+        deltas_by_stop: dict[str, int] = {}
+        for leg in route.legs:
+            # A leg can end at a wait before a job, not at the job stop itself.
+            # Its recorded departure is authoritative for traffic and metro.
+            stop = stops_by_id[leg.to_stop_id]
+            previous = (route.start_location if leg.from_stop_id is None
+                        else stops_by_id[leg.from_stop_id].location)
+            departure = leg.departure_at
+            leg_profile = ("walk" if profile == "car"
+                           and haversine_m(previous, stop.location) <= 300 else profile)
+            key = (previous.lat, previous.lon, stop.location.lat, stop.location.lon, leg_profile, departure)
             if key not in corrections:
                 body = client.route(
                     previous,
                     stop.location,
-                    profile,
-                    traffic=traffic and profile == "car",
-                    metro=metro and profile == "transit",
+                    leg_profile,
+                    traffic=traffic and leg_profile == "car",
+                    metro=metro and leg_profile == "transit",
                     departure=departure,
                 )
                 corrections[key] = quote_from_route3(body, previous, stop.location)
             quote = corrections[key]
-            straight_total += leg.travel_time_sec if leg is not None else 0
+            straight_total += leg.travel_time_sec
             if quote is not None:
-                corrected_total += quote.duration_sec
-            if stop.kind == "job" and quote is not None:
+                corrected_sec = quote.duration_sec
+                if technical is not None and quote.distance_m:
+                    factor = getattr(leg, "weather_multiplier_used", None) or 1.0
+                    corrected_sec = math.ceil(corrected_sec * factor)
+                    corrected_sec = (corrected_sec + technical.access_buffer_sec
+                                     if technical.travel_time_mode == "graph_with_access_buffer"
+                                     else technical.fixed_travel_time_sec)
+                corrected_total += corrected_sec
+                deltas_by_stop[stop.stop_id] = corrected_sec - leg.travel_time_sec
+        # Replay every stop: an incoming leg may belong to the wait preceding a job.
+        # Existing waiting absorbs delay before it can shift the job's completion.
+        shift = 0
+        for stop in route.stops:
+            shift += deltas_by_stop.get(stop.stop_id, 0)
+            if stop.kind == "wait":
+                shift = max(0, shift - (stop.end_at - stop.start_at))
+            elif stop.kind == "job":
                 request = requests.get(stop.request_id)
                 if request is not None and request.window_end_at is not None:
-                    shift = corrected_total - straight_total
-                    corrected_arrival = stop.arrival_at + max(0, shift)
-                    if corrected_arrival > request.window_end_at:
+                    corrected_end = stop.end_at + max(0, shift)
+                    if corrected_end > request.window_end_at:
                         breach = {
                             "request_id": stop.request_id,
-                            "corrected_arrival_at": corrected_arrival,
+                            "corrected_arrival_at": stop.arrival_at + max(0, shift),
+                            "corrected_end_at": corrected_end,
                             "window_end_at": request.window_end_at,
                         }
-            previous = stop.location
         routes_report.append({
             "engineer_id": route.engineer_id,
             "profile": profile,
-            "legs": len(stops),
+            "legs": len(route.legs),
             "straight_duration_sec": straight_total,
             "corrected_duration_sec": corrected_total,
             "window_breach": breach,

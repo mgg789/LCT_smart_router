@@ -131,6 +131,7 @@ export function EngineerColumn({
             }}
             initial={false}
             animate={{ width: searchOpen ? SEARCH_OPEN_WIDTH : SEARCH_CONTROL_SIZE }}
+            whileHover={motionOn && !searchOpen ? { scale: 1.06 } : undefined}
             transition={motionOn ? { duration: 0.4, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
           >
             <input
@@ -142,7 +143,7 @@ export function EngineerColumn({
               aria-hidden={!searchOpen}
               className="box-border h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent py-0 pl-[18px] pr-[40px] font-medium leading-none text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint"
             />
-            <button
+            <motion.button
               type="button"
               aria-label={
                 searchOpen
@@ -150,6 +151,8 @@ export function EngineerColumn({
                   : t('figma-dashboard.EngineerColumn.6614a726f7')
               }
               onClick={onSearchToggle}
+              whileHover={motionOn && searchOpen ? { scale: 1.06 } : undefined}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
               className="absolute right-0 top-0 flex items-center justify-center"
               style={{ width: SEARCH_CONTROL_SIZE, height: SEARCH_CONTROL_SIZE }}
             >
@@ -160,7 +163,7 @@ export function EngineerColumn({
                 height={22}
                 className="translate-x-[1px] -translate-y-[1px]"
               />
-            </button>
+            </motion.button>
           </motion.div>
           <motion.button
             type="button"

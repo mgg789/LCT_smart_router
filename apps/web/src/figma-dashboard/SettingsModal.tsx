@@ -56,8 +56,13 @@ const CATEGORY_LABELS: Record<ApiTokenCategory, string> = {
 };
 
 type GeneralDraft = {
-  shiftStart: string;
-  shiftEnd: string;
+  fiveTwoStart: string;
+  fiveTwoEnd: string;
+  twoTwoStart: string;
+  twoTwoEnd: string;
+  solveTimeLimitMs: number;
+  verifyTimeLimitMs: number;
+  comparisonTimeLimitMs: number;
   latenessMin: number;
   accessBufferMin: number;
   earlyFinishReplanMin: number;
@@ -102,6 +107,10 @@ export function SettingsModal({
     dispatcher: {
       dayStartMin: number;
       dayEndMin: number;
+      fiveTwoStartMin: number;
+      fiveTwoEndMin: number;
+      twoTwoStartMin: number;
+      twoTwoEndMin: number;
       noShowSec: number;
       overdueSec: number;
       timeRiskSec: number;
@@ -282,15 +291,22 @@ export function SettingsModal({
             disabled={submitting || loading || !token || !routerSettings}
             onClick={() => {
               if (!routerSettings) return;
-              if (minutesFromClock(draft.shiftEnd) <= minutesFromClock(draft.shiftStart)) {
+              if (
+                minutesFromClock(draft.fiveTwoEnd) <= minutesFromClock(draft.fiveTwoStart) ||
+                minutesFromClock(draft.twoTwoEnd) <= minutesFromClock(draft.twoTwoStart)
+              ) {
                 setError(t('figma-dashboard.SettingsModal.da8f0a2fd2'));
                 return;
               }
               setError(null);
               void onSave({
                 dispatcher: {
-                  dayStartMin: minutesFromClock(draft.shiftStart),
-                  dayEndMin: minutesFromClock(draft.shiftEnd),
+                  dayStartMin: minutesFromClock(draft.twoTwoStart),
+                  dayEndMin: minutesFromClock(draft.twoTwoEnd),
+                  fiveTwoStartMin: minutesFromClock(draft.fiveTwoStart),
+                  fiveTwoEndMin: minutesFromClock(draft.fiveTwoEnd),
+                  twoTwoStartMin: minutesFromClock(draft.twoTwoStart),
+                  twoTwoEndMin: minutesFromClock(draft.twoTwoEnd),
                   noShowSec: draft.noShowMin * 60,
                   overdueSec: draft.overdueMin * 60,
                   timeRiskSec: draft.timeRiskMin * 60,
@@ -322,6 +338,9 @@ export function SettingsModal({
                   equipmentEnabled: draft.equipmentEnabled,
                   equipmentTransfersEnabled: draft.equipmentTransfersEnabled,
                   trafficEnabled: draft.trafficEnabled,
+                  solveTimeLimitMs: draft.solveTimeLimitMs,
+                  verifyTimeLimitMs: draft.verifyTimeLimitMs,
+                  comparisonTimeLimitMs: draft.comparisonTimeLimitMs,
                 },
               }).catch((cause: unknown) => {
                 setError(
@@ -352,8 +371,13 @@ function generalFrom(
   router: RouterTechnicalSettings | undefined,
 ): GeneralDraft {
   return {
-    shiftStart: clockFromMinutes(settings?.dayStartMin ?? 9 * 60),
-    shiftEnd: clockFromMinutes(settings?.dayEndMin ?? 21 * 60),
+    fiveTwoStart: clockFromMinutes(settings?.fiveTwoStartMin ?? 9 * 60),
+    fiveTwoEnd: clockFromMinutes(settings?.fiveTwoEndMin ?? 18 * 60),
+    twoTwoStart: clockFromMinutes(settings?.twoTwoStartMin ?? 10 * 60),
+    twoTwoEnd: clockFromMinutes(settings?.twoTwoEndMin ?? 22 * 60),
+    solveTimeLimitMs: router?.solveTimeLimitMs ?? 6000,
+    verifyTimeLimitMs: router?.verifyTimeLimitMs ?? 6000,
+    comparisonTimeLimitMs: router?.comparisonTimeLimitMs ?? 6000,
     latenessMin: Math.round((router?.windowLatenessToleranceSec ?? 0) / 60),
     accessBufferMin: Math.round((router?.accessBufferSec ?? 600) / 60),
     earlyFinishReplanMin: Math.round((router?.earlyFinishReplanThresholdSec ?? 900) / 60),
@@ -575,22 +599,89 @@ function GeneralForm({
   return (
     <div className="pb-[8px]">
       <RouteCacheBlock token={token} />
+      <p className="font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.schedule52')}
+      </p>
       <div className="grid grid-cols-2 gap-[16px]">
-        <Field label={t('figma-dashboard.SettingsModal.cf1dfa079c')} htmlFor="settings-shift-start">
+        <Field label={t('figma-dashboard.SettingsModal.fiveTwoStart')} htmlFor="settings-52-start">
           <input
-            id="settings-shift-start"
+            id="settings-52-start"
             type="time"
-            value={draft.shiftStart}
-            onChange={(event) => setField('shiftStart', event.target.value)}
+            value={draft.fiveTwoStart}
+            onChange={(event) => setField('fiveTwoStart', event.target.value)}
             className={FIELD}
           />
         </Field>
-        <Field label={t('figma-dashboard.SettingsModal.9046545750')} htmlFor="settings-shift-end">
+        <Field label={t('figma-dashboard.SettingsModal.fiveTwoEnd')} htmlFor="settings-52-end">
           <input
-            id="settings-shift-end"
+            id="settings-52-end"
             type="time"
-            value={draft.shiftEnd}
-            onChange={(event) => setField('shiftEnd', event.target.value)}
+            value={draft.fiveTwoEnd}
+            onChange={(event) => setField('fiveTwoEnd', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.twoTwoStart')} htmlFor="settings-22-start">
+          <input
+            id="settings-22-start"
+            type="time"
+            value={draft.twoTwoStart}
+            onChange={(event) => setField('twoTwoStart', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.twoTwoEnd')} htmlFor="settings-22-end">
+          <input
+            id="settings-22-end"
+            type="time"
+            value={draft.twoTwoEnd}
+            onChange={(event) => setField('twoTwoEnd', event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+      </div>
+      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.solverBudgets')}
+      </p>
+      <div className="grid grid-cols-3 gap-[16px]">
+        <Field label={t('figma-dashboard.SettingsModal.solveBudget')} htmlFor="settings-solve-ms">
+          <input
+            id="settings-solve-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.solveTimeLimitMs}
+            onChange={(event) => setField('solveTimeLimitMs', Number(event.target.value) || 6000)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label={t('figma-dashboard.SettingsModal.verifyBudget')} htmlFor="settings-verify-ms">
+          <input
+            id="settings-verify-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.verifyTimeLimitMs}
+            onChange={(event) => setField('verifyTimeLimitMs', Number(event.target.value) || 6000)}
+            className={FIELD}
+          />
+        </Field>
+        <Field
+          label={t('figma-dashboard.SettingsModal.comparisonBudget')}
+          htmlFor="settings-comparison-ms"
+        >
+          <input
+            id="settings-comparison-ms"
+            type="number"
+            min={1}
+            max={120000}
+            step={100}
+            value={draft.comparisonTimeLimitMs}
+            onChange={(event) =>
+              setField('comparisonTimeLimitMs', Number(event.target.value) || 6000)
+            }
             className={FIELD}
           />
         </Field>

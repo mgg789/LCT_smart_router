@@ -12,10 +12,10 @@ const NAME_W = 196;
 const ROW_H = 68;
 const HEADER_H = 44;
 const HALF_HOUR = 30 * 60;
-const PX_PER_HALF = 88;
+const PX_PER_HALF = 132;
 const BLOCK_H = 36;
 
-type BlockKind = 'job' | 'lunch' | 'road' | 'other';
+type BlockKind = 'job' | 'done' | 'cancelled' | 'lunch' | 'road' | 'handoff' | 'other';
 
 interface GanttBlock {
   readonly start: number;
@@ -46,14 +46,28 @@ function overlapSec(start: number, end: number, otherStart: number, otherEnd: nu
   return Math.max(0, Math.min(end, otherEnd) - Math.max(start, otherStart));
 }
 
-function stopBlock(stop: PlanStopView, titles: ReadonlyMap<string, string>): GanttBlock | null {
+function jobTone(
+  lifecycle: string | undefined,
+  assignment: string | undefined,
+): 'job' | 'done' | 'cancelled' {
+  if (lifecycle === 'cancelled') return 'cancelled';
+  if (lifecycle === 'completed' || assignment === 'done') return 'done';
+  return 'job';
+}
+
+function stopBlock(
+  stop: PlanStopView,
+  titles: ReadonlyMap<string, string>,
+  requests: ReadonlyMap<string, { lifecycle: string; assignmentState: string }>,
+): GanttBlock | null {
   if (stop.endAt <= stop.startAt) return null;
   if (stop.kind === 'start' || stop.kind === 'wait') return null;
   if (stop.kind === 'job') {
+    const request = stop.requestId ? requests.get(stop.requestId) : undefined;
     return {
       start: stop.startAt,
       end: stop.endAt,
-      kind: 'job',
+      kind: jobTone(request?.lifecycle, request?.assignmentState),
       label: (stop.requestId && titles.get(stop.requestId)) || t('figma-dashboard.EngineerCompare.job'),
     };
   }
@@ -65,9 +79,15 @@ function stopBlock(stop: PlanStopView, titles: ReadonlyMap<string, string>): Gan
       label: t('figma-dashboard.EngineerCompare.lunch'),
     };
   }
-  const label =
-    stop.kind === 'handoff' ? 'Передача' : stop.kind === 'delivery' ? 'Доставка' : 'Склад';
-  return { start: stop.startAt, end: stop.endAt, kind: 'other', label };
+  if (stop.kind === 'handoff' || stop.kind === 'delivery') {
+    return {
+      start: stop.startAt,
+      end: stop.endAt,
+      kind: 'handoff',
+      label: 'Передача',
+    };
+  }
+  return { start: stop.startAt, end: stop.endAt, kind: 'other', label: 'Склад' };
 }
 
 function roadBlock(leg: PlanLegView, occupied: readonly GanttBlock[]): GanttBlock | null {
@@ -86,10 +106,14 @@ function roadBlock(leg: PlanLegView, occupied: readonly GanttBlock[]): GanttBloc
   };
 }
 
-function blocksOf(route: PlanRouteView | undefined, titles: ReadonlyMap<string, string>): GanttBlock[] {
+function blocksOf(
+  route: PlanRouteView | undefined,
+  titles: ReadonlyMap<string, string>,
+  requests: ReadonlyMap<string, { lifecycle: string; assignmentState: string }>,
+): GanttBlock[] {
   if (!route) return [];
   const occupied = route.stops
-    .map((stop) => stopBlock(stop, titles))
+    .map((stop) => stopBlock(stop, titles, requests))
     .filter((block): block is GanttBlock => block !== null);
   const roads = route.legs
     .map((leg) => roadBlock(leg, occupied))
@@ -113,6 +137,12 @@ export function compareRows(snapshot: DashboardSnapshot | null): {
   const routes = new Map(
     (snapshot.plan.plan?.routes ?? []).map((route) => [route.engineerId, route]),
   );
+  const requests = new Map(
+    snapshot.requests.map((request) => [
+      request.id,
+      { lifecycle: request.lifecycle, assignmentState: request.assignmentState },
+    ]),
+  );
   const rows: GanttRow[] = snapshot.engineers
     .filter((engineer) => engineer.day)
     .slice()
@@ -127,7 +157,7 @@ export function compareRows(snapshot: DashboardSnapshot | null): {
         shiftStart: day?.shiftStartAt ?? 0,
         shiftEnd: day?.shiftEndAt ?? 0,
         transportIcon: TRANSPORT_ICONS[engineer.transportType] ?? null,
-        blocks: blocksOf(routes.get(engineer.id), titles),
+        blocks: blocksOf(routes.get(engineer.id), titles, requests),
       };
     });
   const marks = rows.flatMap((row) => [
@@ -139,6 +169,14 @@ export function compareRows(snapshot: DashboardSnapshot | null): {
   const origin = Math.floor(Math.min(...marks) / HALF_HOUR) * HALF_HOUR;
   const end = Math.ceil(Math.max(...marks) / HALF_HOUR) * HALF_HOUR;
   return { rows, origin, end: Math.max(end, origin + HALF_HOUR) };
+}
+
+function blockFace(kind: BlockKind): string {
+  if (kind === 'job') return 'bg-figma-bee text-figma-ink';
+  if (kind === 'done') return 'bg-figma-done text-white';
+  if (kind === 'cancelled') return 'bg-figma-cancel text-white';
+  if (kind === 'handoff') return 'bg-[#2f6fed] text-white';
+  return 'bg-[#eceef1] text-figma-ink';
 }
 
 function xOf(at: number, origin: number): number {
@@ -164,6 +202,8 @@ export function EngineerCompareModal({
   const ticks: number[] = [];
   for (let at = origin; at <= end; at += HALF_HOUR) ticks.push(at);
   const track = Math.max(PX_PER_HALF, xOf(end, origin));
+  const now = snapshot?.nowAt;
+  const nowX = now != null && now >= origin && now <= end ? xOf(now, origin) : null;
 
   return (
     <ModalLayer open={open} motionOn={motionOn} zClass="z-[120]">
@@ -202,14 +242,11 @@ export function EngineerCompareModal({
             {t('figma-dashboard.EngineerCompare.empty')}
           </p>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto px-[12px] pb-[16px]">
-            <div style={{ width: NAME_W + track }}>
-              <div
-                className="sticky top-0 z-20 flex bg-white"
-                style={{ height: HEADER_H }}
-              >
+          <div className="min-h-0 flex-1 overflow-auto pb-[16px]">
+            <div style={{ width: NAME_W + track + 48 }}>
+              <div className="sticky top-0 z-20 flex bg-white" style={{ height: HEADER_H }}>
                 <div
-                  className="sticky left-0 z-30 shrink-0 bg-white"
+                  className="sticky left-0 z-30 shrink-0 border-r border-[#e3e3e4] bg-white"
                   style={{ width: NAME_W, height: HEADER_H }}
                 />
                 <div className="relative" style={{ width: track, height: HEADER_H }}>
@@ -222,12 +259,19 @@ export function EngineerCompareModal({
                       {formatClock(at)}
                     </span>
                   ))}
+                  {nowX != null ? (
+                    <span
+                      aria-hidden
+                      className="absolute top-0 bottom-0 z-[4] w-[2px] bg-figma-done"
+                      style={{ left: nowX }}
+                    />
+                  ) : null}
                 </div>
               </div>
               {rows.map((row) => (
                 <div key={row.id} className="flex" style={{ height: ROW_H }}>
                   <div
-                    className="sticky left-0 z-10 flex shrink-0 flex-col justify-center bg-white pr-[12px] pl-[16px]"
+                    className="sticky left-0 z-20 flex shrink-0 flex-col justify-center border-r border-[#e3e3e4] bg-white pr-[12px] pl-[16px]"
                     style={{
                       width: NAME_W,
                       height: ROW_H,
@@ -271,16 +315,37 @@ export function EngineerCompareModal({
                         height: ROW_H - 20,
                       }}
                     />
+                    {nowX != null ? (
+                      <span
+                        aria-hidden
+                        className="absolute top-0 bottom-0 z-[4] w-[2px] bg-figma-done"
+                        style={{ left: nowX }}
+                      />
+                    ) : null}
                     {row.blocks.map((block) => {
-                      const left = xOf(block.start, origin);
-                      const width = Math.max(6, xOf(block.end, origin) - left);
-                      const job = block.kind === 'job';
+                      const shiftGap = 8;
+                      const startBar = xOf(row.shiftStart, origin);
+                      const endBar = xOf(row.shiftEnd, origin);
+                      let left = xOf(block.start, origin);
+                      let right = xOf(block.end, origin);
+                      if (left < startBar + 3 + shiftGap && right > startBar) {
+                        left = Math.max(left, startBar + 3 + shiftGap);
+                      }
+                      if (right > endBar - shiftGap && left < endBar) {
+                        right = Math.min(right, endBar - shiftGap);
+                      }
+                      const width = Math.max(6, right - left);
+                      const icon =
+                        block.kind === 'road'
+                          ? row.transportIcon
+                          : block.kind === 'handoff'
+                            ? FIGMA_ASSETS.router
+                            : null;
+                      const iconColor = block.kind === 'handoff' ? '#ffffff' : '#272930';
                       return (
                         <span
                           key={`${block.kind}-${block.start}-${block.label}`}
-                          className={`absolute z-[3] flex items-center overflow-hidden font-semibold ${
-                            job ? 'bg-figma-bee text-figma-ink' : 'bg-[#eceef1] text-figma-ink'
-                          }`}
+                          className={`absolute z-[3] flex items-center overflow-hidden font-semibold ${blockFace(block.kind)}`}
                           style={{
                             left,
                             width,
@@ -293,8 +358,8 @@ export function EngineerCompareModal({
                           }}
                           title={block.label}
                         >
-                          {block.kind === 'road' && row.transportIcon && width > 48 ? (
-                            <TintIcon src={row.transportIcon} color="#272930" size={16} />
+                          {icon && width > 28 ? (
+                            <TintIcon src={icon} color={iconColor} size={16} />
                           ) : null}
                           {width > 48 ? <span className="truncate">{block.label}</span> : null}
                         </span>

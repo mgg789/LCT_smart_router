@@ -73,6 +73,21 @@ def _project(address: str, district: str, centroids: dict[str, GeoPoint]) -> Geo
     return GeoPoint(lat=round(anchor.lat + lat_offset, 6), lon=round(anchor.lon + lon_offset, 6))
 
 
+def _load_checked_points(region: str) -> dict[str, tuple[GeoPoint, str]]:
+    """LocationIQ points for the official address catalogue, keyed by the CSV address."""
+    path = Path(__file__).resolve().parents[1] / "data" / "dataset" / "geocoded" / f"{region}.json"
+    if not path.is_file():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    points: dict[str, tuple[GeoPoint, str]] = {}
+    for entry in payload["entries"]:
+        points[entry["address"]] = (
+            GeoPoint.model_validate(entry["location"]),
+            str(entry.get("match_level") or "locationiq"),
+        )
+    return points
+
+
 def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
     """Write deterministic geocodes and a complete approximate regional matrix.
 
@@ -84,9 +99,9 @@ def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
         ValueError: If the source/config drifts or a region/district has no explicit anchor.
     """
     config = OfficialScenarioConfig.model_validate_json((scenario_dir / "config.json").read_bytes())
-    if config.region not in _REGION_PROJECTIONS:
-        raise ValueError(f"no deterministic projection profile for {config.region}")
-    centroids, office_point = _REGION_PROJECTIONS[config.region]
+    centroids, office_point = _REGION_PROJECTIONS.get(
+        config.region, ({}, GeoPoint(lat=55.75, lon=37.62))
+    )
     synthetic_path = dataset_dir / config.synthetic_file
     control_path = dataset_dir / config.control_file
     _verify_source(synthetic_path, config.source_sha256["synthetic"])
@@ -97,18 +112,31 @@ def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
     if len(requests) != config.expected_request_count or len(offices) != 1:
         raise ValueError("official source count or office marker drift")
 
-    address_points: dict[str, GeoPoint] = {}
+    checked = _load_checked_points(config.region)
+    address_points: dict[str, tuple[GeoPoint, str]] = {}
     for row in requests:
-        point = _project(row["Адрес"], row["Район"], centroids)
-        previous = address_points.setdefault(row["Адрес"], point)
-        if previous != point:
+        known = checked.get(row["Адрес"])
+        if known:
+            point, level = known
+        elif row["Район"] in centroids:
+            point, level = _project(row["Адрес"], row["Район"], centroids), "district_centroid_projection"
+        else:
+            raise ValueError(f"address has neither a checked point nor a district anchor: {row['Адрес']}")
+        previous = address_points.setdefault(row["Адрес"], (point, level))
+        if previous[0] != point:
             raise ValueError("one address maps to multiple districts")
     office_address = offices[0]["Тип заявки BK"]
-    address_points[office_address] = office_point
+    office_known = checked.get(office_address)
+    if office_known:
+        address_points[office_address] = office_known
+    elif office_point is not None and config.region in _REGION_PROJECTIONS:
+        address_points[office_address] = (office_point, "district_centroid_projection")
+    else:
+        raise ValueError(f"office address is not in the checked geocode package: {office_address}")
 
     entries = []
     node_ids = []
-    for index, (address, point) in enumerate(sorted(address_points.items())):
+    for index, (address, (point, level)) in enumerate(sorted(address_points.items())):
         node_id = f"{config.region.replace('_', '-')}-{index:03d}"
         node_ids.append(node_id)
         entries.append(
@@ -116,7 +144,7 @@ def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
                 "address": address,
                 "node_id": node_id,
                 "location": point.model_dump(),
-                "match_level": "district_centroid_projection",
+                "match_level": level,
             }
         )
     points = [GeoPoint.model_validate(entry["location"]) for entry in entries]
@@ -139,17 +167,17 @@ def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
     geocodes = {
         "schema_version": "1.0",
         "source": (
-            "Deterministic district-centroid projection for offline Router acceptance; "
-            "not rooftop geocoding."
+            "LocationIQ coordinates from data/dataset/geocoded when the address is in the "
+            "checked package; otherwise the district-centroid projection. Not a live geocode."
         ),
         "entries": entries,
     }
     matrix = {
         "schema_version": "1.0",
-        "version": f"official-{config.region.replace('_', '-')}-centroid-road-v1",
+        "version": f"official-{config.region.replace('_', '-')}-locationiq-road-v1",
         "source": (
-            "Offline acceptance approximation: haversine x1.25 at constant 28 km/h; "
-            "not a production road matrix."
+            "Offline acceptance approximation from the checked address points: "
+            "haversine x1.25 at constant 28 km/h; not a production road matrix."
         ),
         "node_ids": node_ids,
         "durations_sec": durations,
@@ -177,7 +205,9 @@ def main() -> None:
     """Regenerate checked centroid-based acceptance resources for one region."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
-    parser.add_argument("--region", choices=tuple(_REGION_PROJECTIONS), default="south_central")
+    parser.add_argument(
+        "--region", choices=("east", "south_central", "southeast"), default="south_central"
+    )
     parser.add_argument("--scenario-dir", type=Path)
     args = parser.parse_args()
     scenario_dir = args.scenario_dir or Path("core/scenarios") / (

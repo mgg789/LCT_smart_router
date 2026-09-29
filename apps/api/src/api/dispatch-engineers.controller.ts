@@ -8,7 +8,11 @@ import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import { LiveService } from '../orchestrator/live';
-import { DispatcherSettingsService, moscowMinutesToUnix } from '../orchestrator/settings';
+import {
+  DispatcherSettingsService,
+  moscowMinutesToUnix,
+  shiftWindowMinutes,
+} from '../orchestrator/settings';
 import { PrismaService } from '../persistence';
 import {
   type ArchiveEngineerDto,
@@ -135,13 +139,15 @@ export class DispatchEngineersController {
           region: dto.region ?? null,
           homeLat: dto.homeLat ?? null,
           homeLon: dto.homeLon ?? null,
+          shiftPattern: dto.shiftPattern,
         });
         const settings = await this.dispatcherSettings.read(context.tx);
         const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
+        const window = shiftWindowMinutes(settings, created.shiftPattern);
         await this.engineers.setWorkday(context, created.id, {
           workDate,
-          shiftStartAt: moscowMinutesToUnix(workDate, settings.dayStartMin),
-          shiftEndAt: moscowMinutesToUnix(workDate, settings.dayEndMin),
+          shiftStartAt: moscowMinutesToUnix(workDate, window.startMin),
+          shiftEndAt: moscowMinutesToUnix(workDate, window.endMin),
         });
         return toEngineerView(created);
       },
@@ -244,7 +250,7 @@ export class DispatchEngineersController {
     @CurrentActor() actor: Actor,
     @Param('id') id: string,
     @Body(zodBody(updateEngineerSchema)) dto: UpdateEngineerDto,
-  ): Promise<{ engineer: EngineerView }> {
+  ): Promise<{ engineer: EngineerView; scheduleDeferred: boolean }> {
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -254,8 +260,9 @@ export class DispatchEngineersController {
         expectedVersion: dto.expectedVersion ?? null,
         payload: dto,
       },
-      async (context) =>
-        toEngineerView(
+      async (context) => {
+        const before = await context.tx.engineer.findUnique({ where: { id } });
+        const engineer = toEngineerView(
           await this.engineers.updateProfile(context, id, dto.expectedVersion ?? null, {
             ...(dto.displayName === undefined ? {} : { displayName: dto.displayName }),
             ...(dto.skills === undefined ? {} : { skills: dto.skills }),
@@ -263,10 +270,21 @@ export class DispatchEngineersController {
             ...(dto.region === undefined ? {} : { region: dto.region }),
             ...(dto.homeLat === undefined ? {} : { homeLat: dto.homeLat }),
             ...(dto.homeLon === undefined ? {} : { homeLon: dto.homeLon }),
+            ...(dto.shiftPattern === undefined ? {} : { shiftPattern: dto.shiftPattern }),
           }),
-        ),
+        );
+        const patternChanged =
+          dto.shiftPattern !== undefined && dto.shiftPattern !== before?.shiftPattern;
+        const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
+        const today = patternChanged
+          ? await context.tx.engineerDay.findUnique({
+              where: { engineerId_workDate: { engineerId: id, workDate } },
+            })
+          : null;
+        return { engineer, scheduleDeferred: today !== null };
+      },
     );
-    return { engineer: outcome.result };
+    return outcome.result;
   }
 
   @Post('engineers/:id/workday')

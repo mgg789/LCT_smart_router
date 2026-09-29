@@ -95,16 +95,9 @@ def test_official_east_golden(official_east_scenario, official_east_run):
     ] == GOLDEN["main"]["unassigned_request_ids"]
 
 
-def test_prepared_road_geometries_are_pinned_to_their_nodes(official_east_scenario):
-    """The enriched east matrix carries road polylines pinned to exact node ends."""
-    scenario = official_east_scenario
-    assert all(edge.geometry is not None for edge in scenario.graph.edges)
-    locations = {node.node_id: node.location for node in scenario.graph.nodes}
-    for edge in scenario.graph.edges:
-        assert edge.geometry is not None
-        assert edge.geometry[0] == locations[edge.source]
-        assert edge.geometry[-1] == locations[edge.target]
-        assert len(edge.geometry) >= 2
+def test_acceptance_matrix_does_not_invent_road_polylines(official_east_scenario):
+    """Checked address points use a haversine matrix; missing shape stays absent."""
+    assert all(edge.geometry is None for edge in official_east_scenario.graph.edges)
 
 
 def test_matrix_without_geometries_keeps_edges_shapeless(tmp_path):
@@ -133,9 +126,8 @@ def test_official_travel_quotes_carry_exact_road_geometry(official_east_scenario
     quote = travel.quote(graph.nodes[0].location, graph.nodes[17].location, "car")
     assert quote is not None
     assert quote.provenance == "road_matrix"
-    assert quote.geometry_exact is True
-    # A real path has intermediate shape; two points would be a straight line again.
-    assert len(quote.points) > 2
+    assert quote.geometry_exact is False
+    assert len(quote.points) == 2
 
 
 def test_explanation_evidence_is_calculation_backed(official_east_run):

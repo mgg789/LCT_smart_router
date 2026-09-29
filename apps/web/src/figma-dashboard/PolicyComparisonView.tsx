@@ -313,7 +313,7 @@ export function PolicyComparisonView({
                 ) : null}
 
                 {comparison && mode === 'overview' ? (
-                  <PolicyComparisonOverview rows={columns} />
+                  <PolicyComparisonOverview rows={columns} currentPolicyId={snapshot?.policyId ?? null} />
                 ) : null}
                 {comparison && mode === 'table' ? (
                   <>

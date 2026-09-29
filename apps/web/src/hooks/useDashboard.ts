@@ -73,6 +73,7 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import { pushToast } from '../figma-dashboard/toasts';
 import { t } from '../i18n';
 
 import { usePlanHistory } from './usePlanHistory';
@@ -1105,12 +1106,24 @@ export function useDashboard() {
   const updateEngineerProfile = useCallback(
     (
       engineerId: string,
-      patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+      patch: {
+        region?: string;
+        transportType?: 'car' | 'walk' | 'bike' | 'transit';
+        shiftPattern?: 'two_two' | 'five_two';
+      },
     ) =>
       performEntityMutation(async (session) => {
         const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
         if (!engineer) throw new Error(t('hooks.useDashboard.3d944f689c'));
-        await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+        const updated = await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+        if (updated.scheduleDeferred) {
+          pushToast({
+            id: `schedule:${engineerId}`,
+            kind: 'system',
+            title: t('hooks.useDashboard.scheduleDeferredTitle'),
+            body: t('hooks.useDashboard.scheduleDeferredBody'),
+          });
+        }
       }, t('hooks.useDashboard.2950b62d94')),
     [performEntityMutation],
   );
@@ -1519,7 +1532,10 @@ function sameRouterSettings(
     left.accessBufferSec === right.accessBufferSec &&
     left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
     left.earlyFinishReplanThresholdSec === right.earlyFinishReplanThresholdSec &&
-    left.taskOverrunToleranceSec === right.taskOverrunToleranceSec
+    left.taskOverrunToleranceSec === right.taskOverrunToleranceSec &&
+    (left.solveTimeLimitMs ?? 6000) === (right.solveTimeLimitMs ?? 6000) &&
+    (left.verifyTimeLimitMs ?? 6000) === (right.verifyTimeLimitMs ?? 6000) &&
+    (left.comparisonTimeLimitMs ?? 6000) === (right.comparisonTimeLimitMs ?? 6000)
   );
 }
 
@@ -1539,6 +1555,9 @@ function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSett
     fixedTravelTimeSec: 1_200,
     earlyFinishReplanThresholdSec: 900,
     taskOverrunToleranceSec: 600,
+    solveTimeLimitMs: 6000,
+    verifyTimeLimitMs: 6000,
+    comparisonTimeLimitMs: 6000,
     routerContextVersion: snapshot.routerContextVersion,
   };
 }

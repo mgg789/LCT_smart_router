@@ -1149,6 +1149,9 @@ export class McpToolsService {
             fixedTravelTimeSec: current.fixedTravelTimeSec,
             earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
             taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+            solveTimeLimitMs: current.solveTimeLimitMs,
+            verifyTimeLimitMs: current.verifyTimeLimitMs,
+            comparisonTimeLimitMs: current.comparisonTimeLimitMs,
           };
           const outcome = await this.operations.executeExternal(
             {

@@ -66,6 +66,7 @@ const policyEvidenceSchema = z.object({
       additionalEngineers: z.number().int(),
       isUsable: z.boolean(),
       calculationMs: z.number().int(),
+      jobEnds: z.array(z.number().int().nonnegative()).default([]),
       metrics: z.object({
         requestsTotal: z.number().int(),
         assignedCount: z.number().int(),

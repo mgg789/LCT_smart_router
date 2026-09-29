@@ -91,7 +91,7 @@ def test_catalog_is_strict_and_versioned(snapshot):
             {**snapshot.model_dump(), "policy": {"policy_id": "covering", "parameters": {}}}
         ).policy
     )
-    assert covering.definition_version == "covering-4"
+    assert covering.definition_version == "covering-5"
     assert covering.search_stages[2] == "extra_assignments"
 
 
@@ -338,6 +338,53 @@ def test_covering_adds_minimum_engineers_to_assign_every_request(snapshot, graph
     extra_ids = [route.engineer_id for route in covering_plan.routes if route.engineer_id.startswith("covering-")]
     assert extra_ids == ["covering-east-1"]
     assert any(stop.request_id == "emergency-job" for route in covering_plan.routes for stop in route.stops)
+
+
+def test_free_roster_engineer_keeps_the_job_ahead_of_a_closer_reserve(snapshot, graph):
+    """A reserve is a last resort: a free base engineer takes the job even if farther."""
+    data = snapshot.model_dump()
+    start = data["planning_as_of"]
+    base = data["engineers"][0]
+    base.update(
+        engineer_id="roster",
+        input_order=0,
+        skills=["local", "connection", "emergency"],
+        start_location=graph.nodes[1].location.model_dump(),
+        region="east",
+    )
+    reserve = {
+        **base,
+        "engineer_id": "covering-east-1",
+        "input_order": 10_001,
+        "start_location": graph.nodes[2].location.model_dump(),
+    }
+    data["engineers"] = [base, reserve]
+    data["requests"] = [
+        {
+            "request_id": "ordinary",
+            "arrival_order": 1,
+            "location": graph.nodes[2].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 7200,
+            "priority": "normal",
+            "required_skill": "local",
+            "required_transport": None,
+            "region": "east",
+        }
+    ]
+    data["policy"] = {"policy_id": "covering", "parameters": {}}
+    plan = solve(RouterTaskSnapshot.model_validate(data), GraphTravel(graph), SETTINGS).main
+    owners = {
+        assignment.request_id: assignment.engineer_id
+        for assignment in plan.assignments
+        if assignment.status != "unassigned"
+    }
+    assert owners == {"ordinary": "roster"}
+    assert not any(
+        route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+        for route in plan.routes
+    )
 
 
 def test_persisted_covering_extras_do_not_inflate_other_policies(snapshot, graph):

@@ -68,6 +68,12 @@ export const tabularCompletionOptionsSchema = z
         shiftEnd: z.string().trim().min(1).max(32),
       })
       .strict(),
+    placedPoints: z
+      .record(
+        z.string().min(1).max(500),
+        z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).strict(),
+      )
+      .optional(),
     edits: z
       .array(
         z

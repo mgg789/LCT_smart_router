@@ -25,7 +25,7 @@ from typing import Protocol
 from urllib.parse import unquote, urlparse
 
 LOGGER = logging.getLogger(__name__)
-MAX_ENTRY_BYTES = 8 * 1024 * 1024
+MAX_ENTRY_BYTES = 10 * 1024 * 1024
 SAMPLE_GAP_SEC = 15
 SAMPLE_LIMIT = 32
 MIN_SAMPLES = 4

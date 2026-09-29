@@ -26300,6 +26300,34 @@
                         ],
                         "additionalProperties": false
                       },
+                      "placedPoints": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "lat": {
+                              "type": "number",
+                              "minimum": -90,
+                              "maximum": 90
+                            },
+                            "lon": {
+                              "type": "number",
+                              "minimum": -180,
+                              "maximum": 180
+                            }
+                          },
+                          "required": [
+                            "lat",
+                            "lon"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
                       "edits": {
                         "maxItems": 20000,
                         "type": "array",
@@ -33111,6 +33139,18 @@
                                   }
                                 ]
                               },
+                              "shiftPattern": {
+                                "anyOf": [
+                                  {
+                                    "const": "two_two",
+                                    "type": "string"
+                                  },
+                                  {
+                                    "const": "five_two",
+                                    "type": "string"
+                                  }
+                                ]
+                              },
                               "homeLat": {
                                 "anyOf": [
                                   {
@@ -33751,6 +33791,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -34200,6 +34252,14 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "shiftPattern": {
+                    "default": "two_two",
+                    "type": "string",
+                    "enum": [
+                      "two_two",
+                      "five_two"
+                    ]
                   }
                 },
                 "required": [
@@ -34304,6 +34364,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -34786,6 +34858,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -34833,10 +34917,14 @@
                         "hasAccount",
                         "email"
                       ]
+                    },
+                    "scheduleDeferred": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "engineer"
+                    "engineer",
+                    "scheduleDeferred"
                   ]
                 }
               }
@@ -35223,6 +35311,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "shiftPattern": {
+                    "type": "string",
+                    "enum": [
+                      "two_two",
+                      "five_two"
+                    ]
                   }
                 },
                 "required": [
@@ -35314,6 +35409,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -35809,6 +35916,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -36281,6 +36400,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -50856,6 +50987,15 @@
                     },
                     "taskOverrunToleranceSec": {
                       "type": "number"
+                    },
+                    "solveTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "verifyTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "comparisonTimeLimitMs": {
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -51293,6 +51433,15 @@
                     },
                     "taskOverrunToleranceSec": {
                       "type": "number"
+                    },
+                    "solveTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "verifyTimeLimitMs": {
+                      "type": "number"
+                    },
+                    "comparisonTimeLimitMs": {
+                      "type": "number"
                     }
                   },
                   "required": [
@@ -51690,6 +51839,24 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 86400
+                  },
+                  "solveTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
+                  },
+                  "verifyTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
+                  },
+                  "comparisonTimeLimitMs": {
+                    "default": 6000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 120000
                   }
                 },
                 "required": [
@@ -54537,6 +54704,12 @@
                           "calculationMs": {
                             "type": "number"
                           },
+                          "jobEnds": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
                           "metrics": {
                             "type": "object",
                             "properties": {
@@ -54621,6 +54794,7 @@
                           "kind",
                           "isUsable",
                           "calculationMs",
+                          "jobEnds",
                           "metrics"
                         ]
                       }
@@ -64242,6 +64416,18 @@
                     "dayEndMin": {
                       "type": "number"
                     },
+                    "fiveTwoStartMin": {
+                      "type": "number"
+                    },
+                    "fiveTwoEndMin": {
+                      "type": "number"
+                    },
+                    "twoTwoStartMin": {
+                      "type": "number"
+                    },
+                    "twoTwoEndMin": {
+                      "type": "number"
+                    },
                     "noShowSec": {
                       "type": "number"
                     },
@@ -64287,6 +64473,10 @@
                     "equipmentCapacityCar",
                     "dayStartMin",
                     "dayEndMin",
+                    "fiveTwoStartMin",
+                    "fiveTwoEndMin",
+                    "twoTwoStartMin",
+                    "twoTwoEndMin",
                     "noShowSec",
                     "overdueSec",
                     "timeRiskSec",
@@ -64640,6 +64830,18 @@
                     "dayEndMin": {
                       "type": "number"
                     },
+                    "fiveTwoStartMin": {
+                      "type": "number"
+                    },
+                    "fiveTwoEndMin": {
+                      "type": "number"
+                    },
+                    "twoTwoStartMin": {
+                      "type": "number"
+                    },
+                    "twoTwoEndMin": {
+                      "type": "number"
+                    },
                     "noShowSec": {
                       "type": "number"
                     },
@@ -64685,6 +64887,10 @@
                     "equipmentCapacityCar",
                     "dayStartMin",
                     "dayEndMin",
+                    "fiveTwoStartMin",
+                    "fiveTwoEndMin",
+                    "twoTwoStartMin",
+                    "twoTwoEndMin",
                     "noShowSec",
                     "overdueSec",
                     "timeRiskSec",
@@ -65039,6 +65245,26 @@
                     "maximum": 1440
                   },
                   "dayEndMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "fiveTwoStartMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "fiveTwoEndMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "twoTwoStartMin": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1440
+                  },
+                  "twoTwoEndMin": {
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 1440
@@ -65526,6 +65752,422 @@
                     }
                   }
                 }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-roles": [
+          "dispatcher"
+        ]
+      }
+    },
+    "/api/v1/dispatch/geocode/dataset": {
+      "post": {
+        "operationId": "DispatchController_geocodeDataset",
+        "summary": "Geocode dataset addresses through LocationIQ, bounded to Moscow and Moscow Oblast",
+        "tags": [
+          "dispatch"
+        ],
+        "responses": {
+          "201": {
+            "description": "Успешный ответ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "house": {
+                      "type": "number"
+                    },
+                    "street": {
+                      "type": "number"
+                    },
+                    "approximate": {
+                      "type": "number"
+                    },
+                    "points": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "string"
+                          },
+                          "lat": {
+                            "type": "number"
+                          },
+                          "lon": {
+                            "type": "number"
+                          },
+                          "level": {
+                            "anyOf": [
+                              {
+                                "const": "approximate",
+                                "type": "string"
+                              },
+                              {
+                                "const": "house",
+                                "type": "string"
+                              },
+                              {
+                                "const": "street",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "address",
+                          "lat",
+                          "lon",
+                          "level"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "house",
+                    "street",
+                    "approximate",
+                    "points"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ошибка API",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message",
+                        "details",
+                        "requestId"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {},
+                        "requestId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "addresses": {
+                    "minItems": 1,
+                    "maxItems": 400,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 500
+                    }
+                  }
+                },
+                "required": [
+                  "addresses"
+                ]
               }
             }
           }
@@ -71590,6 +72232,18 @@
                             }
                           ]
                         },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "homeLat": {
                           "anyOf": [
                             {
@@ -72028,6 +72682,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -72919,6 +73585,18 @@
                               "type": "null"
                             },
                             {
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "shiftPattern": {
+                          "anyOf": [
+                            {
+                              "const": "two_two",
+                              "type": "string"
+                            },
+                            {
+                              "const": "five_two",
                               "type": "string"
                             }
                           ]
@@ -82565,6 +83243,12 @@
                                       },
                                       "calculationMs": {
                                         "type": "number"
+                                      },
+                                      "jobEnds": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "number"
+                                        }
                                       },
                                       "metrics": {
                                         "type": "object",

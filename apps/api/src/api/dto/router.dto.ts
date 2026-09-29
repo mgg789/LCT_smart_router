@@ -26,5 +26,8 @@ export const updateRouterTechnicalSettingsSchema = z.object({
   fixedTravelTimeSec: toleranceSeconds.positive(),
   earlyFinishReplanThresholdSec: toleranceSeconds,
   taskOverrunToleranceSec: toleranceSeconds,
+  solveTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  verifyTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
+  comparisonTimeLimitMs: z.number().int().min(1).max(120_000).default(6000),
 });
 export type UpdateRouterTechnicalSettingsDto = z.infer<typeof updateRouterTechnicalSettingsSchema>;
