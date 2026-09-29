@@ -49,8 +49,10 @@ def file_digest(path: Path) -> str:
             ".html",
             ".css",
             ".svg",
+            ".toml",
+            ".lua",
         }
-        or path.name == "Dockerfile"
+        or path.name in {"Dockerfile", "LICENSE", ".coveragerc"}
     ):
         raw = raw.replace(b"\r\n", b"\n")
     return hashlib.sha256(raw).hexdigest()

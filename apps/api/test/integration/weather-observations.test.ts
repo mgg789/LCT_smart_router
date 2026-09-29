@@ -335,7 +335,13 @@ describe('weather calibration observations', () => {
     };
     assert.deepEqual(metadata.weatherCalibration, {
       planId: plan.planId,
-      workDate: arrivalMetadata.weatherCalibration.workDate,
+      // A visit can finish after local midnight; the observation belongs to that event's day.
+      workDate: new Intl.DateTimeFormat('en-CA', {
+        timeZone: process.env.APP_TIME_ZONE ?? 'Europe/Moscow',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date(finishAt * 1000)),
       nextRequestId: second.id,
       region: 'weather-test',
       transport: 'car',
