@@ -10,6 +10,7 @@ import {
   saveManualPriorities,
 } from '../api/manual';
 import type { DashboardSnapshot } from '../api/types';
+import { openModalCount } from '../components/useModalFocus';
 import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { ModalLayer, ModalScrim } from './modalLayer';
@@ -75,9 +76,12 @@ export function ManualPlanningProvider({
   const [ordered, setOrdered] = useState<string[]>([]);
   const orderDirty = useRef(false);
   const seenConflict = useRef<string | null>(null);
+  /** Read by the conflict poll, which must not restart its timer on every dialog change. */
+  const ownModalOpen = useRef(false);
   /** The action the gate interrupted; run once manual mode is really on. */
   const resumeRef = useRef<(() => void | Promise<void>) | null>(null);
   const active = snapshot?.plan.mode === 'manual';
+  ownModalOpen.current = panel !== null || editor !== null;
   useEffect(() => {
     const open = (event: Event) => {
       const detail = (
@@ -116,7 +120,13 @@ export function ManualPlanningProvider({
         if (cancelled) return;
         setState((current) => (current && current.version > next.version ? current : next));
         const key = `${next.version}:${next.resolution?.inputHash}`;
+        // Nobody asked for this dialog -- the solver did -- so it waits for a clear screen.
+        // Raised over a modal the dispatcher opened themselves it buried their work, and
+        // the scrim behind it made the one underneath unreachable. The key stays unclaimed,
+        // so the next poll offers the same conflict again once that dialog is gone.
+        const mine = ownModalOpen.current ? 1 : 0;
         if (active && next.needsReview && seenConflict.current !== key) {
+          if (openModalCount() > mine) return;
           seenConflict.current = key;
           setPanel((current) => (current === 'intro' ? current : 'priorities'));
         }
