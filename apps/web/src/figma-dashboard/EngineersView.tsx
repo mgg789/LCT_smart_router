@@ -20,6 +20,7 @@ import { t } from '../i18n';
 import { transportLabel } from '../lib/reasons';
 import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { ARTBOARD_BLEED } from './artboardScale';
+import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
   arrowSpinDelta,
@@ -100,6 +101,7 @@ export function EngineersView({
   onOpenChat: (engineerId: string) => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
+  const { dx } = useArtboardStretch();
   const [chatOpening, setChatOpening] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const roster = useMemo(
@@ -586,7 +588,7 @@ export function EngineersView({
       ) : (
         <div
           className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
-          style={{ left: 180, top: 132, width: 1710, height: 418 }}
+          style={{ left: 180, top: 132, width: 1710 + dx, height: 418 }}
         >
           <div className="absolute inset-y-0 left-0 w-[274px] bg-figma-ink" />
           <FigmaText className="absolute left-[306px] top-[35px] font-murs text-[32px] tracking-[0.64px] text-figma-ink">
@@ -598,6 +600,10 @@ export function EngineersView({
       <div
         ref={ringRef}
         className="engineer-ring-stage absolute inset-0"
+        // The ring is drawn around a fixed point of the 1920 board. Spare width is
+        // shared either side of it, so the carousel stays centred on the canvas the
+        // window actually gives instead of hugging its left half.
+        style={{ transform: `translateX(${dx / 2}px)` }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -652,7 +658,7 @@ export function EngineersView({
                 .finally(() => setChatOpening(false));
             }}
             className="absolute z-20 flex h-[51px] w-[225px] items-center rounded-[27px] bg-figma-bee px-[16px] disabled:cursor-not-allowed disabled:opacity-45"
-            style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
+            style={{ left: RING_CENTER.x - 112.5 + dx / 2, top: RING_CHAT_TOP }}
           >
             <FigmaText className="font-bold text-[20px] text-figma-ink">
               {t('figma-dashboard.EngineersView.3ad76b849d')}
@@ -669,7 +675,7 @@ export function EngineersView({
             <p
               role="alert"
               className="absolute z-20 max-w-[320px] text-[16px] text-figma-ink"
-              style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP + 58 }}
+              style={{ left: RING_CENTER.x - 112.5 + dx / 2, top: RING_CHAT_TOP + 58 }}
             >
               {chatError}
             </p>
@@ -683,13 +689,13 @@ export function EngineersView({
         motionOn={motionOn}
         placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
         className="h-[51px] w-[284px]"
-        style={{ left: 895, top: RING_SEARCH_TOP }}
+        style={{ left: 895 + dx / 2, top: RING_SEARCH_TOP }}
       />
       <AnimatePresence>
         {scrollHint ? (
           <motion.div
             className="pointer-events-none absolute z-20 flex items-center justify-center gap-[14px] text-figma-ink"
-            style={{ left: 895, top: RING_SEARCH_TOP + 64, width: 284 }}
+            style={{ left: 895 + dx / 2, top: RING_SEARCH_TOP + 64, width: 284 }}
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 6 }}
@@ -758,13 +764,14 @@ function EngineerDossier({
   onCancelDelete: () => void;
   onConfirmDelete: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   const portrait = ENGINEER_PORTRAITS[engineer.photoIndex] ?? ENGINEER_PORTRAITS[0];
   const offline = engineer.availability === 'offline';
 
   return (
     <div
       className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
-      style={{ left: 180, top: 132, width: 1710, height: 418 }}
+      style={{ left: 180, top: 132, width: 1710 + dx, height: 418 }}
     >
       <div className="absolute inset-y-0 left-0 w-[274px] overflow-hidden bg-figma-ink">
         <img

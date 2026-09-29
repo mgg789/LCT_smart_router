@@ -55,14 +55,14 @@ export function EngineerSettings({
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.16 }}
           className="flex shrink-0 items-center justify-center disabled:opacity-50"
-          style={{ width: eu(32), height: eu(32) }}
+          style={{ width: eu(44), height: eu(44) }}
         >
           <FigmaIcon
             src={ENGINEER_ASSETS.back}
             alt=""
             width={32}
             height={29}
-            style={{ width: eu(32), height: eu(29) }}
+            style={{ width: eu(40), height: eu(36) }}
           />
         </motion.button>
         <h1
@@ -89,7 +89,7 @@ export function EngineerSettings({
         <label
           className="block font-semibold text-figma-ink"
           htmlFor="eng-settings-name"
-          style={{ marginTop: eu(48), fontSize: eu(22) }}
+          style={{ marginTop: eu(48), fontSize: eu(26) }}
         >
           {t('figma-engineer.EngineerSettings.1da7e9372e')}
           <input
@@ -104,10 +104,10 @@ export function EngineerSettings({
             className={FIELD}
             style={{
               marginTop: eu(12),
-              height: eu(80),
+              height: eu(88),
               borderRadius: eu(20),
               padding: `0 ${eu(24)}`,
-              fontSize: eu(24),
+              fontSize: eu(26),
             }}
           />
         </label>
@@ -115,7 +115,7 @@ export function EngineerSettings({
         <label
           className="block font-semibold text-figma-ink"
           htmlFor="eng-settings-email"
-          style={{ marginTop: eu(28), fontSize: eu(22) }}
+          style={{ marginTop: eu(28), fontSize: eu(26) }}
         >
           {t('figma-engineer.EngineerSettings.969ccbd3cf')}
           <input
@@ -128,15 +128,15 @@ export function EngineerSettings({
             className={FIELD}
             style={{
               marginTop: eu(12),
-              height: eu(80),
+              height: eu(88),
               borderRadius: eu(20),
               padding: `0 ${eu(24)}`,
-              fontSize: eu(24),
+              fontSize: eu(26),
             }}
           />
         </label>
 
-        <p className="font-semibold text-figma-ink" style={{ marginTop: eu(28), fontSize: eu(22) }}>
+        <p className="font-semibold text-figma-ink" style={{ marginTop: eu(28), fontSize: eu(26) }}>
           {t('figma-engineer.EngineerSettings.826f702afc')}
         </p>
         <div className="flex flex-wrap" style={{ marginTop: eu(12), gap: eu(12) }}>
@@ -152,10 +152,10 @@ export function EngineerSettings({
                   active ? 'bg-figma-ink text-white' : 'bg-figma-track text-figma-ink'
                 }`}
                 style={{
-                  height: eu(56),
+                  height: eu(64),
                   borderRadius: 999,
-                  padding: `0 ${eu(24)}`,
-                  fontSize: eu(22),
+                  padding: `0 ${eu(28)}`,
+                  fontSize: eu(24),
                 }}
               >
                 {option.label}
@@ -167,7 +167,7 @@ export function EngineerSettings({
         {error || saveError ? (
           <p
             className="font-medium text-figma-muted"
-            style={{ marginTop: eu(20), fontSize: eu(20) }}
+            style={{ marginTop: eu(20), fontSize: eu(22) }}
           >
             {error ?? saveError}
           </p>
