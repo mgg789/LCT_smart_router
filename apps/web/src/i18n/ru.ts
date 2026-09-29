@@ -748,7 +748,7 @@ export const ru = {
   'figma-dashboard.DashboardHeaderControls.79953852a9': 'День заново',
   'figma-dashboard.DashboardHeaderControls.d613027d96': 'Сбросить данные',
   'figma-dashboard.DashboardHeaderControls.5690c2e63b': 'Выйти',
-  'figma-dashboard.DashboardHeaderControls.18f4939c70': 'v1.9.3',
+  'figma-dashboard.DashboardHeaderControls.18f4939c70': 'v1.9.4',
   'figma-dashboard.DashboardHeaderControls.bb25ab0a14': 'Метрики плана',
   'figma-dashboard.DashboardHeaderControls.71038c53bb': 'Добавить',
   'figma-dashboard.DashboardHeaderControls.0a8232003c': 'Моя политика',

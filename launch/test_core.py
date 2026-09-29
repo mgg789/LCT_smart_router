@@ -89,6 +89,32 @@ class CoreTests(unittest.TestCase):
                 core.validate_options(options)
         core.validate_options({"mode": "headless", "api_port": 8000})
 
+    def test_archive_text_formats_normalize_crlf_without_changing_binary_hashes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            names = (
+                "core/pyproject.toml",
+                "core/.coveragerc",
+                "services/route-engine3/LICENSE",
+                "services/route-engine3/graph-tools/profiles/foot.lua",
+            )
+            content = b"first line\nsecond line\n"
+            manifest = {}
+            for name in names:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content.replace(b"\n", b"\r\n"))
+                manifest[name] = hashlib.sha256(content).hexdigest()
+            binary = b"\x00\xff\r\n"
+            (root / "graph.bin").write_bytes(binary)
+            manifest["graph.bin"] = hashlib.sha256(binary).hexdigest()
+            (root / "launch").mkdir()
+            (root / "launch/manifest.json").write_text(json.dumps(manifest))
+            with patch.object(core, "ROOT", root):
+                self.assertEqual(core.check_integrity(), [])
+                (root / "graph.bin").write_bytes(binary.replace(b"\r\n", b"\n"))
+                self.assertEqual(core.check_integrity(), ["graph.bin"])
+
     def test_env_is_data(self):
         self.assertEqual(core.parse_env("speed_up_work_stub=1800"), {"speed_up_work_stub": "1800"})
         self.assertEqual(
