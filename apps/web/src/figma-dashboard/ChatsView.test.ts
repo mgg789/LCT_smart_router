@@ -145,7 +145,7 @@ describe('ChatsView', () => {
     expect(html).not.toContain('Ожидает ответа');
   });
 
-  it('renders a finished chat read-only, with no composer and no «Завершить чат»', () => {
+  it('keeps a finished chat in place, without «Завершить чат», and still lets a message rejoin it', () => {
     const html = renderToStaticMarkup(
       createElement(ChatsView, {
         token: 'tok',
@@ -160,11 +160,10 @@ describe('ChatsView', () => {
         onOpenEngineer: noopOpenEngineer,
       }),
     );
-    expect(html).toContain('Чат завершён');
-    // The frame always draws a composer, so a finished chat is proved read-only by the
-    // controls being disabled — not by them being gone.
+    expect(html).toContain('Диалог ведёт ассистент');
     expect(html).not.toContain('>Завершить чат<');
-    expect(html).toMatch(/<input[^>]*placeholder="Чат завершён"[^>]*disabled/);
+    expect(html).toMatch(/<input[^>]*placeholder="Отправьте сообщение"/);
+    expect(html).not.toMatch(/<input[^>]*disabled=""/);
   });
 
   /** The frame previews the newest line. A chat with none yet has nothing to preview, and
@@ -198,7 +197,7 @@ describe('ChatsView', () => {
     expect(originLabel(empty('user', 'client'))).toBe('Клиент попросил диспетчера');
   });
 
-  it('renders two handover episodes of the same conversation as two distinct rows', () => {
+  it('renders two handover episodes of the same conversation as two rows when both are passed', () => {
     const html = renderToStaticMarkup(
       createElement(ChatsView, {
         token: 'tok',

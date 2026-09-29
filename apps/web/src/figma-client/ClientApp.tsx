@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { DeskShell } from '../figma-engineer/DeskShell';
@@ -64,6 +64,27 @@ export function ClientApp() {
   const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
+  const [chatUnread, setChatUnread] = useState(false);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
+  const chatSeen = useRef(0);
+  const chatPrimed = useRef(false);
+  const onChatInbox = useCallback((report: { seq: number; preview: string; active: boolean }) => {
+    if (!chatPrimed.current) {
+      chatPrimed.current = true;
+      chatSeen.current = report.seq;
+      return;
+    }
+    if (report.active) {
+      chatSeen.current = Math.max(chatSeen.current, report.seq);
+      setChatUnread(false);
+      setChatNotice(null);
+      return;
+    }
+    if (report.seq > chatSeen.current) {
+      setChatUnread(true);
+      setChatNotice(report.preview.trim().slice(0, 80));
+    }
+  }, []);
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
   const [requests, setRequests] = useState<ClientRequestView[]>([]);
   const [openedId, setOpenedId] = useState<string | null>(null);
@@ -372,6 +393,8 @@ export function ClientApp() {
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
       docked
+      chatUnread={chatUnread}
+      chatNotice={chatNotice}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => undefined}
@@ -387,6 +410,8 @@ export function ClientApp() {
   const menuDrawer = (
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
+      chatUnread={chatUnread}
+      chatNotice={chatNotice}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => setMenuOpen(false)}
@@ -493,6 +518,20 @@ export function ClientApp() {
             selectedId={openedId}
           />
         ) : null}
+        {session && screen !== 'support' ? (
+          <div className="hidden" aria-hidden>
+            <ClientSupport
+              token={session.token}
+              contactName={draft.contactName || null}
+              sessionScope={session.email}
+              active={false}
+              onInbox={onChatInbox}
+              onSessionExpired={forgetSession}
+              onOperationApplied={() => undefined}
+              onOpenRequest={() => undefined}
+            />
+          </div>
+        ) : null}
         {screen === 'support' ? (
           <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
             {session ? (
@@ -500,6 +539,8 @@ export function ClientApp() {
                 token={session.token}
                 contactName={draft.contactName || null}
                 sessionScope={session.email}
+                active
+                onInbox={onChatInbox}
                 onSessionExpired={forgetSession}
                 onOperationApplied={() => {
                   void refreshHistory(session.token).catch((error: unknown) => {

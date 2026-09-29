@@ -74,6 +74,8 @@ export function buildCallDispatchHelperTool(
             engineerIds: ctx.engineerId ? [ctx.engineerId] : [],
             state: 'waiting',
             startSeq: last._max.seq ?? 0,
+            // What was already said is context. Only messages after this point badge.
+            dispatcherLastReadSeq: last._max.seq ?? 0,
             createdAt: BigInt(ctx.now),
           },
         });

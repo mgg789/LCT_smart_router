@@ -57,11 +57,14 @@ export function SidebarNav({
   onSelect,
   onUpload,
   motionOn,
+  chatsUnread = false,
 }: {
   activeNav: NavItemId;
   onSelect: (id: NavItemId) => void;
   onUpload: () => void;
   motionOn: boolean;
+  /** Yellow dot on «Чаты» while any dialogue has a message the dispatcher has not read. */
+  chatsUnread?: boolean;
 }) {
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeNav);
   const railRef = useRef<HTMLElement | null>(null);
@@ -138,6 +141,12 @@ export function SidebarNav({
               >
                 {item.label}
               </FigmaText>
+              {item.id === 'chats' && chatsUnread ? (
+                <span
+                  aria-hidden
+                  className="absolute top-[8px] right-[18px] z-10 size-[10px] rounded-full bg-figma-bee"
+                />
+              ) : null}
             </button>
           );
         })}

@@ -25,7 +25,7 @@ export function DashboardChats({
   token: string | null;
   focusChatId?: string | null;
   snapshot: DashboardSnapshot | null;
-  onOpenEngineer: (engineerId: string) => Promise<DispatchChatView>;
+  onOpenEngineer: (engineerId: string, text: string) => Promise<DispatchChatView>;
 }) {
   const [chats, setChats] = useState<DispatchChatView[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,8 +92,8 @@ export function DashboardChats({
             canChat: hasAccount,
           }),
         )}
-        onOpenEngineer={async (engineerId) => {
-          const chat = await onOpenEngineer(engineerId);
+        onOpenEngineer={async (engineerId, text) => {
+          const chat = await onOpenEngineer(engineerId, text);
           setChats((current) => [
             chat,
             ...(current ?? []).filter((item) => item.handoff.id !== chat.handoff.id),

@@ -7,7 +7,8 @@ import { AiMarkdown } from './AiMarkdown';
 import { AnimatedCapsuleTabs } from './AnimatedCapsuleTabs';
 import { AnimatedEngineerSearch } from './AnimatedEngineerSearch';
 import { useArtboardStretch } from './artboardStretch';
-import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
+import { FIGMA_ASSETS } from './assets';
+import { engineerPortrait } from './engineerPortrait';
 import { FigmaIcon, FigmaText } from './primitives';
 import { shortRequestId } from './requestsTable';
 
@@ -18,8 +19,13 @@ const THREAD_WIDTH = 963;
 const ROW_STEP = 100;
 const ROW_HEIGHT = 80;
 const BUBBLE_MAX = 682;
-const COMPOSER_WIDTH = 596;
 const HAIRLINE = 'rgba(114,116,120,0.25)';
+
+/** Join and leave notes from before dividers replaced them. They are not part of the stream. */
+const HANDOFF_NOISE = [
+  'Диспетчер подключился к чату.',
+  'Диспетчер завершил чат.',
+];
 
 export interface ChatsViewProps {
   readonly token: string | null;
@@ -36,7 +42,7 @@ export interface ChatsViewProps {
     readonly displayName: string;
     readonly canChat: boolean;
   }[];
-  readonly onOpenEngineer: (engineerId: string) => Promise<DispatchChatView>;
+  readonly onOpenEngineer: (engineerId: string, text: string) => Promise<DispatchChatView>;
 }
 
 type SideFilter = 'engineer' | 'client';
@@ -83,7 +89,9 @@ export function chatName(chat: DispatchChatView): string {
 /** The frame's «В сети - заявка № 1031»: the request when the chat is about one, and in
  *  every case what this dialogue is waiting for. */
 export function chatStatus(chat: DispatchChatView): string {
-  if (chat.handoff.state === 'closed') return t('figma-dashboard.ChatsView.85ce552746');
+  if (chat.handoff.state === 'closed' || chat.conversation.mode === 'ai') {
+    return t('figma-dashboard.ChatsView.assistantLeads');
+  }
   const requestId = chat.handoff.requestIds[0];
   const state =
     chat.handoff.state === 'waiting'
@@ -98,14 +106,12 @@ export function chatStatus(chat: DispatchChatView): string {
 }
 
 /**
- * A stable portrait per conversation. Neither side of a handover carries a photo and the
- * frame is drawn with one, so the pool is cycled by id rather than by list position — a
- * row must not change face when the list reorders around it.
+ * The same face the roster uses for this person. Keyed by engineer id and name, so a row,
+ * the thread header and the engineer card cannot drift onto different portraits.
  */
-function portraitFor(id: string): string {
-  let sum = 0;
-  for (let index = 0; index < id.length; index += 1) sum += id.charCodeAt(index);
-  return ENGINEER_PORTRAITS[sum % ENGINEER_PORTRAITS.length] as string;
+function portraitForChat(chat: DispatchChatView): string {
+  const engineerId = chat.handoff.engineerIds[0] ?? chat.conversation.id;
+  return engineerPortrait(engineerId, chatName(chat));
 }
 
 /**
@@ -113,17 +119,12 @@ function portraitFor(id: string): string {
  *
  * Drawn as the frame has it: a 430-wide card with search, an «Инженеры / Клиенты» switch
  * and 80-unit rows on a 100 step; beside it a 963-wide thread with a header strip, the
- * messages, and one 596-wide composer centred under them. Spare board height goes to both
+ * messages, and a composer the same width as that header. Spare board height goes to both
  * columns, spare width to the thread.
  *
- * Two things the frame does not draw, and why they are here anyway. «Завершить чат» is the
- * only way to hand a dialogue back to the assistant, and it sits in the free right half of
- * the header strip. And a divider marks where the handover began: everything above it was
- * addressed to the assistant, and without the mark it reads as words said to a dispatcher
- * who was not there yet.
- *
- * Rows are keyed by `handoff.id`, not `conversation.id`: the same person can be handed
- * over several times in a day and each episode is its own row.
+ * «Завершить чат» hands the dialogue back to the assistant without starting a second chat:
+ * one person is one row, ordered by the last message, and the next message from the
+ * dispatcher joins that same row again.
  */
 export function ChatsView({
   token,
@@ -143,7 +144,10 @@ export function ChatsView({
   const [side, setSide] = useState<SideFilter>('engineer');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [openingEngineerId, setOpeningEngineerId] = useState<string | null>(null);
+  const [pendingEngineer, setPendingEngineer] = useState<{
+    readonly id: string;
+    readonly displayName: string;
+  } | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   useEffect(() => {
     if (!focusChatId) return;
@@ -156,9 +160,12 @@ export function ChatsView({
 
   const all = useMemo(() => {
     const list = chats ?? [];
-    const live = list.filter((chat) => chat.handoff.state !== 'closed');
-    const done = list.filter((chat) => chat.handoff.state === 'closed');
-    return [...live, ...done];
+    return [...list].sort((left, right) => {
+      const leftAt = lastMessage(left)?.createdAt ?? left.handoff.createdAt;
+      const rightAt = lastMessage(right)?.createdAt ?? right.handoff.createdAt;
+      if (rightAt !== leftAt) return rightAt - leftAt;
+      return left.conversation.id.localeCompare(right.conversation.id);
+    });
   }, [chats]);
 
   const rows = useMemo(() => {
@@ -175,10 +182,7 @@ export function ChatsView({
     if (side !== 'engineer') return [];
     const activeEngineerIds = new Set(
       all
-        .filter(
-          (chat) =>
-            chat.handoff.state !== 'closed' && sideOf(chat.conversation.roleProfile) === 'engineer',
-        )
+        .filter((chat) => sideOf(chat.conversation.roleProfile) === 'engineer')
         .flatMap((chat) => chat.handoff.engineerIds),
     );
     const needle = query.trim().toLocaleLowerCase('ru-RU');
@@ -189,10 +193,13 @@ export function ChatsView({
     );
   }, [all, engineers, query, side]);
 
-  const selected = rows.find((chat) => chat.handoff.id === selectedId) ?? rows[0] ?? null;
-  const liveRows = rows.filter((chat) => chat.handoff.state !== 'closed');
-  const closedRows = rows.filter((chat) => chat.handoff.state === 'closed');
-  const displayRows = side === 'engineer' ? [...liveRows, ...closedRows] : rows;
+  const selected = pendingEngineer
+    ? null
+    : (rows.find((chat) => chat.handoff.id === selectedId) ??
+      rows.find((chat) => chat.handoff.state !== 'closed') ??
+      rows[0] ??
+      null);
+  const displayRows = rows;
 
   useEffect(() => {
     if (!selected || selected.unreadCount === 0) return;
@@ -207,11 +214,23 @@ export function ChatsView({
   async function submit(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
-    if (!selected || text.length === 0 || sending || writesDisabled) return;
+    if (text.length === 0 || sending || writesDisabled) return;
     setSending(true);
     setDraft('');
     try {
+      if (pendingEngineer && !selected) {
+        const chat = await onOpenEngineer(pendingEngineer.id, text);
+        setSelectedId(chat.handoff.id);
+        setPendingEngineer(null);
+        return;
+      }
+      if (!selected) return;
       await onSendMessage(selected.conversation.id, text);
+    } catch (cause: unknown) {
+      setOpenError(
+        cause instanceof Error ? cause.message : t('figma-dashboard.ChatsView.engineerOpenFailed'),
+      );
+      setDraft(text);
     } finally {
       setSending(false);
     }
@@ -231,7 +250,17 @@ export function ChatsView({
     );
   }
 
-  const closed = selected?.handoff.state === 'closed';
+  const handoffOpen =
+    selected !== null &&
+    selected.handoff.state !== 'closed' &&
+    selected.conversation.mode !== 'ai';
+  const threadName = selected ? chatName(selected) : (pendingEngineer?.displayName ?? '');
+  const threadPortrait = selected
+    ? portraitForChat(selected)
+    : pendingEngineer
+      ? engineerPortrait(pendingEngineer.id, pendingEngineer.displayName)
+      : '';
+  const threadOpen = selected !== null || pendingEngineer !== null;
 
   return (
     <section
@@ -296,61 +325,35 @@ export function ChatsView({
                 </FigmaText>
               ) : (
                 <>
-                  {displayRows
-                    .slice(0, side === 'engineer' ? liveRows.length : displayRows.length)
-                    .map((chat, index) => (
-                      <ChatRow
-                        key={chat.handoff.id}
-                        chat={chat}
-                        top={index * ROW_STEP}
-                        last={
-                          index ===
-                            (side === 'engineer' ? liveRows.length : displayRows.length) - 1 &&
-                          engineersToStart.length === 0 &&
-                          (side !== 'engineer' || closedRows.length === 0)
-                        }
-                        selected={selected?.handoff.id === chat.handoff.id}
-                        onSelect={() => setSelectedId(chat.handoff.id)}
-                      />
-                    ))}
+                  {displayRows.map((chat, index) => (
+                    <ChatRow
+                      key={chat.conversation.id}
+                      chat={chat}
+                      top={index * ROW_STEP}
+                      last={index === displayRows.length - 1 && engineersToStart.length === 0}
+                      selected={selected?.handoff.id === chat.handoff.id && pendingEngineer === null}
+                      onSelect={() => {
+                        setPendingEngineer(null);
+                        setSelectedId(chat.handoff.id);
+                      }}
+                    />
+                  ))}
                   {engineersToStart.map((engineer, index) => (
                     <EngineerStartRow
                       key={engineer.id}
                       engineer={engineer}
-                      top={(liveRows.length + index) * ROW_STEP}
-                      last={
-                        index === engineersToStart.length - 1 &&
-                        (side !== 'engineer' || closedRows.length === 0)
-                      }
-                      opening={openingEngineerId === engineer.id}
+                      top={(displayRows.length + index) * ROW_STEP}
+                      last={index === engineersToStart.length - 1}
+                      opening={sending && pendingEngineer?.id === engineer.id}
                       writesDisabled={writesDisabled}
+                      selected={pendingEngineer?.id === engineer.id}
                       onSelect={() => {
                         setOpenError(null);
-                        setOpeningEngineerId(engineer.id);
-                        void onOpenEngineer(engineer.id)
-                          .catch((cause: unknown) => {
-                            setOpenError(
-                              cause instanceof Error
-                                ? cause.message
-                                : t('figma-dashboard.ChatsView.engineerOpenFailed'),
-                            );
-                          })
-                          .finally(() => setOpeningEngineerId(null));
+                        setSelectedId(null);
+                        setPendingEngineer({ id: engineer.id, displayName: engineer.displayName });
                       }}
                     />
                   ))}
-                  {side === 'engineer'
-                    ? closedRows.map((chat, index) => (
-                        <ChatRow
-                          key={chat.handoff.id}
-                          chat={chat}
-                          top={(liveRows.length + engineersToStart.length + index) * ROW_STEP}
-                          last={index === closedRows.length - 1}
-                          selected={selected?.handoff.id === chat.handoff.id}
-                          onSelect={() => setSelectedId(chat.handoff.id)}
-                        />
-                      ))
-                    : null}
                 </>
               )}
             </motion.div>
@@ -358,7 +361,7 @@ export function ChatsView({
         </div>
       </div>
 
-      {selected ? (
+      {threadOpen ? (
         <>
           <div
             className="absolute flex items-center rounded-[30px] bg-white"
@@ -366,23 +369,25 @@ export function ChatsView({
           >
             <img
               alt=""
-              src={portraitFor(selected.conversation.id)}
+              src={threadPortrait}
               className="shrink-0 rounded-full object-cover"
               style={{ width: 54, height: 54 }}
             />
             <span className="min-w-0" style={{ marginLeft: 14 }}>
               <FigmaText className="figma-nowrap block font-murs text-[20px] text-figma-ink">
-                {chatName(selected)}
+                {threadName}
               </FigmaText>
               <FigmaText
                 className="figma-nowrap block font-semibold text-[18px] text-[#727478]"
                 style={{ marginTop: 5 }}
               >
-                {chatStatus(selected)}
+                {selected
+                  ? chatStatus(selected)
+                  : t('figma-dashboard.ChatsView.startEngineerChat')}
               </FigmaText>
             </span>
             <span className="flex-1" />
-            {closed ? null : (
+            {handoffOpen && selected ? (
               <button
                 type="button"
                 disabled={writesDisabled}
@@ -392,7 +397,7 @@ export function ChatsView({
               >
                 {t('figma-dashboard.ChatsView.14f7a99f9a')}
               </button>
-            )}
+            ) : null}
           </div>
 
           <div
@@ -402,18 +407,11 @@ export function ChatsView({
           >
             <div className="flex flex-col" style={{ gap: 40 }}>
               <AnimatePresence initial={false}>
-                {selected.messages.map((message, index) => (
-                  <Bubble
-                    key={message.id}
-                    message={message}
-                    motionOn={!reduceMotion}
-                    handoverStartsHere={
-                      index > 0 &&
-                      message.seq > selected.handoff.startSeq &&
-                      (selected.messages[index - 1]?.seq ?? 0) <= selected.handoff.startSeq
-                    }
-                  />
-                ))}
+                {(selected?.messages ?? [])
+                  .filter((message) => !HANDOFF_NOISE.some((noise) => message.text.startsWith(noise)))
+                  .map((message) => (
+                    <Bubble key={message.id} message={message} motionOn={!reduceMotion} />
+                  ))}
               </AnimatePresence>
             </div>
           </div>
@@ -422,42 +420,34 @@ export function ChatsView({
             onSubmit={submit}
             className="absolute"
             style={{
-              left: THREAD_LEFT + (THREAD_WIDTH + dx - COMPOSER_WIDTH) / 2,
+              left: THREAD_LEFT,
               top: 801 + dy,
-              width: COMPOSER_WIDTH,
+              width: THREAD_WIDTH + dx,
             }}
           >
             <div
               className="relative overflow-hidden rounded-[200px] bg-figma-ink"
               style={{ height: 79 }}
             >
-              {/* Drawn in the frame, with nothing behind it yet: shown, and plainly off. */}
-              <button
-                type="button"
-                disabled
-                aria-label={t('figma-dashboard.ChatsView.414b22e6f4')}
-                title={t('figma-dashboard.ChatsView.fdf8452243')}
-                className="absolute flex cursor-not-allowed items-center justify-center rounded-full bg-figma-bee opacity-40"
+              <span
+                aria-hidden
+                className="pointer-events-none absolute flex items-center justify-center rounded-full bg-figma-bee"
                 style={{ left: 10, top: 10, width: 60, height: 60 }}
               >
-                <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={20} height={20} />
-              </button>
+                <FigmaIcon src={FIGMA_ASSETS.brandLine} alt="" width={28} height={28} />
+              </span>
               <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                disabled={writesDisabled || closed}
-                placeholder={
-                  closed
-                    ? t('figma-dashboard.ChatsView.85ce552746')
-                    : t('figma-dashboard.ChatsView.c05ba20c41')
-                }
+                disabled={writesDisabled}
+                placeholder={t('figma-dashboard.ChatsView.c05ba20c41')}
                 aria-label={t('figma-dashboard.ChatsView.04bbba543c')}
                 className="absolute bg-transparent font-semibold text-[20px] text-[#ededed] outline-none placeholder:text-[#ededed] disabled:opacity-50"
                 style={{ left: 85, right: 83, top: 0, height: 79 }}
               />
               <button
                 type="submit"
-                disabled={writesDisabled || sending || draft.trim().length === 0 || closed}
+                disabled={writesDisabled || sending || draft.trim().length === 0}
                 aria-label={t('figma-dashboard.ChatsView.ceb68a9287')}
                 className="absolute flex items-center justify-center rounded-full bg-[rgba(255,255,255,0.06)] disabled:opacity-40"
                 style={{ right: 10, top: 8, width: 63, height: 63 }}
@@ -538,15 +528,15 @@ function ChatRow({
       {selected ? (
         <span
           aria-hidden
-          className="absolute rounded-[20px] bg-figma-canvas"
-          style={{ left: -7, top: -6, width: 405, height: 91 }}
+          className="absolute rounded-[16px] bg-figma-canvas"
+          style={{ left: 0, top: 4, width: 376, height: 72 }}
         />
       ) : null}
       <img
         alt=""
-        src={portraitFor(chat.conversation.id)}
+        src={portraitForChat(chat)}
         className="absolute rounded-full object-cover"
-        style={{ left: 0, top: 0, width: 60, height: 60 }}
+        style={{ left: 8, top: 10, width: 60, height: 60 }}
       />
       <FigmaText
         className="figma-nowrap absolute overflow-hidden text-ellipsis font-murs text-[20px] text-figma-ink"
@@ -591,6 +581,7 @@ function EngineerStartRow({
   last,
   opening,
   writesDisabled,
+  selected,
   onSelect,
 }: {
   engineer: { readonly id: string; readonly displayName: string; readonly canChat: boolean };
@@ -598,6 +589,7 @@ function EngineerStartRow({
   last: boolean;
   opening: boolean;
   writesDisabled: boolean;
+  selected: boolean;
   onSelect: () => void;
 }) {
   const canStart = engineer.canChat && !writesDisabled;
@@ -609,11 +601,18 @@ function EngineerStartRow({
       className="absolute block w-[390px] text-left disabled:opacity-60"
       style={{ left: 7, top, height: ROW_HEIGHT }}
     >
+      {selected ? (
+        <span
+          aria-hidden
+          className="absolute rounded-[16px] bg-figma-canvas"
+          style={{ left: 0, top: 4, width: 376, height: 72 }}
+        />
+      ) : null}
       <img
         alt=""
-        src={portraitFor(engineer.id)}
+        src={engineerPortrait(engineer.id, engineer.displayName)}
         className="absolute rounded-full object-cover"
-        style={{ left: 0, top: 0, width: 60, height: 60 }}
+        style={{ left: 8, top: 10, width: 60, height: 60 }}
       />
       <FigmaText
         className="figma-nowrap absolute overflow-hidden text-ellipsis font-murs text-[20px] text-figma-ink"
@@ -651,24 +650,13 @@ function EngineerStartRow({
 function Bubble({
   message,
   motionOn,
-  handoverStartsHere,
 }: {
   message: AiMessage;
   motionOn: boolean;
-  handoverStartsHere: boolean;
 }) {
   const mine = message.author === 'dispatcher';
   return (
     <>
-      {handoverStartsHere ? (
-        <div className="flex items-center" style={{ gap: 16 }}>
-          <span className="flex-1" style={{ height: 1, background: HAIRLINE }} />
-          <FigmaText className="figma-nowrap font-semibold text-[15px] text-[#727478] uppercase tracking-[0.08em]">
-            {t('figma-dashboard.ChatsView.910778e14c')}
-          </FigmaText>
-          <span className="flex-1" style={{ height: 1, background: HAIRLINE }} />
-        </div>
-      ) : null}
       <motion.div
         className={`flex w-full ${mine ? 'justify-end' : 'justify-start'}`}
         initial={motionOn ? { opacity: 0, y: 12 } : false}

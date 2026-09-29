@@ -18,7 +18,6 @@ import {
   type AiOperationView,
   type AssistantChatMessage,
   type AssistantSurface,
-  type HandoffStatus,
   useAssistantChat,
 } from '../../hooks/useAssistantChat';
 import { t } from '../../i18n';
@@ -50,6 +49,8 @@ export function PhoneAiPane({
   onSessionExpired,
   onOperationApplied,
   onOpenObject,
+  active = true,
+  onInbox,
 }: {
   token: string | null;
   surface: Extract<AssistantSurface, 'client' | 'engineer'>;
@@ -68,6 +69,10 @@ export function PhoneAiPane({
   onOperationApplied?: () => void;
   /** Opens a validated object action from an assistant message. */
   onOpenObject?: (target: { type: 'request' | 'engineer' | 'alert'; id: string }) => void;
+  /** False while the pane is only listening, so a new line can badge the menu. */
+  active?: boolean;
+  /** Latest incoming line. The menu uses it for the unread dot and the notice. */
+  onInbox?: (report: { seq: number; preview: string; active: boolean }) => void;
 }) {
   const offline = isNavixOffline();
   const chat = useAssistantChat({ token: offline ? null : token, surface, sessionScope });
@@ -99,11 +104,21 @@ export function PhoneAiPane({
    * it works, a person does not.
    */
   const spoken = chat.messages.filter((message) => {
+    if (isHandoffNoise(message.text)) return false;
     if (message.author === 'user' || message.author === 'dispatcher') return true;
     if (message.author === 'system') return message.text.trim().length > 0;
     if (message.author !== 'assistant') return false;
     return message.text.trim().length > 0 || message.actions.length > 0;
   });
+  useEffect(() => {
+    const incoming = spoken.filter((message) => message.author !== 'user' && !message.pending);
+    const latest = incoming[incoming.length - 1];
+    onInbox?.({
+      seq: latest?.seq ?? 0,
+      preview: latest?.text ?? '',
+      active,
+    });
+  }, [spoken, active, onInbox]);
   /** A person holds the dialogue: either yet to answer, or already answering. */
   const handedOver = chat.handoffStatus !== null;
   const empty = !chat.loading && spoken.length === 0;
@@ -198,15 +213,13 @@ export function PhoneAiPane({
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
-        className="flex items-end bg-figma-ink"
+        className="flex items-center bg-figma-ink"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
         style={{
-          minHeight: eu(112),
-          borderRadius: eu(56),
+          height: eu(98),
+          borderRadius: eu(49),
           paddingLeft: eu(10),
           paddingRight: eu(10),
-          paddingTop: eu(12),
-          paddingBottom: eu(12),
           gap: eu(10),
         }}
       >
@@ -322,15 +335,16 @@ export function PhoneAiPane({
              * the history it stopped answering the question a reader has while reading
              * the newest line.
              */}
-            <HandoffBanner status={chat.handoffStatus} />
             <div
               ref={scrollRef}
-              className="min-h-0 flex-1 overflow-y-auto"
+              className="lct-chat-scroll min-h-0 flex-1 overflow-y-auto"
               style={{ paddingBottom: eu(140) }}
             >
               <div className="flex flex-col" style={{ gap: eu(28) }}>
-                {spoken.map((message, index) =>
-                  message.kind !== 'text' || message.author === 'system' ? (
+                {spoken.map((message, index) => (
+                  <div key={message.id} className="flex flex-col" style={{ gap: eu(28) }}>
+                    <TurnDivider kind={dividerBefore(spoken, index)} />
+                    {message.kind !== 'text' || message.author === 'system' ? (
                     <ChatMessage
                       key={message.id}
                       message={message}
@@ -370,8 +384,9 @@ export function PhoneAiPane({
                       }}
                       onFollowUp={canFollowUp ? fillFollowUp : undefined}
                     />
-                  ),
-                )}
+                    )}
+                  </div>
+                ))}
                 {thinking ? <ThinkingRow avatar={avatar} /> : null}
                 <ChatBottomSpacer />
               </div>
@@ -598,33 +613,44 @@ function AssistantBubble({
   );
 }
 
-/**
- * Says the dialogue has left the assistant, and whether the answer is still on
- * its way. Without it a reply signed «Диспетчер» reads as the model playing a
- * part, and the silence before it reads as the assistant having stalled.
- */
-export function HandoffBanner({ status }: { status: HandoffStatus }) {
-  if (status === null) return null;
+const HANDOFF_NOISE = ['Диспетчер подключился к чату.', 'Диспетчер завершил чат.'];
+
+function isHandoffNoise(text: string): boolean {
+  return HANDOFF_NOISE.some((noise) => text.startsWith(noise));
+}
+
+/** Who starts speaking at this line: the dispatcher, or the assistant taking the chat back. */
+export function dividerBefore(
+  messages: readonly { author: string }[],
+  index: number,
+): 'dispatcher' | 'assistant' | null {
+  const message = messages[index];
+  if (!message || message.author === 'system' || message.author === 'user') return null;
+  const previous = [...messages.slice(0, index)]
+    .reverse()
+    .find((item) => item.author === 'assistant' || item.author === 'dispatcher');
+  if (message.author === 'dispatcher' && previous?.author !== 'dispatcher') return 'dispatcher';
+  if (message.author === 'assistant' && previous?.author === 'dispatcher') return 'assistant';
+  return null;
+}
+
+/** The only handover marks on a client or engineer chat: a strip, not a system bubble. */
+export function TurnDivider({ kind }: { kind: 'dispatcher' | 'assistant' | null }) {
+  if (kind === null) return null;
+  const label =
+    kind === 'dispatcher'
+      ? t('figma-dashboard.ChatsView.910778e14c')
+      : t('components.ai.PhoneAiPane.handedToAssistant');
   return (
-    <div
-      className="flex shrink-0 items-center bg-white"
-      style={{
-        marginBottom: eu(28),
-        gap: eu(14),
-        borderRadius: eu(20),
-        padding: `${eu(18)} ${eu(24)}`,
-      }}
-    >
-      <span
-        className={status === 'answered' ? 'bg-figma-bee' : 'bg-figma-muted'}
-        style={{ width: eu(14), height: eu(14), borderRadius: eu(999) }}
-        aria-hidden
-      />
-      <p className="font-medium text-figma-ink" style={{ fontSize: eu(20) }}>
-        {status === 'answered'
-          ? t('components.ai.PhoneAiPane.0c63c73a35')
-          : t('components.ai.PhoneAiPane.7521c4f3fc')}
+    <div className="flex items-center" style={{ gap: eu(16) }}>
+      <span className="flex-1" style={{ height: 1, background: 'rgba(114,116,120,0.35)' }} />
+      <p
+        className="font-semibold uppercase tracking-[0.08em] text-[#727478]"
+        style={{ fontSize: eu(14) }}
+      >
+        {label}
       </p>
+      <span className="flex-1" style={{ height: 1, background: 'rgba(114,116,120,0.35)' }} />
     </div>
   );
 }

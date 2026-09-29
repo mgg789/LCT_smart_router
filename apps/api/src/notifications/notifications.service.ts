@@ -1,7 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConversationService } from '../ai/runtime/conversation.service';
+import { AppConfigService } from '../common/config';
 import type { NotificationCategory } from '../generated/prisma/client';
 import { Prisma } from '../generated/prisma/client';
 import type { Tx } from '../persistence';
+import { renderMail } from './mail-templates';
 import { redactPayload } from './smtp.helpers';
 
 export interface NotificationIntentInput {
@@ -37,6 +40,11 @@ export const MAIL_DISABLED_CATEGORIES = new Set(['plan_rebuilt', 'engineer_atten
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
+
+  constructor(
+    @Optional() private readonly conversations?: ConversationService,
+    @Optional() private readonly config?: AppConfigService,
+  ) {}
 
   /**
    * Writes the intent inside the caller's transaction, so that a saved business change
@@ -92,6 +100,46 @@ export class NotificationsService {
         state: 'pending_submission',
         createdAt: BigInt(now),
       },
+    });
+    if (account !== null && input.category !== 'account_login_code') {
+      await this.mirrorIntoChat(tx, now, account.id, input.category, input.payload);
+    }
+  }
+
+  /**
+   * The same notice the person was emailed, written into their own assistant chat.
+   *
+   * Login codes stay out of the dialogue: a chat history is not a place a way in
+   * should rest. Anyone who is not a client or an engineer has no such chat.
+   */
+  private async mirrorIntoChat(
+    tx: Tx,
+    now: number,
+    accountId: string,
+    category: NotificationCategory,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.conversations || !this.config) return;
+    const roles = await tx.accountRole.findMany({
+      where: { accountId, role: { in: ['client', 'engineer'] } },
+    });
+    const role = roles.find((item) => item.role === 'engineer') ?? roles.find((item) => item.role === 'client');
+    if (!role || (role.role !== 'client' && role.role !== 'engineer')) return;
+    const rendered = renderMail(category, payload, {
+      appBaseUrl: this.config.get('SMTP_APP_BASE_URL'),
+      timeZone: this.config.get('APP_TIME_ZONE'),
+    });
+    const text = `${rendered.subject}\n\n${rendered.text}`.trim();
+    if (text.length === 0) return;
+    const conversation = await this.conversations.getOrCreateInTx(tx, {
+      accountId,
+      role: role.role,
+      roleProfile: role.role,
+    });
+    await this.conversations.appendMessage(tx, conversation.id, now, {
+      author: 'system',
+      kind: 'text',
+      text,
     });
   }
 

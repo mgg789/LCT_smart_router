@@ -37,6 +37,8 @@ export function EngineerAiPane({
   quickQuestions = ENGINEER_QUICK_QUESTIONS,
   onOperationApplied,
   onOpenObject,
+  active = true,
+  onInbox,
 }: {
   token: string | null;
   displayName: string | null;
@@ -47,6 +49,8 @@ export function EngineerAiPane({
   quickQuestions?: readonly string[];
   onOperationApplied?: () => void;
   onOpenObject?: (target: { type: 'request' | 'engineer' | 'alert'; id: string }) => void;
+  active?: boolean;
+  onInbox?: (report: { seq: number; preview: string; active: boolean }) => void;
 }) {
   return (
     <PhoneAiPane
@@ -56,6 +60,8 @@ export function EngineerAiPane({
       onSessionExpired={onSessionExpired}
       onOperationApplied={onOperationApplied}
       onOpenObject={onOpenObject}
+      active={active}
+      onInbox={onInbox}
       greeting={engineerGreeting(displayName)}
       quickQuestions={quickQuestions}
       avatar={avatarSrc}

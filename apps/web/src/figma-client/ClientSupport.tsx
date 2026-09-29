@@ -37,6 +37,8 @@ export function ClientSupport({
   onSessionExpired,
   onOperationApplied,
   onOpenRequest,
+  active = true,
+  onInbox,
 }: {
   token: string | null;
   contactName: string | null;
@@ -44,6 +46,8 @@ export function ClientSupport({
   onSessionExpired: () => void;
   onOperationApplied: () => void;
   onOpenRequest: (id: string) => void;
+  active?: boolean;
+  onInbox?: (report: { seq: number; preview: string; active: boolean }) => void;
 }) {
   return (
     <PhoneAiPane
@@ -59,6 +63,8 @@ export function ClientSupport({
       quickQuestions={CLIENT_QUICK_QUESTIONS}
       avatar={FIGMA_ASSETS.aiKolobokClient}
       placeholder={t('figma-client.ClientSupport.8105e6c36e')}
+      active={active}
+      onInbox={onInbox}
     />
   );
 }

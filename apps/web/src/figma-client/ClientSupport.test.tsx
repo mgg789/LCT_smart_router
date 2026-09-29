@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { HandoffBanner } from '../components/ai/PhoneAiPane';
+import { TurnDivider } from '../components/ai/PhoneAiPane';
 import { CLIENT_QUICK_QUESTIONS, clientGreeting } from './ClientSupport';
 
 it('greets the customer by their first name and stays unnamed otherwise', () => {
@@ -17,13 +17,9 @@ it('offers three first-turn questions a customer actually arrives with', () => {
   ]);
 });
 
-/**
- * The banner is the only thing that tells a reader the assistant has stepped
- * aside. Silence while a handover is pending reads as a stalled assistant, so
- * `waiting` has to say something too, not just `answered`.
- */
+/** A strip marks who takes the next lines. The assistant holding the chat draws nothing. */
 it('names who holds the dialogue, and draws nothing while the assistant holds it', () => {
-  expect(renderToStaticMarkup(<HandoffBanner status="waiting" />)).toContain('Передали диспетчеру');
-  expect(renderToStaticMarkup(<HandoffBanner status="answered" />)).toContain('На связи диспетчер');
-  expect(renderToStaticMarkup(<HandoffBanner status={null} />)).toBe('');
+  expect(renderToStaticMarkup(<TurnDivider kind="dispatcher" />)).toContain('Передано диспетчеру');
+  expect(renderToStaticMarkup(<TurnDivider kind="assistant" />)).toContain('Передано ассистенту');
+  expect(renderToStaticMarkup(<TurnDivider kind={null} />)).toBe('');
 });

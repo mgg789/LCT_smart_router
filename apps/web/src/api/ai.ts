@@ -568,11 +568,16 @@ export function openDispatchChat(
   operationId: string,
   target: DispatchChatTarget,
   text?: string,
-): Promise<{ chat: DispatchChatView }> {
-  return requestJson('/api/v1/dispatch/chats', z.object({ chat: dispatchChatSchema }), token, {
-    method: 'POST',
-    body: JSON.stringify({ operationId, target, ...(text ? { text } : {}) }),
-  });
+): Promise<{ chat: DispatchChatView | null }> {
+  return requestJson(
+    '/api/v1/dispatch/chats',
+    z.object({ chat: dispatchChatSchema.nullable() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId, target, ...(text ? { text } : {}) }),
+    },
+  );
 }
 
 /** Sends the dispatcher's own reply into a handed-over conversation. The response's `chat`

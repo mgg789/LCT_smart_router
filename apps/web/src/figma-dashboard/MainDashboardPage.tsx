@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { openDispatchChat } from '../api/ai';
+import { loadDispatchChats, openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
@@ -153,6 +153,28 @@ export function MainDashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
   const [focusedChatId, setFocusedChatId] = useState<string | null>(null);
+  const [chatsUnread, setChatsUnread] = useState(false);
+  useEffect(() => {
+    const token = dash.token;
+    if (!token) {
+      setChatsUnread(false);
+      return;
+    }
+    let stop = false;
+    const tick = () => {
+      void loadDispatchChats(token)
+        .then((result) => {
+          if (!stop) setChatsUnread(result.chats.some((chat) => chat.unreadCount > 0));
+        })
+        .catch(() => undefined);
+    };
+    tick();
+    const timer = window.setInterval(tick, 5_000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [dash.token]);
   const [settledPane, setSettledPane] = useState('main');
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -642,6 +664,7 @@ export function MainDashboardPage() {
           >
             <SidebarNav
               activeNav={activeNav}
+              chatsUnread={chatsUnread}
               motionOn={motionOn}
               onSelect={(id) => {
                 if (isNavLocked(id) || (isNavixOffline() && id === 'ai')) return;
@@ -1103,14 +1126,22 @@ export function MainDashboardPage() {
                       token={dash.token}
                       focusChatId={focusedChatId}
                       snapshot={visibleSnapshot}
-                      onOpenEngineer={async (engineerId) => {
+                      onOpenEngineer={async (engineerId, text) => {
                         if (!dash.token) {
                           throw new Error(t('figma-dashboard.DashboardAssist.df8d670234'));
                         }
-                        const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), {
-                          kind: 'engineer',
-                          engineerId,
-                        });
+                        const { chat } = await openDispatchChat(
+                          dash.token,
+                          crypto.randomUUID(),
+                          {
+                            kind: 'engineer',
+                            engineerId,
+                          },
+                          text,
+                        );
+                        if (!chat) {
+                          throw new Error(t('figma-dashboard.ChatsView.engineerOpenFailed'));
+                        }
                         setFocusedChatId(chat.handoff.id);
                         return chat;
                       }}

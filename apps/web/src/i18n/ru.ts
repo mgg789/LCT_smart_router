@@ -2665,6 +2665,8 @@ export const ru = {
   'components.ai.PhoneAiPane.0c63c73a35':
     'На связи диспетчер. Ассистент вернётся, когда разговор закончится.',
   'components.ai.PhoneAiPane.7521c4f3fc': 'Передали диспетчеру. Ответ придёт сюда же.',
+  'components.ai.PhoneAiPane.handedToAssistant': 'Передано ассистенту',
+  'components.ai.chatNotice': 'Новое сообщение',
   'components.ai.PhoneAiPane.d75c355491': 'Диспетчер',
   'components.ai.PhoneAiPane.6bb1ef689f': 'Ассистент думает',
   'figma-client.ClientSupport.16f0d00829': 'Когда приедет инженер?',
@@ -2678,6 +2680,7 @@ export const ru = {
   'figma-dashboard.ChatsView.cb8a5b989d': 'Клиент попросил диспетчера',
   'figma-dashboard.ChatsView.0106f3ae25': 'Без имени',
   'figma-dashboard.ChatsView.85ce552746': 'Чат завершён',
+  'figma-dashboard.ChatsView.assistantLeads': 'Диалог ведёт ассистент',
   'figma-dashboard.ChatsView.3f2ab13b35': 'Ожидает ответа',
   'figma-dashboard.ChatsView.57b040aecc': 'Диалог ведёт диспетчер',
   'figma-dashboard.ChatsView.8eb12def3b': '{{value0}} · заявка № {{value1}}',

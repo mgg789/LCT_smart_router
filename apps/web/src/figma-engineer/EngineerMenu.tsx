@@ -24,6 +24,8 @@ export function EngineerMenu({
   motionOn,
   name,
   email,
+  chatUnread = false,
+  chatNotice = null,
   active,
   lunch,
   breakActive,
@@ -40,6 +42,10 @@ export function EngineerMenu({
   motionOn: boolean;
   name: string;
   email: string;
+  /** Yellow dot on «Помощник» while a line is waiting. Cleared once that screen is open. */
+  chatUnread?: boolean;
+  /** Short preview of the waiting line, shown under the menu item. */
+  chatNotice?: string | null;
   active: EngineerMenuId;
   lunch: EngineerLunchItem | null;
   breakActive: boolean;
@@ -104,7 +110,21 @@ export function EngineerMenu({
               active={active === 'assistant'}
               onClick={() => onNavigate('assistant')}
               disabled={isNavixOffline()}
+              dot={chatUnread && active !== 'assistant'}
             />
+            {chatUnread && active !== 'assistant' && chatNotice ? (
+              <p
+                className="font-semibold text-figma-ink"
+                style={{
+                  marginTop: eu(-8),
+                  marginLeft: eu(76),
+                  fontSize: eu(16),
+                  color: '#8a6a00',
+                }}
+              >
+                {t('components.ai.chatNotice')}
+              </p>
+            ) : null}
             <MenuItem
               label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
               icon={ENGINEER_ASSETS.gear}
@@ -294,7 +314,13 @@ export function EngineerMenu({
                   iconHeight={33}
                   active={active === 'assistant'}
                   onClick={() => onNavigate('assistant')}
+                  dot={chatUnread && active !== 'assistant'}
                 />
+                {chatUnread && active !== 'assistant' && chatNotice ? (
+                  <p className="font-semibold" style={{ marginLeft: eu(76), fontSize: eu(16), color: '#8a6a00' }}>
+                    {t('components.ai.chatNotice')}
+                  </p>
+                ) : null}
                 <MenuItem
                   label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
                   icon={ENGINEER_ASSETS.gear}
@@ -416,6 +442,7 @@ function MenuItem({
   active,
   onClick,
   disabled = false,
+  dot = false,
 }: {
   label: string;
   icon: string;
@@ -424,6 +451,7 @@ function MenuItem({
   active: boolean;
   onClick: () => void;
   disabled?: boolean;
+  dot?: boolean;
 }) {
   return (
     <button
@@ -454,6 +482,13 @@ function MenuItem({
       >
         {label}
       </span>
+      {dot ? (
+        <span
+          aria-hidden
+          className="ml-auto shrink-0 rounded-full bg-figma-bee"
+          style={{ width: eu(12), height: eu(12) }}
+        />
+      ) : null}
     </button>
   );
 }

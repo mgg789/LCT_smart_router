@@ -72,6 +72,27 @@ export function EngineerApp({
   const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<EngineerMenuId>('day');
+  const [chatUnread, setChatUnread] = useState(false);
+  const [chatNotice, setChatNotice] = useState<string | null>(null);
+  const chatSeen = useRef(0);
+  const chatPrimed = useRef(false);
+  const onChatInbox = useCallback((report: { seq: number; preview: string; active: boolean }) => {
+    if (!chatPrimed.current) {
+      chatPrimed.current = true;
+      chatSeen.current = report.seq;
+      return;
+    }
+    if (report.active) {
+      chatSeen.current = Math.max(chatSeen.current, report.seq);
+      setChatUnread(false);
+      setChatNotice(null);
+      return;
+    }
+    if (report.seq > chatSeen.current) {
+      setChatUnread(true);
+      setChatNotice(report.preview.trim().slice(0, 80));
+    }
+  }, []);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [profile, setProfile] = useState<EngineerView | null>(
     designPreview ? DESIGN_PREVIEW_PROFILE : null,
@@ -463,6 +484,8 @@ export function EngineerApp({
       motionOn={motionOn}
       name={name}
       email={email || '—'}
+      chatUnread={chatUnread}
+      chatNotice={chatNotice}
       active={screen}
       lunch={lunch}
       breakActive={
@@ -495,6 +518,8 @@ export function EngineerApp({
       motionOn={motionOn}
       name={name}
       email={email || '—'}
+      chatUnread={chatUnread}
+      chatNotice={chatNotice}
       active={screen}
       lunch={lunch}
       breakActive={
@@ -568,6 +593,16 @@ export function EngineerApp({
          * the whole screen and the day behind it is out of the way; in a pane it
          * is the day's own scrollbar that shows through beside a form that fits.
          */}
+        {screen !== 'assistant' ? (
+          <div className="hidden" aria-hidden>
+            <EngineerAiPane
+              token={token}
+              displayName={profile?.displayName ?? null}
+              active={false}
+              onInbox={onChatInbox}
+            />
+          </div>
+        ) : null}
         {screen === 'day' || (!desk && screen === 'settings') ? (
           <>
             <h1
@@ -716,7 +751,12 @@ export function EngineerApp({
           </>
         ) : (
           <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
-            <EngineerAiPane token={token} displayName={profile?.displayName ?? null} />
+            <EngineerAiPane
+              token={token}
+              displayName={profile?.displayName ?? null}
+              active
+              onInbox={onChatInbox}
+            />
           </div>
         )}
       </div>
