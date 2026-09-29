@@ -101,7 +101,7 @@ describe('public demo stand rewind', () => {
     await prisma?.$disconnect();
   });
 
-  it('seeds fourteen requests and three engineers for the current Moscow date', async () => {
+  it('stays empty on startup and still reports the demo stand', async () => {
     const live = await call('GET', '/api/v1/dispatch/live', dispatcherToken);
     assert.equal(live.status, 200, await live.clone().text());
     const body = (await live.json()) as {
@@ -111,27 +111,8 @@ describe('public demo stand rewind', () => {
     assert.equal(body.demoStand, true);
     assert.equal(body.workday.workDate, moscowDate());
     assert.equal(body.workday.status, 'pending');
-    assert.equal(await prisma.request.count(), 14);
-    assert.equal(await prisma.engineer.count({ where: { archivedAt: null } }), 3);
-    assert.equal(await prisma.objectPassport.count(), 11);
-    assert.equal(await prisma.building.count(), 14);
-    const requests = await prisma.request.findMany({
-      orderBy: { arrivalOrder: 'asc' },
-      select: { id: true },
-    });
-    const passports = await Promise.all(
-      requests.map(async (request) => {
-        const response = await call(
-          'GET',
-          `/api/v1/dispatch/requests/${request.id}/passport`,
-          dispatcherToken,
-        );
-        assert.equal(response.status, 200, await response.clone().text());
-        return (await response.json()) as { passport: unknown; unavailableReason?: string };
-      }),
-    );
-    assert.equal(passports.filter((item) => item.passport === null).length, 3);
-    assert.ok(passports.every((item) => item.unavailableReason === undefined));
+    assert.equal(await prisma.request.count(), 0);
+    assert.equal(await prisma.engineer.count({ where: { archivedAt: null } }), 0);
   });
 
   it('preserves an existing same-day v1 package until explicit rewind', async () => {
@@ -153,6 +134,10 @@ describe('public demo stand rewind', () => {
   });
 
   it('rewinds linked mail and extra requests without signing the dispatcher out', async () => {
+    const seeded = await call('POST', '/api/v1/dispatch/data/restart-demo', dispatcherToken, {
+      operationId: randomUUID(),
+    });
+    assert.equal(seeded.status, 201, await seeded.clone().text());
     const engineers = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
     assert.equal(engineers.status, 200, await engineers.clone().text());
     const first = (

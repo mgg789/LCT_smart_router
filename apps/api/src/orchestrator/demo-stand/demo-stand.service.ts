@@ -7,16 +7,11 @@ import { Clock } from '../../common/time';
 import type { OperationContext } from '../../operations';
 import { OperationsService } from '../../operations';
 import { PrismaService } from '../../persistence';
-import { AiService } from '../ai';
 import { workDateOf } from '../engineers/workday';
 import { UploadImportService } from '../imports';
 import { canonicalTextAddress } from '../passports/passport-policy';
 import { ResetService } from '../reset';
-import {
-  buildLiveDemo,
-  LIVE_DEMO_PACKAGE_PREFIXES,
-  liveDemoPackageSource,
-} from './live-demo-package';
+import { buildLiveDemo, liveDemoPackageSource } from './live-demo-package';
 
 export interface DemoStandRestoreOutcome {
   readonly restored: true;
@@ -36,8 +31,8 @@ const SYSTEM_ACTOR: Actor = {
 };
 
 /**
- * Public-contour 14/3 live-demo: today's Moscow windows, 30-minute days, and a wipe that
- * keeps the dispatcher signed in. Inactive unless `DEMO_STAND=true`.
+ * Demo-stand menu and explicit rewind. Inactive unless `DEMO_STAND=true`.
+ * Startup does not import requests: the dispatcher loads a ready pack.
  */
 @Injectable()
 export class DemoStandService implements OnModuleInit {
@@ -51,7 +46,6 @@ export class DemoStandService implements OnModuleInit {
     private readonly operations: OperationsService,
     private readonly reset: ResetService,
     private readonly uploads: UploadImportService,
-    private readonly ai: AiService,
   ) {}
 
   get enabled(): boolean {
@@ -100,10 +94,7 @@ export class DemoStandService implements OnModuleInit {
     }
   }
 
-  /**
-   * Seeds or rewinds the 14/3 day when the stand is empty, dated for another Moscow day,
-   * or already finished. A running day is left alone.
-   */
+  /** Kept for the live tick. A demo stand no longer imports a day by itself. */
   reconcile(): Promise<void> {
     if (!this.enabled) return Promise.resolve();
     if (this.inFlight) return this.inFlight;
@@ -209,49 +200,7 @@ export class DemoStandService implements OnModuleInit {
   }
 
   private async reconcileOnce(): Promise<void> {
-    if (!(await this.needsRestore(this.clock.nowSeconds()))) return;
-    await this.operations.execute(
-      {
-        operationId: randomUUID(),
-        actor: SYSTEM_ACTOR,
-        action: 'data.restart_demo',
-        payload: { reason: 'auto' },
-      },
-      (context) => this.restore(context),
-    );
-    await this.ai.rollbackToFactory();
-  }
-
-  private async needsRestore(now: number): Promise<boolean> {
-    const workDate = workDateOf(now, this.config.get('APP_TIME_ZONE'));
-    const running = await this.prisma.liveWorkday.findFirst({
-      where: { status: 'running' },
-      select: { id: true, workDate: true },
-    });
-    if (running) return running.workDate !== workDate;
-
-    const finished = await this.prisma.liveWorkday.findFirst({
-      where: { status: 'finished' },
-      orderBy: { finishedAt: 'desc' },
-      select: { workDate: true },
-    });
-    // A finished day is the durable input for the end-of-day summary. Keep it visible
-    // until the Moscow calendar advances; only an old finished day needs a new demo
-    // package. Calling reconcile from a dashboard poll must not erase that summary.
-    if (finished && finished.workDate !== workDate) return true;
-
-    // A version bump must not erase a same-day v1 run or its completed summary.
-    const expectedSources = LIVE_DEMO_PACKAGE_PREFIXES.map((prefix) => `${prefix}${workDate}`);
-    const latest = await this.prisma.importPackage.findFirst({
-      where: {
-        OR: LIVE_DEMO_PACKAGE_PREFIXES.map((prefix) => ({ source: { startsWith: prefix } })),
-      },
-      orderBy: { appliedAt: 'desc' },
-      select: { source: true },
-    });
-    if (!latest || !expectedSources.includes(latest.source)) return true;
-
-    const requestCount = await this.prisma.request.count();
-    return requestCount === 0;
+    // Ready packs are the way to fill the day. Do not import 14/3 on startup or on a tick.
+    return;
   }
 }

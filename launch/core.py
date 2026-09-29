@@ -357,9 +357,9 @@ def _launch(
             "NODE_ENV": "development",
             "AUTH_DEV_EXPOSE_CODES": "true",
             "VITE_SENTRY_ENABLED": "false",
-            # A fresh jury volume must open on an empty day. The public stand
-            # keeps the seeded demo through prepare_navix_env.py.
-            "DEMO_STAND": "false",
+            # Always a demo stand: rewind and reset stay in the menu. The day
+            # itself stays empty until a ready pack is loaded.
+            "DEMO_STAND": "true",
         }
     )
     # Every launcher installation is a loopback-only demo, including online mode.
