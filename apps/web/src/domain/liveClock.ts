@@ -13,7 +13,7 @@ import type { LiveWorkday } from '../api/live';
  * unchanged.
  */
 export function businessAt(wallSec: number, day: LiveWorkday | null | undefined): number {
-  if (!day || day.status !== 'running' || day.startedAtWallSec === null) return wallSec;
+  if (day?.status !== 'running' || day.startedAtWallSec === null) return wallSec;
   const elapsed = wallSec - day.startedAtWallSec;
   // A stamp from before the day started belongs to the day's own opening moment; it has
   // no earlier business time to be told in.
