@@ -20,7 +20,14 @@ from core.contracts import (
 from core.observability import RouterObservability
 from core.predict_calibration import PredictCalibration
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
+from core.route_cache import clear_route_cache, route_cache_status, set_route_cache_enabled
 from core.runtime import RouterRuntime
+
+
+class RouteCacheSwitch(Record):
+    """Dispatcher switch for the route-response cache. Redis-beta stays marked beta."""
+
+    enabled: bool
 
 
 class ToleranceRequest(Record):
@@ -322,6 +329,27 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
                 body.operation_id, settings, body.expected_context_version
             )
         except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/v1/cache/route")
+    def route_cache() -> dict:
+        """Route-response cache size, memory source and the learned growth check."""
+        return route_cache_status()
+
+    @app.post("/v1/cache/route/clear")
+    def route_cache_clear() -> dict:
+        """Delete cached route-engine3 bodies. The policy catalog stays."""
+        try:
+            return clear_route_cache()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.put("/v1/cache/route")
+    def route_cache_enabled(body: RouteCacheSwitch) -> dict:
+        """Turn the route-response cache on or off without dropping Redis itself."""
+        try:
+            return set_route_cache_enabled(body.enabled)
+        except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/v1/config/predict-calibration")

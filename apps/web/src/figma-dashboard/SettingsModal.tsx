@@ -5,13 +5,17 @@ import {
   type AiView,
   createApiToken,
   getAiSettings,
+  type RouteCacheStatus,
+  clearRouteCache,
   getDispatcherSettings,
   getMapProvidersStatus,
   getMcpSettings,
+  getRouteCache,
   listApiTokens,
   revokeApiToken,
   saveAiSettings,
   saveMcpSettings,
+  setRouteCacheEnabled,
 } from '../api/client';
 import type {
   ApiTokenCategory,
@@ -225,7 +229,9 @@ export function SettingsModal({
               {t('figma-dashboard.SettingsModal.a709de0bac')}
             </p>
           ) : null}
-          {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
+          {tab === 'general' ? (
+            <GeneralForm draft={draft} setField={setField} token={token} />
+          ) : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
           {tab === 'ai' ? (
             offline ? (
@@ -398,15 +404,177 @@ function TabSwitch({
   );
 }
 
+function formatCacheBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function formatCacheRate(bytesPerSec: number | null): string {
+  if (bytesPerSec === null) return t('figma-dashboard.SettingsModal.routeCacheRateUnknown');
+  return t('figma-dashboard.SettingsModal.routeCacheRate', {
+    value0: formatCacheBytes(Math.abs(bytesPerSec)),
+  });
+}
+
+/** First block of the general tab: route-cache size, where the memory lives, clear and disable. */
+function RouteCacheBlock({ token }: { token: string | null }) {
+  const [status, setStatus] = useState<RouteCacheStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(() => {
+    if (!token) return;
+    void getRouteCache(token)
+      .then((next) => {
+        setStatus(next);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t('figma-dashboard.SettingsModal.routeCacheLoadFailed'),
+        );
+      });
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+    if (!token) return;
+    const timer = window.setInterval(reload, 15_000);
+    return () => window.clearInterval(timer);
+  }, [reload, token]);
+
+  const run = (action: () => Promise<RouteCacheStatus>) => {
+    if (!token || busy) return;
+    setBusy(true);
+    void action()
+      .then((next) => {
+        setStatus(next);
+        setError(null);
+      })
+      .catch((cause: unknown) => {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : t('figma-dashboard.SettingsModal.routeCacheActionFailed'),
+        );
+      })
+      .finally(() => setBusy(false));
+  };
+
+  const source =
+    status?.memorySource === 'redis'
+      ? t('figma-dashboard.SettingsModal.routeCacheSourceRedis')
+      : status?.memorySource === 'disk'
+        ? t('figma-dashboard.SettingsModal.routeCacheSourceDisk')
+        : t('figma-dashboard.SettingsModal.routeCacheSourceNone');
+
+  return (
+    <section className="mb-[20px] rounded-[24px] bg-figma-canvas px-[18px] py-[16px]">
+      <div className="flex items-center gap-[8px]">
+        <p className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">
+          {t('figma-dashboard.SettingsModal.routeCacheTitle')}
+        </p>
+        <span className="rounded-full bg-figma-ink/10 px-[8px] py-[2px] font-semibold text-[12px] text-figma-muted">
+          Beta
+        </span>
+      </div>
+      <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+        {t('figma-dashboard.SettingsModal.routeCacheHint')}
+      </p>
+      {status ? (
+        <dl className="mt-[12px] grid grid-cols-2 gap-[12px]">
+          <div>
+            <dt className="font-medium text-[13px] text-figma-hint">
+              {t('figma-dashboard.SettingsModal.routeCacheSize')}
+            </dt>
+            <dd className="font-semibold text-[16px] text-figma-ink">
+              {formatCacheBytes(
+                status.memorySource === 'redis' ? status.routePayloadBytes : status.usedBytes,
+              )}
+              <span className="ml-[8px] font-medium text-[13px] text-figma-muted">
+                {t('figma-dashboard.SettingsModal.routeCacheEntries', { value0: status.keys })}
+                {status.memorySource === 'redis'
+                  ? t('figma-dashboard.SettingsModal.routeCacheRedisProcess', {
+                      value0: formatCacheBytes(status.usedBytes),
+                    })
+                  : null}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-[13px] text-figma-hint">
+              {t('figma-dashboard.SettingsModal.routeCacheSource')}
+            </dt>
+            <dd className="font-semibold text-[16px] text-figma-ink">{source}</dd>
+          </div>
+          <div className="col-span-2 font-medium text-[13px] text-figma-muted">
+            {t('figma-dashboard.SettingsModal.routeCacheNormal', {
+              value0: formatCacheRate(status.normalBytesPerSec),
+            })}
+            {status.observedBytesPerSec !== null
+              ? t('figma-dashboard.SettingsModal.routeCacheObserved', {
+                  value0: formatCacheRate(status.observedBytesPerSec),
+                })
+              : null}
+          </div>
+        </dl>
+      ) : (
+        <p className="mt-[12px] font-medium text-[14px] text-figma-muted">
+          {t('figma-dashboard.SettingsModal.a709de0bac')}
+        </p>
+      )}
+      {status?.leak ? (
+        <p role="alert" className="mt-[12px] font-medium text-[14px] text-figma-danger">
+          {t('figma-dashboard.SettingsModal.routeCacheLeak', {
+            value0: formatCacheRate(status.leak.observedBytesPerSec),
+            value1: formatCacheRate(status.leak.normalBytesPerSec),
+          })}
+        </p>
+      ) : null}
+      <div className="mt-[12px] flex flex-wrap gap-[10px]">
+        <button
+          type="button"
+          disabled={busy || !token || status?.memorySource !== 'redis'}
+          onClick={() => token && run(() => clearRouteCache(token))}
+          className="flex h-[44px] items-center rounded-full border border-figma-ink/15 px-[16px] font-semibold text-[15px] text-figma-ink disabled:opacity-50"
+        >
+          {t('figma-dashboard.SettingsModal.routeCacheClear')}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !token || status?.memorySource !== 'redis'}
+          onClick={() => token && status && run(() => setRouteCacheEnabled(token, !status.enabled))}
+          className="flex h-[44px] items-center rounded-full bg-figma-ink px-[16px] font-semibold text-[15px] text-white disabled:opacity-50"
+        >
+          {status?.enabled
+            ? t('figma-dashboard.SettingsModal.routeCacheDisable')
+            : t('figma-dashboard.SettingsModal.routeCacheEnable')}
+        </button>
+      </div>
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[14px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 function GeneralForm({
   draft,
   setField,
+  token,
 }: {
   draft: GeneralDraft;
   setField: <K extends keyof GeneralDraft>(key: K, value: GeneralDraft[K]) => void;
+  token: string | null;
 }) {
   return (
     <div className="pb-[8px]">
+      <RouteCacheBlock token={token} />
       <div className="grid grid-cols-2 gap-[16px]">
         <Field label={t('figma-dashboard.SettingsModal.cf1dfa079c')} htmlFor="settings-shift-start">
           <input

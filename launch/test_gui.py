@@ -63,7 +63,7 @@ class GuiTests(unittest.TestCase):
         self.assertTrue(predicate(), "GUI event queue did not reach the expected state")
 
     def test_failed_distribution_does_not_disable_online_mode_or_hide_version_link(self):
-        self.assertFalse(self.app.redis_beta.get())
+        self.assertTrue(self.app.redis_beta.get())
         self.assertTrue(self.app.online.get())
         self.assertEqual(self.app.online_checkbox["state"], "normal")
         self.assertEqual(self.app.pin["state"], "disabled")

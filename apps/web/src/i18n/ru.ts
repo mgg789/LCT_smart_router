@@ -1416,6 +1416,27 @@ export const ru = {
   'figma-dashboard.SettingsModal.477e081d11': 'Не удалось сохранить MCP-настройки',
   'figma-dashboard.SettingsModal.38c0d438b1':
     'Пароль — минимум 6 символов. «Сгенерировать» предложит надёжный.',
+  'figma-dashboard.SettingsModal.routeCacheTitle': 'Кэш маршрутов',
+  'figma-dashboard.SettingsModal.routeCacheHint':
+    'Ответы route3 хранятся в Redis. Повторный расчёт тех же ног не ходит в движок. Каталог политик этот переключатель не стирает.',
+  'figma-dashboard.SettingsModal.routeCacheSize': 'Размер кэша',
+  'figma-dashboard.SettingsModal.routeCacheSource': 'Источник памяти',
+  'figma-dashboard.SettingsModal.routeCacheSourceRedis': 'Redis',
+  'figma-dashboard.SettingsModal.routeCacheSourceDisk': 'Диск матриц',
+  'figma-dashboard.SettingsModal.routeCacheSourceNone': 'Выключен',
+  'figma-dashboard.SettingsModal.routeCacheEntries': '{{value0}} записей',
+  'figma-dashboard.SettingsModal.routeCacheRedisProcess': ' · процесс Redis {{value0}}',
+  'figma-dashboard.SettingsModal.routeCacheNormal': 'Нормальная скорость: {{value0}}',
+  'figma-dashboard.SettingsModal.routeCacheObserved': ' · сейчас {{value0}}',
+  'figma-dashboard.SettingsModal.routeCacheRate': '{{value0}}/с',
+  'figma-dashboard.SettingsModal.routeCacheRateUnknown': 'ещё считается',
+  'figma-dashboard.SettingsModal.routeCacheLeak':
+    'Память растёт быстрее нормы ({{value0}} при норме {{value1}}). Похоже на утечку: очистите кэш или отключите его.',
+  'figma-dashboard.SettingsModal.routeCacheClear': 'Очистить',
+  'figma-dashboard.SettingsModal.routeCacheDisable': 'Отключить',
+  'figma-dashboard.SettingsModal.routeCacheEnable': 'Включить',
+  'figma-dashboard.SettingsModal.routeCacheLoadFailed': 'Не удалось прочитать кэш',
+  'figma-dashboard.SettingsModal.routeCacheActionFailed': 'Не удалось изменить кэш',
   'figma-dashboard.SettingsModal.6ca5b81007': 'MCP-сервер дашборда',
   'figma-dashboard.SettingsModal.4cf1352d97':
     'Подключите своего ИИ-агента к дашборду: он будет работать за диспетчера — следить за обстановкой, разбирать алерты, вести день. Пока агент работает, в шапке мигает робот.',

@@ -1101,6 +1101,47 @@ export async function selectRoutingPolicy(token: string, policyId: PolicyId): Pr
   return selected.publication.inputHash;
 }
 
+const routeCacheSchema = z.object({
+  beta: z.literal(true),
+  enabled: z.boolean(),
+  available: z.boolean(),
+  memorySource: z.enum(['redis', 'disk', 'none']),
+  usedBytes: z.number().int().nonnegative(),
+  routePayloadBytes: z.number().int().nonnegative(),
+  keys: z.number().int().nonnegative(),
+  normalBytesPerSec: z.number().nullable(),
+  observedBytesPerSec: z.number().nullable(),
+  leak: z
+    .object({
+      code: z.literal('CACHE_MEMORY_LEAK'),
+      normalBytesPerSec: z.number(),
+      observedBytesPerSec: z.number(),
+      windowSec: z.number(),
+    })
+    .nullable(),
+});
+export type RouteCacheStatus = z.infer<typeof routeCacheSchema>;
+
+/** Reads the route-response cache: size, memory source and the growth check. */
+export function getRouteCache(token: string): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache', routeCacheSchema, token);
+}
+
+/** Deletes cached route-engine3 responses and returns the emptied status. */
+export function clearRouteCache(token: string): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache/clear', routeCacheSchema, token, {
+    method: 'POST',
+  });
+}
+
+/** Turns the route-response cache on or off. Redis itself is left running. */
+export function setRouteCacheEnabled(token: string, enabled: boolean): Promise<RouteCacheStatus> {
+  return requestJson('/api/v1/dispatch/router/cache', routeCacheSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 /** Reads Router-owned technical settings through the backend boundary. */
 export function getRouterTechnicalSettings(token: string): Promise<RouterTechnicalSettings> {
   return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);

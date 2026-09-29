@@ -71,7 +71,9 @@ import {
 } from './dto/policy.dto';
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
+  type RouteCacheSwitchDto,
   type UpdateRouterTechnicalSettingsDto,
+  routeCacheSwitchSchema,
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
@@ -117,6 +119,27 @@ export class DispatchController {
     private readonly geocoding: GeocodingService,
     private readonly mcp: McpService,
   ) {}
+
+  @Get('router/cache')
+  @ApiOperation({ summary: 'Route-response cache size, memory source and growth check' })
+  routeCache() {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.getRouteCache();
+  }
+
+  @Post('router/cache/clear')
+  @ApiOperation({ summary: 'Delete cached route-engine3 responses' })
+  clearRouteCache() {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.clearRouteCache();
+  }
+
+  @Put('router/cache')
+  @ApiOperation({ summary: 'Enable or disable the route-response cache' })
+  setRouteCache(@Body(zodBody(routeCacheSwitchSchema)) dto: RouteCacheSwitchDto) {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    return this.router.setRouteCacheEnabled(dto.enabled);
+  }
 
   @Get('router/technical-settings')
   @ApiOperation({ summary: 'Read Router-owned routing and execution controls' })

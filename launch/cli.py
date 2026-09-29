@@ -94,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--redis-beta",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Экспериментальный кэш каталогов Redis; по умолчанию выключен",
+        help="Redis-beta: кэш каталога и ответов route3. По умолчанию включен, остаётся экспериментальным",
     )
     parser.add_argument(
         "--action",
@@ -232,11 +232,15 @@ def run(args: argparse.Namespace) -> int:
         and yes("Автозапуск при старте Docker?", saved_options.get("autostart", False)),
         "api_port": args.api_port,
         "ui_port": args.ui_port if mode == "full" else None,
-        "redis_beta": getattr(args, "redis_beta", None)
-        if getattr(args, "redis_beta", None) is not None
-        else interactive
-        and yes(
-            "Включить Redis-beta (экспериментальный кэш)?", saved_options.get("redis_beta", False)
+        "redis_beta": (
+            args.redis_beta
+            if args.redis_beta is not None
+            else yes(
+                "Включить Redis-beta (экспериментальный кэш)?",
+                saved_options.get("redis_beta", True),
+            )
+            if interactive
+            else saved_options.get("redis_beta", True)
         ),
     }
     if interactive:

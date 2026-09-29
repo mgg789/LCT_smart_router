@@ -125,6 +125,25 @@ export interface RouterTechnicalSettings {
   readonly taskOverrunToleranceSec: number;
 }
 
+/** Dispatcher view of the Redis-beta route-response cache. */
+export interface RouteCacheStatus {
+  readonly beta: true;
+  readonly enabled: boolean;
+  readonly available: boolean;
+  readonly memorySource: 'redis' | 'disk' | 'none';
+  readonly usedBytes: number;
+  readonly routePayloadBytes: number;
+  readonly keys: number;
+  readonly normalBytesPerSec: number | null;
+  readonly observedBytesPerSec: number | null;
+  readonly leak: {
+    readonly code: 'CACHE_MEMORY_LEAK';
+    readonly normalBytesPerSec: number;
+    readonly observedBytesPerSec: number;
+    readonly windowSec: number;
+  } | null;
+}
+
 export interface RouterTechnicalSettingsState extends RouterTechnicalSettings {
   readonly routerContextVersion: string;
 }
@@ -306,6 +325,21 @@ export abstract class RouterClient {
    * version (context/33 section 7).
    */
   abstract getActiveContextVersion(): Promise<string | null>;
+
+  /** Route-response cache size, memory source and the learned growth check. */
+  getRouteCache(): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
+
+  /** Deletes cached route-engine3 bodies. The policy catalog stays. */
+  clearRouteCache(): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
+
+  /** Turns the route-response cache on or off. Redis itself keeps running. */
+  setRouteCacheEnabled(_enabled: boolean): Promise<RouteCacheStatus> {
+    throw SysError.notConfigured('Router Core route cache');
+  }
 
   /** Reads the complete Router-owned technical settings revision. */
   getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {

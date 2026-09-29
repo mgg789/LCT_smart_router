@@ -539,6 +539,9 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 |---|---|---|
 | GET | `/api/v1/dispatch/policies` | Подготовленные политики и действующая |
 | POST | `/api/v1/dispatch/policy` | Выбрать подготовленную политику |
+| GET | `/api/v1/dispatch/router/cache` | Размер кэша ответов route3, источник памяти и проверка роста |
+| POST | `/api/v1/dispatch/router/cache/clear` | Удалить ответы route3 из Redis; каталог политик не трогается |
+| PUT | `/api/v1/dispatch/router/cache` | Включить или выключить кэш ответов route3 (`{"enabled": bool}`) |
 | GET | `/api/v1/dispatch/router/technical-settings` | Действующая техническая ревизия Router со своей версией контекста |
 | PUT | `/api/v1/dispatch/router/technical-settings` | Заменить ревизию целиком (конверт операций; см. ниже) |
 | GET | `/api/v1/dispatch/settings` | Часы дня диспетчера, пороги alert и признак ключей карт (секреты не отдаются) |

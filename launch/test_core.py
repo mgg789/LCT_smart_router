@@ -240,9 +240,9 @@ class CoreTests(unittest.TestCase):
             self.assertNotIn("osrm", config["services"])
             self.assertNotIn("route-engine3", config["services"])
             self.assertEqual(config["services"]["router"]["environment"]["ROUTER_HYBRID"], "false")
-            self.assertNotIn("redis", config["services"])
+            self.assertIn("redis", config["services"])
             self.assertEqual(
-                config["services"]["router"]["environment"]["ROUTER_REDIS_BETA"], "false"
+                config["services"]["router"]["environment"]["ROUTER_REDIS_BETA"], "true"
             )
             api = config["services"]["api"]
             self.assertEqual(api["environment"]["DISPATCHER_PASSWORD"], "it's$$буквы")

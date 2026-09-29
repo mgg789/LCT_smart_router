@@ -335,7 +335,7 @@ def _launch(
         raise ValueError(
             "identity.json не содержит пароли этой установки. Восстановите файл из копии."
         )
-    redis_beta = options.get("redis_beta", False)
+    redis_beta = options.get("redis_beta", True)
     if redis_beta:
         identity.setdefault("REDIS_PASSWORD", secrets.token_hex(24))
         if not isinstance(identity["REDIS_PASSWORD"], str) or len(identity["REDIS_PASSWORD"]) < 16:

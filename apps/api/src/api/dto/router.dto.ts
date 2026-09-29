@@ -2,6 +2,12 @@ import { z } from 'zod';
 
 const toleranceSeconds = z.number().int().nonnegative().max(86_400);
 
+/** On/off switch for the Redis-beta route-response cache. */
+export const routeCacheSwitchSchema = z.object({
+  enabled: z.boolean(),
+});
+export type RouteCacheSwitchDto = z.infer<typeof routeCacheSwitchSchema>;
+
 /** Complete Router-owned settings replacement with context-version CAS. */
 export const updateRouterTechnicalSettingsSchema = z.object({
   operationId: z.uuid(),

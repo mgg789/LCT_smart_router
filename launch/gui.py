@@ -106,7 +106,7 @@ class Launcher(tk.Tk):
         self.online = tk.BooleanVar(value=not self._initial_offline)
         self.osrm = tk.BooleanVar(value=False)
         self.autostart = tk.BooleanVar(value=False)
-        self.redis_beta = tk.BooleanVar(value=False)
+        self.redis_beta = tk.BooleanVar(value=True)
         for index, (text, variable) in enumerate(
             (
                 ("Online режим", self.online),
@@ -259,7 +259,7 @@ class Launcher(tk.Tk):
         if not status["record"]:
             self.management.pack_forget()
             self.start_button.configure(text="Установить и запустить")
-            self.redis_beta.set(False)
+            self.redis_beta.set(True)
             for entry in (self.password, self.pin, self.llm_token):
                 entry.configure(state="normal")
                 entry.delete(0, "end")

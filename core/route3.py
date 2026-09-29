@@ -50,6 +50,21 @@ from core.geo import (
 _LOGGER = logging.getLogger(__name__)
 
 ROUTE3_VERSION = "route3-prepared-v1"
+
+
+def _cached_route(kind: str, identity: str) -> dict | None:
+    from core.route_cache import current_route_cache
+
+    cache = current_route_cache()
+    return None if cache is None else cache.lookup(kind, identity)
+
+
+def _remember_route(kind: str, identity: str, body: dict) -> None:
+    from core.route_cache import current_route_cache
+
+    cache = current_route_cache()
+    if cache is not None and isinstance(body, dict):
+        cache.store_body(kind, identity, body)
 _PROVIDER_FAILURES = (httpx.HTTPError, OSError, ValueError, TypeError, KeyError, AttributeError)
 _TRUSTED_HOST_SUFFIXES = (".local",)
 
@@ -142,6 +157,15 @@ class Route3Client:
         departure: int,
     ) -> dict:
         """One /route3 call; returns the parsed response body."""
+        identity = content_hash(
+            json.dumps(
+                ["route", origin.lat, origin.lon, destination.lat, destination.lon, profile, traffic, metro, departure],
+                separators=(",", ":"),
+            ).encode()
+        )
+        cached = _cached_route("route", identity)
+        if cached is not None:
+            return cached
         response = httpx.get(
             f"{self.base_url}/route3",
             params={
@@ -156,7 +180,9 @@ class Route3Client:
             trust_env=False,
         )
         response.raise_for_status()
-        return response.json()
+        body = response.json()
+        _remember_route("route", identity, body)
+        return body
 
     def matrix(
         self,
@@ -168,6 +194,15 @@ class Route3Client:
         departure: int,
     ) -> dict:
         """One /matrix3 call for a whole point set."""
+        identity = content_hash(
+            json.dumps(
+                ["matrix", profile, traffic, planning, departure, [(p.lat, p.lon) for p in points]],
+                separators=(",", ":"),
+            ).encode()
+        )
+        cached = _cached_route("matrix", identity)
+        if cached is not None:
+            return cached
         response = httpx.get(
             f"{self.base_url}/matrix3",
             params={
@@ -181,7 +216,9 @@ class Route3Client:
             trust_env=False,
         )
         response.raise_for_status()
-        return response.json()
+        body = response.json()
+        _remember_route("matrix", identity, body)
+        return body
 
 
 def quote_from_route3(body: dict, origin: GeoPoint, destination: GeoPoint) -> TravelQuote | None:
