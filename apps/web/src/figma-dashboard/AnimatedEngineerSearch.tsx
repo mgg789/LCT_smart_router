@@ -21,6 +21,7 @@ export function AnimatedEngineerSearch({
 }) {
   const reduceMotion = useReducedMotion();
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const animateMotion = motionOn && !reduceMotion;
 
@@ -29,10 +30,12 @@ export function AnimatedEngineerSearch({
       data-eng-chrome
       className={`absolute z-20 flex origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px] transition-shadow ${className}`}
       style={style}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       animate={
         !animateMotion
           ? undefined
-          : focused
+          : focused || hovered
             ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
             : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
       }
@@ -53,7 +56,7 @@ export function AnimatedEngineerSearch({
         className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2 outline-none focus:outline-none focus-visible:outline-none focus-visible:ring-0"
         aria-label={placeholder}
         onClick={() => inputRef.current?.focus()}
-        animate={!animateMotion ? undefined : { scale: focused ? 1.1 : 1 }}
+        animate={!animateMotion ? undefined : { scale: focused || hovered ? 1.1 : 1 }}
         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       >
         <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />

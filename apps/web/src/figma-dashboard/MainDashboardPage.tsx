@@ -37,6 +37,7 @@ import {
   stackViewKey,
 } from './dashboardSlide';
 import { EngineerColumn } from './EngineerColumn';
+import { EngineerCompareModal } from './EngineerCompareModal';
 import { EngineersView } from './EngineersView';
 import { FIGMA_ARTBOARD, type NotificationTone } from './fixtures';
 import { nextRouterSettings, policyLabel } from './fromSnapshot';
@@ -180,6 +181,7 @@ export function MainDashboardPage() {
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [compareOpen, setCompareOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [reviewDelta, setReviewDelta] = useState<PlanDelta | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -990,6 +992,12 @@ export function MainDashboardPage() {
                 setSettingsOpen(false);
               }}
             />
+            <EngineerCompareModal
+              open={compareOpen}
+              motionOn={motionOn}
+              snapshot={visibleSnapshot}
+              onClose={() => setCompareOpen(false)}
+            />
             {dash.token ? (
               <DispatcherDayResults
                 token={dash.token}
@@ -1274,6 +1282,7 @@ export function MainDashboardPage() {
                           setSearchOpen(true);
                         }}
                         onSearchChange={setSearchQuery}
+                        onOpenCompare={() => setCompareOpen(true)}
                         onSelect={(id) => {
                           dash.selectEngineer(id);
                           setSearchOpen(false);

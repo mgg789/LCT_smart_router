@@ -86,6 +86,12 @@ export interface UseAssistantChatResult {
   readonly runState: AiRunState | null;
   readonly quota: AiQuota | null;
   readonly handoffStatus: HandoffStatus;
+  /**
+   * Where the current handover sits in the transcript. `null` until a state event
+   * says there is one. Client and engineer chats draw the handover strips from this,
+   * including while the next speaker has not written yet.
+   */
+  readonly handoffMark: HandoffMark | null;
   /** A short "what the assistant is doing right now" line, from `tool_started`. */
   readonly activity: string | null;
   readonly loading: boolean;
@@ -189,6 +195,13 @@ function messageFromApi(message: AiMessage): AssistantChatMessage {
 
 const DISPATCHER_POLL_MS = 2000;
 
+/** The live handover, in message seq. `open` is false once it has been handed back. */
+export interface HandoffMark {
+  readonly startSeq: number;
+  readonly endSeq: number | null;
+  readonly open: boolean;
+}
+
 /**
  * Owns one assistant conversation: history, the live run stream, prepared operations and
  * the dispatcher-handover poll. Follows the in-flight-ref / generation-counter idiom from
@@ -209,6 +222,7 @@ export function useAssistantChat({
   const [runState, setRunState] = useState<AiRunState | null>(null);
   const [quota, setQuota] = useState<AiQuota | null>(null);
   const [handoffStatus, setHandoffStatus] = useState<HandoffStatus>(null);
+  const [handoffMark, setHandoffMark] = useState<HandoffMark | null>(null);
   const [activity, setActivity] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -487,6 +501,7 @@ export function useAssistantChat({
     setOperations(new Map());
     setRunState(null);
     setHandoffStatus(null);
+    setHandoffMark(null);
     setActivity(null);
     lastMessageSeqRef.current = 0;
     lastEventSeqRef.current = 0;
@@ -600,6 +615,15 @@ export function useAssistantChat({
               ? event.handoff?.state === 'waiting'
                 ? 'waiting'
                 : 'answered'
+              : null,
+          );
+          setHandoffMark(
+            event.handoff
+              ? {
+                  startSeq: event.handoff.startSeq,
+                  endSeq: event.handoff.endSeq,
+                  open: event.mode === 'dispatcher' && event.handoff.state !== 'closed',
+                }
               : null,
           );
           break;
@@ -834,6 +858,7 @@ export function useAssistantChat({
     setRunState(null);
     setActivity(null);
     setHandoffStatus(null);
+    setHandoffMark(null);
     setError(null);
     const mode: AiAssistMode | undefined =
       surface === 'dispatcher' ? (current?.assistMode === 'fix' ? 'fix' : 'help') : assistMode;
@@ -876,6 +901,7 @@ export function useAssistantChat({
     runState,
     quota,
     handoffStatus,
+    handoffMark,
     activity,
     loading,
     sending,

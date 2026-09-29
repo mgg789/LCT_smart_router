@@ -65,7 +65,6 @@ export function ClientApp() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
   const [chatUnread, setChatUnread] = useState(false);
-  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const chatSeen = useRef(0);
   const chatPrimed = useRef(false);
   const onChatInbox = useCallback((report: { seq: number; preview: string; active: boolean }) => {
@@ -77,13 +76,9 @@ export function ClientApp() {
     if (report.active) {
       chatSeen.current = Math.max(chatSeen.current, report.seq);
       setChatUnread(false);
-      setChatNotice(null);
       return;
     }
-    if (report.seq > chatSeen.current) {
-      setChatUnread(true);
-      setChatNotice(report.preview.trim().slice(0, 80));
-    }
+    if (report.seq > chatSeen.current) setChatUnread(true);
   }, []);
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
   const [requests, setRequests] = useState<ClientRequestView[]>([]);
@@ -394,7 +389,6 @@ export function ClientApp() {
       active={screen === 'sent' ? 'new' : screen}
       docked
       chatUnread={chatUnread}
-      chatNotice={chatNotice}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => undefined}
@@ -411,7 +405,6 @@ export function ClientApp() {
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
       chatUnread={chatUnread}
-      chatNotice={chatNotice}
       email={session?.email ?? null}
       motionOn={motionOn}
       onClose={() => setMenuOpen(false)}

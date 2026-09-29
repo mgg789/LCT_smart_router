@@ -62,12 +62,30 @@ export function originLabel(chat: DispatchChatView): string {
     : t('figma-dashboard.ChatsView.cb8a5b989d');
 }
 
+function isHandoffNoise(text: string): boolean {
+  return HANDOFF_NOISE.some((noise) => text.startsWith(noise));
+}
+
+/** A line said while this chat was actually with the dispatcher. Assistant talk before
+ *  the handover, and after it is handed back, does not count. */
+function handoffMessage(chat: DispatchChatView): AiMessage | undefined {
+  const start = chat.handoff.startSeq;
+  const end = chat.handoff.endSeq;
+  const inWindow = chat.messages.filter(
+    (message) =>
+      message.seq > start &&
+      (end === null || message.seq <= end) &&
+      !isHandoffNoise(message.text),
+  );
+  return inWindow[inWindow.length - 1];
+}
+
 function lastMessage(chat: DispatchChatView): AiMessage | undefined {
-  return chat.messages[chat.messages.length - 1];
+  return handoffMessage(chat) ?? chat.messages[chat.messages.length - 1];
 }
 
 function lastSeqOf(chat: DispatchChatView): number {
-  return lastMessage(chat)?.seq ?? chat.handoff.startSeq;
+  return chat.messages[chat.messages.length - 1]?.seq ?? chat.handoff.startSeq;
 }
 
 /** `Инженер · Алексей Волков` → `Алексей Волков`. */
@@ -182,8 +200,8 @@ export function ChatsView({
   const all = useMemo(() => {
     const list = chats ?? [];
     return [...list].sort((left, right) => {
-      const leftAt = lastMessage(left)?.createdAt ?? left.handoff.createdAt;
-      const rightAt = lastMessage(right)?.createdAt ?? right.handoff.createdAt;
+      const leftAt = handoffMessage(left)?.createdAt ?? left.handoff.createdAt;
+      const rightAt = handoffMessage(right)?.createdAt ?? right.handoff.createdAt;
       if (rightAt !== leftAt) return rightAt - leftAt;
       return left.conversation.id.localeCompare(right.conversation.id);
     });
@@ -322,7 +340,7 @@ export function ChatsView({
 
         <div
           className="absolute overflow-y-auto overflow-x-hidden"
-          style={{ left: 13, top: 174, width: 405, height: 680 + dy }}
+          style={{ left: 13, top: 174, width: 417, height: 680 + dy }}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -346,25 +364,39 @@ export function ChatsView({
                 </FigmaText>
               ) : (
                 <>
-                  {displayRows.map((chat, index) => (
-                    <ChatRow
-                      key={chat.conversation.id}
-                      chat={chat}
-                      top={index * ROW_STEP}
-                      last={index === displayRows.length - 1 && engineersToStart.length === 0}
-                      selected={selected?.handoff.id === chat.handoff.id && pendingEngineer === null}
-                      onSelect={() => {
-                        setPendingEngineer(null);
-                        setSelectedId(chat.handoff.id);
-                      }}
-                    />
-                  ))}
+                  {displayRows.map((chat, index) => {
+                    const rowSelected =
+                      selected?.handoff.id === chat.handoff.id && pendingEngineer === null;
+                    const nextSelected =
+                      (pendingEngineer === null &&
+                        selected?.handoff.id === displayRows[index + 1]?.handoff.id) ||
+                      (index === displayRows.length - 1 &&
+                        pendingEngineer?.id === engineersToStart[0]?.id);
+                    return (
+                      <ChatRow
+                        key={chat.conversation.id}
+                        chat={chat}
+                        top={index * ROW_STEP + 8}
+                        last={index === displayRows.length - 1 && engineersToStart.length === 0}
+                        selected={rowSelected}
+                        hideHairline={rowSelected || nextSelected}
+                        onSelect={() => {
+                          setPendingEngineer(null);
+                          setSelectedId(chat.handoff.id);
+                        }}
+                      />
+                    );
+                  })}
                   {engineersToStart.map((engineer, index) => (
                     <EngineerStartRow
                       key={engineer.id}
                       engineer={engineer}
-                      top={(displayRows.length + index) * ROW_STEP}
+                      top={(displayRows.length + index) * ROW_STEP + 8}
                       last={index === engineersToStart.length - 1}
+                      hideHairline={
+                        pendingEngineer?.id === engineer.id ||
+                        pendingEngineer?.id === engineersToStart[index + 1]?.id
+                      }
                       opening={sending && pendingEngineer?.id === engineer.id}
                       writesDisabled={writesDisabled}
                       selected={pendingEngineer?.id === engineer.id}
@@ -429,9 +461,20 @@ export function ChatsView({
             <div className="flex flex-col" style={{ gap: 40 }}>
               <AnimatePresence initial={false}>
                 {(selected?.messages ?? [])
-                  .filter((message) => !HANDOFF_NOISE.some((noise) => message.text.startsWith(noise)))
+                  .filter((message) => !isHandoffNoise(message.text))
                   .map((message) => (
-                    <Bubble key={message.id} message={message} motionOn={!reduceMotion} />
+                    <Bubble
+                      key={message.id}
+                      message={message}
+                      motionOn={!reduceMotion}
+                      mascot={
+                        message.author === 'assistant'
+                          ? selected?.conversation.roleProfile === 'engineer'
+                            ? FIGMA_ASSETS.aiKolobokEngineer
+                            : FIGMA_ASSETS.aiKolobokClient
+                          : null
+                      }
+                    />
                   ))}
               </AnimatePresence>
             </div>
@@ -527,16 +570,20 @@ function ChatRow({
   top,
   last,
   selected,
+  hideHairline,
   onSelect,
 }: {
   chat: DispatchChatView;
   top: number;
   last: boolean;
   selected: boolean;
+  /** The line under this row is also the line above the next one. A selected row drops both. */
+  hideHairline: boolean;
   onSelect: () => void;
 }) {
-  const preview = lastMessage(chat)?.text ?? originLabel(chat);
-  const at = lastMessage(chat)?.createdAt ?? chat.handoff.createdAt;
+  const activity = handoffMessage(chat);
+  const preview = activity?.text ?? originLabel(chat);
+  const at = activity?.createdAt ?? chat.handoff.createdAt;
   return (
     <button
       type="button"
@@ -545,12 +592,12 @@ function ChatRow({
       className="absolute block w-[390px] text-left"
       style={{ left: 7, top, height: ROW_HEIGHT }}
     >
-      {/* 405 against the row's 390: the frame lets the highlight breathe past the row. */}
+      {/* Past the clock: the scroller is 417 and this button starts 7 in, so 410 lands on its edge. */}
       {selected ? (
         <span
           aria-hidden
-          className="absolute rounded-[16px] bg-figma-canvas"
-          style={{ left: 0, top: 4, width: 376, height: 72 }}
+          className="pointer-events-none absolute rounded-[26px] bg-[#e7e9ed]"
+          style={{ left: 0, top: -4, width: 410, height: 96 }}
         />
       ) : null}
       <img
@@ -585,7 +632,7 @@ function ChatRow({
           {chat.unreadCount}
         </span>
       ) : null}
-      {last ? null : (
+      {last || hideHairline ? null : (
         <span
           aria-hidden
           className="absolute"
@@ -600,6 +647,7 @@ function EngineerStartRow({
   engineer,
   top,
   last,
+  hideHairline,
   opening,
   writesDisabled,
   selected,
@@ -608,6 +656,7 @@ function EngineerStartRow({
   engineer: { readonly id: string; readonly displayName: string; readonly canChat: boolean };
   top: number;
   last: boolean;
+  hideHairline: boolean;
   opening: boolean;
   writesDisabled: boolean;
   selected: boolean;
@@ -625,8 +674,8 @@ function EngineerStartRow({
       {selected ? (
         <span
           aria-hidden
-          className="absolute rounded-[16px] bg-figma-canvas"
-          style={{ left: 0, top: 4, width: 376, height: 72 }}
+          className="pointer-events-none absolute rounded-[26px] bg-[#e7e9ed]"
+          style={{ left: 0, top: -4, width: 410, height: 96 }}
         />
       ) : null}
       <img
@@ -653,7 +702,7 @@ function EngineerStartRow({
               ? t('figma-dashboard.ChatsView.chatsReadOnly')
               : t('figma-dashboard.ChatsView.engineerChatUnavailable')}
       </FigmaText>
-      {last ? null : (
+      {last || hideHairline ? null : (
         <span
           aria-hidden
           className="absolute"
@@ -671,22 +720,34 @@ function EngineerStartRow({
 function Bubble({
   message,
   motionOn,
+  mascot,
 }: {
   message: AiMessage;
   motionOn: boolean;
+  /** Lane mascot, only beside a line the assistant wrote. */
+  mascot: string | null;
 }) {
   const mine = message.author === 'dispatcher';
   return (
     <>
       <motion.div
-        className={`flex w-full ${mine ? 'justify-end' : 'justify-start'}`}
+        className={`flex w-full items-start ${mine ? 'justify-end' : 'justify-start'}`}
+        style={{ gap: 12 }}
         initial={motionOn ? { opacity: 0, y: 12 } : false}
         animate={{ opacity: 1, y: 0 }}
         transition={motionOn ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
       >
+        {mascot ? (
+          <img
+            alt=""
+            src={mascot}
+            className="shrink-0 rounded-full object-cover"
+            style={{ width: 48, height: 48 }}
+          />
+        ) : null}
         <div
           className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
-          style={{ maxWidth: BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
+          style={{ maxWidth: mascot ? BUBBLE_MAX - 60 : BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
         >
           {mine ? (
             <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>

@@ -13,6 +13,7 @@ const base: UseAssistantChatResult = {
   runState: null,
   quota: null,
   handoffStatus: null,
+  handoffMark: null,
   activity: null,
   loading: false,
   sending: false,

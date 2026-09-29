@@ -25,7 +25,6 @@ export function EngineerMenu({
   name,
   email,
   chatUnread = false,
-  chatNotice = null,
   active,
   lunch,
   breakActive,
@@ -44,8 +43,6 @@ export function EngineerMenu({
   email: string;
   /** Yellow dot on «Помощник» while a line is waiting. Cleared once that screen is open. */
   chatUnread?: boolean;
-  /** Short preview of the waiting line, shown under the menu item. */
-  chatNotice?: string | null;
   active: EngineerMenuId;
   lunch: EngineerLunchItem | null;
   breakActive: boolean;
@@ -112,19 +109,6 @@ export function EngineerMenu({
               disabled={isNavixOffline()}
               dot={chatUnread && active !== 'assistant'}
             />
-            {chatUnread && active !== 'assistant' && chatNotice ? (
-              <p
-                className="font-semibold text-figma-ink"
-                style={{
-                  marginTop: eu(-8),
-                  marginLeft: eu(76),
-                  fontSize: eu(16),
-                  color: '#8a6a00',
-                }}
-              >
-                {t('components.ai.chatNotice')}
-              </p>
-            ) : null}
             <MenuItem
               label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
               icon={ENGINEER_ASSETS.gear}
@@ -316,11 +300,6 @@ export function EngineerMenu({
                   onClick={() => onNavigate('assistant')}
                   dot={chatUnread && active !== 'assistant'}
                 />
-                {chatUnread && active !== 'assistant' && chatNotice ? (
-                  <p className="font-semibold" style={{ marginLeft: eu(76), fontSize: eu(16), color: '#8a6a00' }}>
-                    {t('components.ai.chatNotice')}
-                  </p>
-                ) : null}
                 <MenuItem
                   label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
                   icon={ENGINEER_ASSETS.gear}

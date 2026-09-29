@@ -1738,6 +1738,7 @@ const aiViewSchema = z.object({
     llmModel: z.string().nullable(),
     llmApiKeySet: z.boolean(),
     llmApiKeyLast4: z.string().nullable(),
+    llmReasoningEffort: z.enum(['none', 'low', 'medium', 'high']),
     jevApiUrl: z.string().nullable(),
     jevModel: z.string().nullable(),
     jevApiKeySet: z.boolean(),
@@ -1853,6 +1854,7 @@ export function saveAiSettings(
     llmModel?: string | null;
     llmApiKey?: string;
     clearLlmApiKey?: boolean;
+    llmReasoningEffort?: 'none' | 'low' | 'medium' | 'high';
     jevApiUrl?: string | null;
     jevModel?: string | null;
     jevApiKey?: string;

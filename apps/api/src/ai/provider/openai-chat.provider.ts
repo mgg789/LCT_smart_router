@@ -47,7 +47,7 @@ export class OpenAiChatProvider extends LlmProvider {
   constructor(
     private readonly client: OpenAI,
     private readonly clock: Clock,
-    private readonly reasoningEffort: 'none' | 'low' = 'none',
+    private readonly reasoningEffort: 'none' | 'low' | 'medium' | 'high' = 'none',
   ) {
     super();
   }
@@ -73,9 +73,9 @@ export class OpenAiChatProvider extends LlmProvider {
           ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
           stream: true,
           stream_options: { include_usage: true },
-          ...(this.reasoningEffort === 'low'
-            ? { thinking: { type: 'enabled' }, reasoning_effort: 'low' }
-            : { thinking: { type: 'disabled' } }),
+          ...(this.reasoningEffort === 'none'
+            ? { thinking: { type: 'disabled' } }
+            : { thinking: { type: 'enabled' }, reasoning_effort: this.reasoningEffort }),
         } as ChatCompletionCreateParamsStreaming,
         { signal: input.signal },
       );

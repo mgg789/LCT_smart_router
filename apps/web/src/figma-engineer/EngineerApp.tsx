@@ -73,7 +73,6 @@ export function EngineerApp({
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<EngineerMenuId>('day');
   const [chatUnread, setChatUnread] = useState(false);
-  const [chatNotice, setChatNotice] = useState<string | null>(null);
   const chatSeen = useRef(0);
   const chatPrimed = useRef(false);
   const onChatInbox = useCallback((report: { seq: number; preview: string; active: boolean }) => {
@@ -85,13 +84,9 @@ export function EngineerApp({
     if (report.active) {
       chatSeen.current = Math.max(chatSeen.current, report.seq);
       setChatUnread(false);
-      setChatNotice(null);
       return;
     }
-    if (report.seq > chatSeen.current) {
-      setChatUnread(true);
-      setChatNotice(report.preview.trim().slice(0, 80));
-    }
+    if (report.seq > chatSeen.current) setChatUnread(true);
   }, []);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [profile, setProfile] = useState<EngineerView | null>(
@@ -485,7 +480,6 @@ export function EngineerApp({
       name={name}
       email={email || '—'}
       chatUnread={chatUnread}
-      chatNotice={chatNotice}
       active={screen}
       lunch={lunch}
       breakActive={
@@ -519,7 +513,6 @@ export function EngineerApp({
       name={name}
       email={email || '—'}
       chatUnread={chatUnread}
-      chatNotice={chatNotice}
       active={screen}
       lunch={lunch}
       breakActive={

@@ -1503,6 +1503,15 @@ export const ru = {
   'figma-dashboard.SettingsModal.4eb1d4b516':
     'Время между завершением работы и прибытием может включать ожидание. Покрытие данными не является оценкой точности.',
   'figma-dashboard.SettingsModal.1b196cc1c1': 'LLM (OpenAI SDK)',
+  'figma-dashboard.SettingsModal.reasoning': 'Уровень reasoning',
+  'figma-dashboard.SettingsModal.reasoningNone': 'Без reasoning',
+  'figma-dashboard.SettingsModal.reasoningHint': 'применится если модель поддерживает',
+  'figma-dashboard.EngineerColumn.compare': 'Сравнить инженеров',
+  'figma-dashboard.EngineerCompare.title': 'Сравнение инженеров',
+  'figma-dashboard.EngineerCompare.empty': 'В этой смене нет инженеров',
+  'figma-dashboard.EngineerCompare.lunch': 'Обед',
+  'figma-dashboard.EngineerCompare.road': 'Дорога',
+  'figma-dashboard.EngineerCompare.job': 'Заявка',
   'figma-dashboard.SettingsModal.e9ede6a562':
     'Настройки из окружения сервера отображаются автоматически. Сохранённые изменения используются в новых вызовах.',
   'figma-dashboard.SettingsModal.e7a241deba': 'URL',

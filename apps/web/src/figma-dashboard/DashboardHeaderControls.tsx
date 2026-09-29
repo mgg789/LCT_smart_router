@@ -107,6 +107,7 @@ export function SidebarNav({
           const active = item.id === activeNav;
           const locked = isNavLocked(item.id) || (isNavixOffline() && item.id === 'ai');
           const icon = NAV_ICON_BOX[item.id];
+          const unreadChats = item.id === 'chats' && chatsUnread;
           return (
             <button
               key={item.id}
@@ -127,26 +128,40 @@ export function SidebarNav({
               }`}
               style={{ marginBottom: NAV_ITEM_GAP }}
             >
-              <FigmaIcon
-                src={NAV_ICONS[item.icon]}
-                alt=""
-                width={icon.width}
-                height={icon.height}
-                className={`${icon.className} ${active ? 'nav-glyph-on' : 'nav-glyph-off'} transition-[filter] duration-150`}
-              />
+              {unreadChats ? (
+                <span
+                  aria-hidden
+                  className={icon.className}
+                  style={{
+                    width: icon.width,
+                    height: icon.height,
+                    backgroundColor: 'var(--color-figma-bee)',
+                    WebkitMaskImage: `url(${NAV_ICONS[item.icon]})`,
+                    maskImage: `url(${NAV_ICONS[item.icon]})`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                  }}
+                />
+              ) : (
+                <FigmaIcon
+                  src={NAV_ICONS[item.icon]}
+                  alt=""
+                  width={icon.width}
+                  height={icon.height}
+                  className={`${icon.className} ${active ? 'nav-glyph-on' : 'nav-glyph-off'} transition-[filter] duration-150`}
+                />
+              )}
               <FigmaText
                 className={`figma-nowrap relative z-10 font-semibold text-[16px] tracking-[-0.272px] transition-colors duration-150 ${
-                  active ? 'text-white' : 'text-figma-muted'
+                  unreadChats ? 'text-figma-bee' : active ? 'text-white' : 'text-figma-muted'
                 }`}
               >
                 {item.label}
               </FigmaText>
-              {item.id === 'chats' && chatsUnread ? (
-                <span
-                  aria-hidden
-                  className="absolute top-[8px] right-[18px] z-10 size-[10px] rounded-full bg-figma-bee"
-                />
-              ) : null}
             </button>
           );
         })}

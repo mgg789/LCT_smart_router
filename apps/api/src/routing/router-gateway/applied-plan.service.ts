@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
 import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
+import { reserveNameFor } from '../../common/reserve-name';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
@@ -855,7 +856,7 @@ export class AppliedPlanService {
       await tx.engineer.create({
         data: {
           id: engineerId,
-          displayName: `Резерв ${region} ${index || engineerId}`,
+          displayName: reserveNameFor(region, index || engineerId),
           inputOrder: 10_000 + index,
           skills: ['local', 'connection', 'emergency'],
           transportType: 'car',

@@ -651,6 +651,11 @@ export function EngineersView({
                 })
                 .finally(() => setChatOpening(false));
             }}
+            whileHover={
+              motionOn && token && !busy && !chatOpening ? { scale: 1.045, y: -2 } : undefined
+            }
+            whileTap={motionOn && token && !busy && !chatOpening ? { scale: 0.98 } : undefined}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             className="absolute z-20 flex h-[51px] w-[225px] items-center rounded-[27px] bg-figma-bee px-[16px] disabled:cursor-not-allowed disabled:opacity-45"
             style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
           >

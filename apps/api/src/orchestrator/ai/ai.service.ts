@@ -53,6 +53,7 @@ export interface AiSettingsView {
   readonly llmModel: string | null;
   readonly llmApiKeySet: boolean;
   readonly llmApiKeyLast4: string | null;
+  readonly llmReasoningEffort: 'none' | 'low' | 'medium' | 'high';
   readonly jevApiUrl: string | null;
   readonly jevModel: string | null;
   readonly jevApiKeySet: boolean;
@@ -79,6 +80,7 @@ type StoredAiSettings = StoredAiConnections & {
   llmApiUrl?: string | null;
   llmModel?: string | null;
   llmApiKeyLast4?: string | null;
+  llmReasoningEffort?: 'none' | 'low' | 'medium' | 'high' | null;
   jevApiUrl?: string | null;
   jevModel?: string | null;
   jevApiKeyLast4?: string | null;
@@ -209,6 +211,7 @@ export class AiService {
       llmModel?: string | null;
       llmApiKey?: string;
       clearLlmApiKey?: boolean;
+      llmReasoningEffort?: 'none' | 'low' | 'medium' | 'high';
       jevApiUrl?: string | null;
       jevModel?: string | null;
       jevApiKey?: string;
@@ -223,6 +226,7 @@ export class AiService {
     }
     if (patch.llmApiUrl !== undefined) next.llmApiUrl = blankToNull(patch.llmApiUrl);
     if (patch.llmModel !== undefined) next.llmModel = blankToNull(patch.llmModel);
+    if (patch.llmReasoningEffort !== undefined) next.llmReasoningEffort = patch.llmReasoningEffort;
     if (patch.clearLlmApiKey) {
       next.llmApiKey = null;
       next.llmApiKeyLast4 = null;
@@ -1003,6 +1007,7 @@ export class AiService {
       llmModel: effective.llm.model,
       llmApiKeySet: !!effective.llm.key,
       llmApiKeyLast4: effective.llm.key?.slice(-4) ?? null,
+      llmReasoningEffort: effective.llm.reasoningEffort,
       jevApiUrl: effective.jev.url,
       jevModel: effective.jev.model,
       jevApiKeySet: !!effective.jev.key,

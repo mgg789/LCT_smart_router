@@ -2,18 +2,33 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { APP_STATE_KEYS, PrismaService } from '../../persistence';
 
+/** Sent only when the chat endpoint understands it. `none` turns thinking off. */
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 /** Private connection fields use the same durable AppState storage as map credentials. */
 export interface StoredAiConnections {
   llmApiUrl?: string | null;
   llmModel?: string | null;
   llmApiKey?: string | null;
+  llmReasoningEffort?: ReasoningEffort | null;
   jevApiUrl?: string | null;
   jevModel?: string | null;
   jevApiKey?: string | null;
 }
 export interface AiConnections {
-  llm: { url: string; model: string; key: string | null };
+  llm: { url: string; model: string; key: string | null; reasoningEffort: ReasoningEffort };
   jev: { url: string; model: string | null; key: string | null };
+}
+
+function reasoningEffortOf(
+  stored: ReasoningEffort | null | undefined,
+  fallback: 'none' | 'low',
+): ReasoningEffort {
+  if (stored === 'none' || stored === 'low' || stored === 'medium' || stored === 'high') {
+    return stored;
+  }
+  return fallback;
 }
 /** Explicit null credentials disable env fallback; omitted legacy keys still inherit env. */
 export function resolveAiConnections(
@@ -25,6 +40,10 @@ export function resolveAiConnections(
       url: stored?.llmApiUrl ?? config.get('LLM_BASE_URL'),
       model: stored?.llmModel ?? config.get('LLM_MODEL'),
       key: stored?.llmApiKey !== undefined ? stored.llmApiKey : (config.get('LLM_TOKEN') ?? null),
+      reasoningEffort: reasoningEffortOf(
+        stored?.llmReasoningEffort,
+        config.get('LLM_CHAT_REASONING_EFFORT'),
+      ),
     },
     jev: {
       url: stored?.jevApiUrl ?? config.get('JEV_API_URL') ?? 'http://host.docker.internal:12444',

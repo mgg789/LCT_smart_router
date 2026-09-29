@@ -8,6 +8,7 @@ export const FIGMA_ASSETS = {
   welcomeGlobe: '/figma/welcome-globe.png',
   iconPlus: '/figma/icon-plus.svg',
   brandLine: '/figma/brand-line.svg',
+  scale: '/figma/scale.svg',
   iconPlusWhite: '/figma/icon-plus-white.svg',
   iconUpload: '/figma/icon-upload.svg',
   navHome: '/figma/nav-home.svg',

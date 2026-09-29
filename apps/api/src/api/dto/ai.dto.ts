@@ -29,6 +29,7 @@ export const aiSettingsSchema = z.object({
   planCalibrationEnabled: z.boolean().optional(),
   llmApiUrl: modelEndpoint,
   llmModel: z.string().trim().max(120).nullable().optional(),
+  llmReasoningEffort: z.enum(['none', 'low', 'medium', 'high']).optional(),
   llmApiKey: modelKey,
   clearLlmApiKey: z.boolean().optional(),
   jevApiUrl: modelEndpoint,

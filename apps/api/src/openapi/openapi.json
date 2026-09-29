@@ -62986,6 +62986,26 @@
                             }
                           ]
                         },
+                        "llmReasoningEffort": {
+                          "anyOf": [
+                            {
+                              "const": "none",
+                              "type": "string"
+                            },
+                            {
+                              "const": "low",
+                              "type": "string"
+                            },
+                            {
+                              "const": "medium",
+                              "type": "string"
+                            },
+                            {
+                              "const": "high",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "jevApiUrl": {
                           "anyOf": [
                             {
@@ -63027,6 +63047,7 @@
                         "llmModel",
                         "llmApiKeySet",
                         "llmApiKeyLast4",
+                        "llmReasoningEffort",
                         "jevApiUrl",
                         "jevModel",
                         "jevApiKeySet",
@@ -63563,6 +63584,26 @@
                             }
                           ]
                         },
+                        "llmReasoningEffort": {
+                          "anyOf": [
+                            {
+                              "const": "none",
+                              "type": "string"
+                            },
+                            {
+                              "const": "low",
+                              "type": "string"
+                            },
+                            {
+                              "const": "medium",
+                              "type": "string"
+                            },
+                            {
+                              "const": "high",
+                              "type": "string"
+                            }
+                          ]
+                        },
                         "jevApiUrl": {
                           "anyOf": [
                             {
@@ -63604,6 +63645,7 @@
                         "llmModel",
                         "llmApiKeySet",
                         "llmApiKeyLast4",
+                        "llmReasoningEffort",
                         "jevApiUrl",
                         "jevModel",
                         "jevApiKeySet",
@@ -64101,6 +64143,15 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "llmReasoningEffort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "low",
+                      "medium",
+                      "high"
                     ]
                   },
                   "llmApiKey": {

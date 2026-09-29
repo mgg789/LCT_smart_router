@@ -1422,6 +1422,7 @@ function AiForm({ token }: { token: string | null }) {
   const [enabled, setEnabled] = useState(false);
   const [llmUrl, setLlmUrl] = useState('');
   const [llmModel, setLlmModel] = useState('');
+  const [llmReasoning, setLlmReasoning] = useState<'none' | 'low' | 'medium' | 'high'>('none');
   const [llmKey, setLlmKey] = useState('');
   const [jevUrl, setJevUrl] = useState('');
   const [jevModel, setJevModel] = useState('');
@@ -1438,6 +1439,7 @@ function AiForm({ token }: { token: string | null }) {
         setEnabled(next.settings.planCalibrationEnabled);
         setLlmUrl(next.settings.llmApiUrl ?? '');
         setLlmModel(next.settings.llmModel ?? '');
+        setLlmReasoning(next.settings.llmReasoningEffort);
         setJevUrl(next.settings.jevApiUrl ?? '');
         setJevModel(next.settings.jevModel ?? '');
       })
@@ -1465,6 +1467,7 @@ function AiForm({ token }: { token: string | null }) {
         setEnabled(next.settings.planCalibrationEnabled);
         setLlmUrl(next.settings.llmApiUrl ?? '');
         setLlmModel(next.settings.llmModel ?? '');
+        setLlmReasoning(next.settings.llmReasoningEffort);
         setJevUrl(next.settings.jevApiUrl ?? '');
         setJevModel(next.settings.jevModel ?? '');
         setLlmKey('');
@@ -1485,6 +1488,7 @@ function AiForm({ token }: { token: string | null }) {
     enabled !== (view?.settings.planCalibrationEnabled ?? false) ||
     llmUrl !== (view?.settings.llmApiUrl ?? '') ||
     llmModel !== (view?.settings.llmModel ?? '') ||
+    llmReasoning !== (view?.settings.llmReasoningEffort ?? 'none') ||
     llmKey.length > 0 ||
     jevUrl !== (view?.settings.jevApiUrl ?? '') ||
     jevModel !== (view?.settings.jevModel ?? '') ||
@@ -1602,6 +1606,27 @@ function AiForm({ token }: { token: string | null }) {
             />
           </Field>
           <Field
+            label={t('figma-dashboard.SettingsModal.reasoning')}
+            htmlFor="ai-llm-reasoning"
+          >
+            <select
+              id="ai-llm-reasoning"
+              value={llmReasoning}
+              onChange={(event) =>
+                setLlmReasoning(event.target.value as 'none' | 'low' | 'medium' | 'high')
+              }
+              className={FIELD}
+            >
+              <option value="none">{t('figma-dashboard.SettingsModal.reasoningNone')}</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+            <p className="mt-[6px] font-medium text-[13px] text-figma-muted">
+              {t('figma-dashboard.SettingsModal.reasoningHint')}
+            </p>
+          </Field>
+          <Field
             label={
               view?.settings.llmApiKeySet
                 ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}`
@@ -1687,6 +1712,9 @@ function AiForm({ token }: { token: string | null }) {
             planCalibrationEnabled: enabled,
             ...(llmUrl !== (view?.settings.llmApiUrl ?? '') ? { llmApiUrl: llmUrl || null } : {}),
             ...(llmModel !== (view?.settings.llmModel ?? '') ? { llmModel: llmModel || null } : {}),
+            ...(llmReasoning !== (view?.settings.llmReasoningEffort ?? 'none')
+              ? { llmReasoningEffort: llmReasoning }
+              : {}),
             ...(llmKey ? { llmApiKey: llmKey } : {}),
             ...(jevUrl !== (view?.settings.jevApiUrl ?? '') ? { jevApiUrl: jevUrl || null } : {}),
             ...(jevModel !== (view?.settings.jevModel ?? '') ? { jevModel: jevModel || null } : {}),

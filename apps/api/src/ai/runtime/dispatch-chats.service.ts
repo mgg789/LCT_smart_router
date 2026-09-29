@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import { reserveDisplayName } from '../../common/reserve-name';
 import type {
   AiConversation,
   AiHandoff,
@@ -466,7 +467,7 @@ export class DispatchChatsService {
         accountId: engineer.accountId,
         role: 'engineer',
         roleProfile: 'engineer',
-        title: `Инженер · ${engineer.displayName}`,
+        title: `Инженер · ${reserveDisplayName(engineer.displayName)}`,
         contextRef: { engineerId: engineer.id },
         requestIds: [],
         engineerIds: [engineer.id],

@@ -32,6 +32,7 @@ describe('engineer sidebar transport icons', () => {
         motionOn={false}
         onSearchToggle={noop}
         onSearchChange={noop}
+        onOpenCompare={noop}
         onSelect={noop}
         onSelectUnassigned={noop}
       />,

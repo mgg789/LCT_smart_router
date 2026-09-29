@@ -1,4 +1,5 @@
 import type { EngineerDayView, EngineerView } from '@lct/shared';
+import { reserveDisplayName } from '../common/reserve-name';
 import type { Engineer, EngineerDay } from '../generated/prisma/client';
 
 export type { EngineerDayView, EngineerView };
@@ -17,7 +18,7 @@ export function toEngineerView(
   return {
     id: engineer.id,
     version: engineer.version,
-    displayName: engineer.displayName,
+    displayName: reserveDisplayName(engineer.displayName),
     inputOrder: engineer.inputOrder,
     skills: engineer.skills,
     transportType: engineer.transportType,

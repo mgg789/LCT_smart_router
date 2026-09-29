@@ -19,7 +19,6 @@ export function ClientMenu({
   motionOn,
   email,
   chatUnread = false,
-  chatNotice = null,
   active,
   onClose,
   docked,
@@ -30,7 +29,6 @@ export function ClientMenu({
   motionOn: boolean;
   email: string | null;
   chatUnread?: boolean;
-  chatNotice?: string | null;
   active: ClientScreenId;
   onClose: () => void;
   /** Docked in the desk's rail: always open, no backdrop, no way to close. */
@@ -90,11 +88,6 @@ export function ClientMenu({
               onClick={() => onNavigate('support')}
               dot={chatUnread && active !== 'support'}
             />
-            {chatUnread && active !== 'support' && chatNotice ? (
-              <p className="font-semibold" style={{ marginLeft: eu(76), fontSize: eu(16), color: '#8a6a00' }}>
-                {t('components.ai.chatNotice')}
-              </p>
-            ) : null}
           </nav>
           <div
             className="relative mt-auto flex flex-col bg-white"
@@ -201,11 +194,6 @@ export function ClientMenu({
                   onClick={() => onNavigate('support')}
                   dot={chatUnread && active !== 'support'}
                 />
-                {chatUnread && active !== 'support' && chatNotice ? (
-                  <p className="font-semibold" style={{ marginLeft: eu(76), fontSize: eu(16), color: '#8a6a00' }}>
-                    {t('components.ai.chatNotice')}
-                  </p>
-                ) : null}
               </nav>
               <div
                 className="relative mt-auto flex flex-col bg-white"

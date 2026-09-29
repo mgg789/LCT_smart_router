@@ -18,6 +18,7 @@ import {
   type AiOperationView,
   type AssistantChatMessage,
   type AssistantSurface,
+  type HandoffMark,
   useAssistantChat,
 } from '../../hooks/useAssistantChat';
 import { t } from '../../i18n';
@@ -343,7 +344,9 @@ export function PhoneAiPane({
               <div className="flex flex-col" style={{ gap: eu(28) }}>
                 {spoken.map((message, index) => (
                   <div key={message.id} className="flex flex-col" style={{ gap: eu(28) }}>
-                    <TurnDivider kind={dividerBefore(spoken, index)} />
+                    {handoffDividersAt(spoken, index, chat.handoffMark).map((kind) => (
+                      <TurnDivider key={kind} kind={kind} />
+                    ))}
                     {message.kind !== 'text' || message.author === 'system' ? (
                     <ChatMessage
                       key={message.id}
@@ -386,6 +389,9 @@ export function PhoneAiPane({
                     />
                     )}
                   </div>
+                ))}
+                {trailingHandoffDividers(spoken, chat.handoffMark).map((kind) => (
+                  <TurnDivider key={`tail-${kind}`} kind={kind} />
                 ))}
                 {thinking ? <ThinkingRow avatar={avatar} /> : null}
                 <ChatBottomSpacer />
@@ -632,6 +638,79 @@ export function dividerBefore(
   if (message.author === 'dispatcher' && previous?.author !== 'dispatcher') return 'dispatcher';
   if (message.author === 'assistant' && previous?.author === 'dispatcher') return 'assistant';
   return null;
+}
+
+/**
+ * Strips at a handover boundary. The latest episode is placed by seq, so the strip
+ * exists before the next speaker has written. Older episodes, which this client only
+ * sees as author changes, keep the author rule.
+ */
+export function handoffDividersAt(
+  messages: readonly { author: string; seq: number }[],
+  index: number,
+  mark: HandoffMark | null,
+): Array<'dispatcher' | 'assistant'> {
+  if (!mark) {
+    const kind = dividerBefore(messages, index);
+    return kind ? [kind] : [];
+  }
+  const message = messages[index];
+  if (!message) return [];
+  const previous = messages[index - 1];
+  const previousSeq = previous && Number.isFinite(previous.seq) ? previous.seq : null;
+  if (!Number.isFinite(message.seq)) {
+    const kinds: Array<'dispatcher' | 'assistant'> = [];
+    if (mark.open && (previousSeq === null || previousSeq <= mark.startSeq)) kinds.push('dispatcher');
+    if (
+      mark.endSeq !== null &&
+      !mark.open &&
+      (previousSeq === null || previousSeq <= mark.endSeq)
+    ) {
+      if (!kinds.includes('dispatcher') && (previousSeq === null || previousSeq <= mark.startSeq)) {
+        kinds.push('dispatcher');
+      }
+      kinds.push('assistant');
+    }
+    return kinds;
+  }
+  const kinds: Array<'dispatcher' | 'assistant'> = [];
+  if (message.seq > mark.startSeq && (previousSeq === null || previousSeq <= mark.startSeq)) {
+    kinds.push('dispatcher');
+  }
+  if (
+    mark.endSeq !== null &&
+    message.seq > mark.endSeq &&
+    (previousSeq === null || previousSeq <= mark.endSeq)
+  ) {
+    kinds.push('assistant');
+  }
+  if (kinds.length > 0) return kinds;
+  if (message.seq <= mark.startSeq) {
+    const kind = dividerBefore(messages, index);
+    return kind ? [kind] : [];
+  }
+  return [];
+}
+
+/**
+ * The same strips when the boundary is the end of the transcript: the chat was just
+ * handed over, or just handed back, and nobody has written on the new side yet.
+ */
+export function trailingHandoffDividers(
+  messages: readonly { seq: number }[],
+  mark: HandoffMark | null,
+): Array<'dispatcher' | 'assistant'> {
+  if (!mark) return [];
+  if (messages.some((message) => !Number.isFinite(message.seq))) return [];
+  const endSeq = mark.endSeq;
+  const afterStart = messages.some((message) => message.seq > mark.startSeq);
+  if (!afterStart) {
+    return mark.open || endSeq === null ? ['dispatcher'] : ['dispatcher', 'assistant'];
+  }
+  if (endSeq !== null && !mark.open && !messages.some((message) => message.seq > endSeq)) {
+    return ['assistant'];
+  }
+  return [];
 }
 
 /** The only handover marks on a client or engineer chat: a strip, not a system bubble. */
