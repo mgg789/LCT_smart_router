@@ -132,14 +132,15 @@
     "control": "98b6378716e0c52b683289e578a1efc2bd885c1a32b0b3c1f5d4e0fd9b66b298"
   },
   "resource_sha256": {
-    "geocodes": "169627d2f78a9fdfe7795234f77d1dde5d4955bb908d107bdff1c50da113046a",
-    "road_matrix": "b65cb704ebdccfc13f958e7c1d8439da74c72a7a82545954ef48406318f5fae0"
+    "geocodes": "9e73932565ee8e43a98529d13893bf9069b6b9f7340135b4e0fed42ef094906e",
+    "road_matrix": "b2361eead1dc64f9c3ce6e3beaa3dade7ed3236956fc7c4d6c53fdc504b18737"
   },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments or service durations.",
     "Team skills are inferred from HD work types assigned to each named team in the control file.",
     "All teams start at the official East office and routes remain open after the last job.",
     "Official requests do not constrain required transport.",
-    "Bike, walk and transit costs are explicit approximations over the cached OSRM road distance."
+    "Coordinates come from the checked LocationIQ package in data/dataset/geocoded.",
+    "The acceptance matrix is haversine x1.25 at a constant 28 km/h; it has no road polylines. Bike, walk and transit costs are explicit approximations over that distance."
   ]
 }

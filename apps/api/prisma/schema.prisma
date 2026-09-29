@@ -53,6 +53,13 @@ enum TransportType {
   transit
 }
 
+/// 5/2 is a weekday office day; 2/2 is the longer field shift. The pattern is the
+/// engineer's, and today's already opened shift keeps the previous bounds.
+enum ShiftPattern {
+  two_two
+  five_two
+}
+
 /// Portable customer equipment carried by one engineer for one working day.
 /// Stock is intentionally engineer-owned in v0: there is no transfer between routes.
 enum EquipmentType {
@@ -396,6 +403,8 @@ model Engineer {
   homeLat       Float? @map("home_lat")
   homeLon       Float? @map("home_lon")
   region        String?
+  /// Which configured day window this engineer works. Default is the field 2/2 shift.
+  shiftPattern  ShiftPattern @default(two_two) @map("shift_pattern")
   origin        DataOrigin
   createdAt     BigInt @map("created_at")
   updatedAt     BigInt @map("updated_at")

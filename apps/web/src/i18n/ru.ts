@@ -2722,4 +2722,35 @@ export const ru = {
   'figma-dashboard.ChatsView.engineerOpenFailed': 'Не удалось открыть диалог с инженером.',
   'figma-dashboard.ChatsView.engineerChatUnavailable': 'Нет аккаунта для чата',
   'figma-dashboard.ChatsView.chatsReadOnly': 'Чаты доступны только для просмотра',
+  'figma-dashboard.SettingsModal.schedule52': 'Графики смен',
+  'figma-dashboard.SettingsModal.fiveTwoStart': 'Начало дня 5/2',
+  'figma-dashboard.SettingsModal.fiveTwoEnd': 'Конец дня 5/2',
+  'figma-dashboard.SettingsModal.twoTwoStart': 'Начало дня 2/2',
+  'figma-dashboard.SettingsModal.twoTwoEnd': 'Конец дня 2/2',
+  'figma-dashboard.SettingsModal.solverBudgets': 'Лимиты солвера, мс',
+  'figma-dashboard.SettingsModal.solveBudget': 'Расчёт плана',
+  'figma-dashboard.SettingsModal.verifyBudget': 'Проверка маршрута',
+  'figma-dashboard.SettingsModal.comparisonBudget': 'Сравнение политик',
+  'figma-dashboard.EngineersView.schedule': 'График',
+  'figma-dashboard.EngineersView.schedule22': '2/2',
+  'figma-dashboard.EngineersView.schedule52': '5/2',
+  'hooks.useDashboard.scheduleDeferredTitle': 'График сменится со следующего дня',
+  'hooks.useDashboard.scheduleDeferredBody':
+    'Сегодняшняя смена дорабатывается по прежнему графику.',
+  'figma-dashboard.AddressGeocodeDialog.prompt':
+    'В датасете указаны адреса вместо координат. Провести геокодинг (займёт ~{{value0}} мин).',
+  'figma-dashboard.AddressGeocodeDialog.offline':
+    'Геокодинг недоступен, так как контур оффлайн. Данные будут аппроксимированы.',
+  'figma-dashboard.AddressGeocodeDialog.launch': 'Запустить',
+  'figma-dashboard.AddressGeocodeDialog.approximate': 'Аппроксимировать',
+  'figma-dashboard.AddressGeocodeDialog.continue': 'Продолжить',
+  'figma-dashboard.AddressGeocodeDialog.remaining': 'Осталось около {{value0}} с',
+  'figma-dashboard.AddressGeocodeDialog.failed': 'Геокодинг не завершился. Можно аппроксимировать.',
+  'figma-dashboard.AddressGeocodeDialog.summary':
+    'Удачно {{value0}} адресов (до дома), {{value1}} (до улицы), {{value2}} будут аппроксимированы.',
+  'figma-dashboard.PolicyComparisonOverview.completionChart': 'Выполнение заявок за смену',
+  'figma-dashboard.PolicyComparisonOverview.completionChartNote':
+    'Сколько заявок будет выполнено к этому моменту. Цена деления — 30 минут.',
+  'figma-dashboard.PolicyComparisonOverview.completionChartEmpty':
+    'Кривая появится после следующего сравнения политик.',
 } as const;

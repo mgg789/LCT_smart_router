@@ -24,6 +24,7 @@ export function toEngineerView(
     transportType: engineer.transportType,
     transitEligible: engineer.transitEligible,
     region: engineer.region,
+    shiftPattern: engineer.shiftPattern,
     homeLat: engineer.homeLat,
     homeLon: engineer.homeLon,
     // A routing profile can exist without a login: the dispatcher may have imported the

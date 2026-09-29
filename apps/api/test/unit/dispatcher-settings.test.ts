@@ -8,9 +8,12 @@ import {
   toDispatcherSettingsView,
 } from '../../src/orchestrator/settings/dispatcher-settings';
 import {
+  addressQueryLadder,
+  approximateAddress,
   autocompleteQuery,
   hitFromReverse,
   hitsFromAutocomplete,
+  matchLevelOf,
 } from '../../src/orchestrator/settings/geocoding-policy';
 
 describe('dispatcher settings', () => {
@@ -81,5 +84,18 @@ describe('LocationIQ autocomplete query', () => {
     assert.equal(hit?.displayName, 'Рязанский проспект, 10, Москва');
     assert.equal(hit?.lon, 37.761);
     assert.equal(hitFromReverse({ display_name: 'без точки' }), null);
+  });
+
+  it('tries the whole address ladder and ranks a house above a street', () => {
+    const ladder = addressQueryLadder('Москва, ул. Ленина, д. 10');
+    assert.ok(ladder.length >= 2);
+    assert.equal(ladder[0], 'Москва, ул. Ленина, д. 10');
+    assert.equal(matchLevelOf({ class: 'building', type: 'yes' }), 'house');
+    assert.equal(matchLevelOf({ class: 'highway', type: 'residential' }), 'street');
+    assert.equal(matchLevelOf({ class: 'place', type: 'city' }), null);
+    const point = approximateAddress('Москва, ул. Ленина, д. 10');
+    assert.ok(point.lat >= 54.2 && point.lat <= 56.3);
+    assert.ok(point.lon >= 35.8 && point.lon <= 39.8);
+    assert.deepEqual(point, approximateAddress('Москва, ул. Ленина, д. 10'));
   });
 });

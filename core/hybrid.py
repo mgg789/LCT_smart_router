@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from core.contracts import RouterTaskSnapshot
 from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
@@ -112,7 +112,8 @@ def hybrid_plan(
             snapshot.planning_as_of,
         )
         try:
-            chosen = solve(snapshot, corrected_provider, settings, memory, context_version)
+            verify_settings = replace(settings, time_limit_ms=settings.resolved_verify_ms())
+            chosen = solve(snapshot, corrected_provider, verify_settings, memory, context_version)
         except Exception as exc:  # noqa: BLE001 — a bad verified quote must not discard the plan
             log.warning("ROUTE3_RESOLVE_FAILED code=%s; keeping the last plan", type(exc).__name__)
             return HybridRun(chosen, chosen_provider, report)

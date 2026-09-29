@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { PolicyComparisonRow } from '../api/types';
 import { locale, t } from '../i18n';
+import { formatClock } from '../lib/time';
+import { STRATEGY_COLORS } from './PolicyStrategyMap';
 import {
   type ComparisonMeasure,
   comparisonValue,
@@ -41,7 +43,13 @@ const LATE_SHARE_MEASURE = {
 type CostMeasure = keyof typeof COST_MEASURES;
 
 /** Coverage, travel, lateness and staffing comparisons with the same FIFO reference. */
-export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyComparisonRow[] }) {
+export function PolicyComparisonOverview({
+  rows,
+  currentPolicyId = null,
+}: {
+  rows: readonly PolicyComparisonRow[];
+  currentPolicyId?: string | null;
+}) {
   const [measure, setMeasure] = useState<CostMeasure>('kmPerJob');
   const [includeReserve, setIncludeReserve] = useState(false);
   const reserveToggle = useRef<HTMLLabelElement>(null);
@@ -216,6 +224,13 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
           description={t('figma-dashboard.PolicyComparisonOverview.e1f1918822')}
           better="min"
         />
+        <CompletionChart
+          rows={rows.filter((row) => {
+            if (!row.isUsable) return false;
+            if (usesReserve(row)) return includeReserve || currentPolicyId === 'covering';
+            return true;
+          })}
+        />
       </div>
       {reserve ? (
         <label
@@ -246,6 +261,77 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
         </label>
       ) : null}
     </div>
+  );
+}
+
+function CompletionChart({ rows }: { rows: readonly PolicyComparisonRow[] }) {
+  const halfHour = 30 * 60;
+  const ends = rows.flatMap((row) => row.jobEnds ?? []);
+  const origin = ends.length ? Math.floor(Math.min(...ends) / halfHour) * halfHour : 0;
+  const finish = ends.length ? Math.ceil(Math.max(...ends) / halfHour) * halfHour : origin + halfHour;
+  const span = Math.max(halfHour, finish - origin);
+  const ticks: number[] = [];
+  for (let at = origin; at <= finish; at += halfHour) ticks.push(at);
+  const maxCount = Math.max(1, ...rows.map((row) => (row.jobEnds ?? []).length));
+  const width = 720;
+  const height = 180;
+  const padLeft = 36;
+  const padRight = 8;
+  const padTop = 12;
+  const padBottom = 28;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const xOf = (at: number) => padLeft + ((at - origin) / span) * plotW;
+  const yOf = (count: number) => padTop + plotH - (count / maxCount) * plotH;
+  return (
+    <section className="rounded-[20px] bg-figma-soft p-[24px] lg:col-span-2">
+      <p className="text-[16px] font-semibold text-figma-ink">
+        {t('figma-dashboard.PolicyComparisonOverview.completionChart')}
+      </p>
+      <p className="mt-[4px] mb-[12px] text-[14px] text-figma-muted">
+        {t('figma-dashboard.PolicyComparisonOverview.completionChartNote')}
+      </p>
+      {ends.length === 0 ? (
+        <p className="text-[14px] text-figma-muted">
+          {t('figma-dashboard.PolicyComparisonOverview.completionChartEmpty')}
+        </p>
+      ) : (
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[180px] w-full" role="img">
+          {ticks.map((at) => (
+            <g key={at}>
+              <line
+                x1={xOf(at)}
+                x2={xOf(at)}
+                y1={padTop}
+                y2={padTop + plotH}
+                stroke="#d5d6d8"
+                strokeDasharray="3 4"
+              />
+              <text x={xOf(at)} y={height - 8} textAnchor="middle" fontSize="11" fill="#727478">
+                {formatClock(at)}
+              </text>
+            </g>
+          ))}
+          {rows.map((row) => {
+            const times = [...(row.jobEnds ?? [])].sort((left, right) => left - right);
+            if (times.length === 0) return null;
+            const points = [`${xOf(origin)},${yOf(0)}`];
+            times.forEach((at, index) => {
+              points.push(`${xOf(at)},${yOf(index + 1)}`);
+            });
+            return (
+              <polyline
+                key={row.strategyId}
+                fill="none"
+                stroke={STRATEGY_COLORS[row.strategyId] ?? '#272930'}
+                strokeWidth="2.5"
+                points={points.join(' ')}
+              />
+            );
+          })}
+        </svg>
+      )}
+    </section>
   );
 }
 

@@ -114,12 +114,13 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "covering": PolicySpec(
         policy_id="covering",
-        definition_version="covering-4",
-        # After the reserve count, shed jobs off those reserves before shortening
-        # travel. Counting every busy engineer here let a reserve replace a roster
+        definition_version="covering-5",
+        # A free roster engineer takes the job before any reserve, even when the
+        # reserve would be closer or more punctual. Reserves exist for leftovers.
+        # Counting every busy engineer here let a reserve replace a roster
         # engineer who could have taken the same ordinary jobs.
         ordered_criteria=_COVERAGE
-        + ("total_lateness", "additional_engineers", "extra_assignments", "distance", "travel_time"),
+        + ("additional_engineers", "extra_assignments", "total_lateness", "distance", "travel_time"),
         search_stages=(
             "coverage",
             "additional_engineers",

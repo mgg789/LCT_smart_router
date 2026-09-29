@@ -75,15 +75,15 @@
     "control": "18d3249d1f591e25445d20a1c80dcb3e3372966ec49f26b74cf6bbee9825d53c"
   },
   "resource_sha256": {
-    "geocodes": "f23e4d64f9c81a6d4aceab5c5076d63f8607743f9dc59a206738fc6bba1abdf6",
-    "road_matrix": "a101a2d5e3af19d842741ea5c5710392900d164ecb5d44fe47b761a9bbedf515"
+    "geocodes": "c3f489aa2d6ed5af37ee63900cbbe8f27604608f90b40a9588b9ccdf0e51412f",
+    "road_matrix": "defaa4ea2f09c98b2bf2087acd03cea18da18525fb32a2267753a97defbe95dc"
   },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments, service durations or coordinates.",
     "Team skills are inferred from HD work types assigned to each named team in the control file.",
     "All teams start at the official Southeast office and routes remain open after the last job.",
     "Official requests do not constrain required transport.",
-    "Coordinates are deterministic district-centroid projections with address-specific jitter; they are not rooftop geocodes.",
+    "Coordinates come from the checked LocationIQ package in data/dataset/geocoded; they are address matches, not a live geocode at solve time.",
     "The offline matrix uses great-circle distance times 1.25 and a constant 28 km/h car speed; it validates routing behavior, not production ETA accuracy."
   ]
 }

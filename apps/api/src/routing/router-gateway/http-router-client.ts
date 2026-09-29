@@ -151,7 +151,7 @@ const policyComparisonSchema = z.object({
   input_hash: z.string().length(64),
   router_context_version: z.string().min(1),
   computed_at: z.number().int().nonnegative(),
-  search_budget_ms: z.number().int().positive().max(8_000),
+  search_budget_ms: z.number().int().positive().max(120_000),
   rows: z.array(
     z.object({
       strategy_id: z.enum(COMPARISON_STRATEGIES),
@@ -159,6 +159,7 @@ const policyComparisonSchema = z.object({
       additional_engineers: z.number().int().nonnegative().default(0),
       is_usable: z.boolean(),
       calculation_ms: z.number().int().nonnegative(),
+      job_end_at: z.array(z.number().int().nonnegative()).default([]),
       summary: comparisonMetricsSchema,
     }),
   ),
@@ -230,6 +231,9 @@ const technicalSettingsSchema = z.object({
   fixed_travel_time_sec: z.number().int().positive().max(86_400),
   early_finish_replan_threshold_sec: z.number().int().nonnegative().max(86_400),
   task_overrun_tolerance_sec: z.number().int().nonnegative().max(86_400),
+  solve_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
+  verify_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
+  comparison_time_limit_ms: z.number().int().min(1).max(120_000).default(6000),
 });
 
 const routerContextSchema = z.looseObject({
@@ -479,6 +483,9 @@ export class HttpRouterClient extends RouterClient {
         fixed_travel_time_sec: input.fixedTravelTimeSec,
         early_finish_replan_threshold_sec: input.earlyFinishReplanThresholdSec,
         task_overrun_tolerance_sec: input.taskOverrunToleranceSec,
+        solve_time_limit_ms: input.solveTimeLimitMs ?? 6000,
+        verify_time_limit_ms: input.verifyTimeLimitMs ?? 6000,
+        comparison_time_limit_ms: input.comparisonTimeLimitMs ?? 6000,
       }),
     });
     const parsed = technicalSettingsUpdateSchema.safeParse(raw);
@@ -677,6 +684,7 @@ export class HttpRouterClient extends RouterClient {
         additionalEngineers: row.additional_engineers,
         isUsable: row.is_usable,
         calculationMs: row.calculation_ms,
+        jobEnds: row.job_end_at,
         metrics: {
           requestsTotal: row.summary.requests_total,
           assignedCount: row.summary.assigned_count,
@@ -787,6 +795,9 @@ function toTechnicalSettings(
     fixedTravelTimeSec: settings.fixed_travel_time_sec,
     earlyFinishReplanThresholdSec: settings.early_finish_replan_threshold_sec,
     taskOverrunToleranceSec: settings.task_overrun_tolerance_sec,
+    solveTimeLimitMs: settings.solve_time_limit_ms,
+    verifyTimeLimitMs: settings.verify_time_limit_ms,
+    comparisonTimeLimitMs: settings.comparison_time_limit_ms,
     routerContextVersion,
   };
 }

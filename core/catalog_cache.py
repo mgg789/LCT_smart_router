@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 from core.contracts import Plan, PolicyComparison
 
 LOGGER = logging.getLogger(__name__)
-MAX_ENTRY_BYTES = 8 * 1024 * 1024
+MAX_ENTRY_BYTES = 10 * 1024 * 1024
 CATALOG_IDS = {"fast", "compact", "sla", "balanced", "eco", "covering", "baseline"}
 
 

@@ -11,7 +11,7 @@ import type {
 } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import type { Tx } from '../../persistence';
+import { APP_STATE_KEYS, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
   capProvisionalEquipment,
@@ -19,6 +19,11 @@ import {
   equipmentTotal,
   readEquipmentSettings,
 } from '../equipment/equipment-policy';
+import {
+  moscowMinutesToUnix,
+  parseDispatcherSettings,
+  shiftWindowMinutes,
+} from '../settings/dispatcher-settings';
 import { assertLunchConditions, type LunchConditions, workDateOf } from './workday';
 
 export interface CreateEngineerInput {
@@ -29,6 +34,7 @@ export interface CreateEngineerInput {
   readonly region?: string | null;
   readonly homeLat?: number | null;
   readonly homeLon?: number | null;
+  readonly shiftPattern?: 'two_two' | 'five_two';
 }
 
 export interface UpdateEngineerInput {
@@ -38,6 +44,7 @@ export interface UpdateEngineerInput {
   readonly region?: string | null;
   readonly homeLat?: number | null;
   readonly homeLon?: number | null;
+  readonly shiftPattern?: 'two_two' | 'five_two';
 }
 
 export interface WorkdayInput {
@@ -124,6 +131,7 @@ export class EngineersService {
         skills: input.skills,
         transportType: input.transportType,
         region: input.region ?? null,
+        shiftPattern: input.shiftPattern ?? 'two_two',
         homeLat: input.homeLat ?? null,
         homeLon: input.homeLon ?? null,
         origin: 'manual',
@@ -462,6 +470,7 @@ export class EngineersService {
         // there; it is a planning parameter, not an observation (context/42 DF-06).
         homeLat: input.homeLat === undefined ? current.homeLat : input.homeLat,
         homeLon: input.homeLon === undefined ? current.homeLon : input.homeLon,
+        shiftPattern: input.shiftPattern ?? current.shiftPattern,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -759,14 +768,18 @@ export class EngineersService {
     if (existing) {
       return existing;
     }
-    await this.load(context.tx, engineerId);
+    const engineer = await this.load(context.tx, engineerId);
+    const stored = await context.tx.appState.findUnique({
+      where: { key: APP_STATE_KEYS.DISPATCHER_SETTINGS },
+    });
+    const window = shiftWindowMinutes(parseDispatcherSettings(stored?.value), engineer.shiftPattern);
     const now = BigInt(context.now);
     return context.tx.engineerDay.create({
       data: {
         engineerId,
         workDate,
-        shiftStartAt: now,
-        shiftEndAt: now,
+        shiftStartAt: BigInt(moscowMinutesToUnix(workDate, window.startMin)),
+        shiftEndAt: BigInt(moscowMinutesToUnix(workDate, window.endMin)),
         createdAt: now,
         updatedAt: now,
       },

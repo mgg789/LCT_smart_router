@@ -327,13 +327,20 @@ def calculate(
     return result, output
 
 
+def _job_end_at(plan: Plan) -> list[int]:
+    """Completion instants of assigned jobs, earliest first."""
+    return sorted(
+        stop.end_at for route in plan.routes for stop in route.stops if stop.kind == "job"
+    )
+
+
 def calculate_policy_catalog(
     raw: bytes,
     publication_id: str,
     graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 8000,
+    search_budget_ms: int = 6000,
     *,
     offline: bool = False,
 ) -> tuple[PolicyComparison, dict[str, Plan]]:
@@ -347,7 +354,7 @@ def calculate_policy_catalog(
     once per policy. The selected plan for each strategy is returned with the
     summary. Nothing here is published.
     """
-    if not 1 <= search_budget_ms <= 8000:
+    if not 1 <= search_budget_ms <= 120_000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
     provider = planning_travel(graph, settings, snapshot, offline=offline)
@@ -454,6 +461,10 @@ def calculate_policy_catalog(
     )
     rows.append(baseline_row)
     selected["covering"] = covering.main
+    rows = [
+        row.model_copy(update={"job_end_at": _job_end_at(selected[row.strategy_id])})
+        for row in rows
+    ]
     comparison = PolicyComparison(
         input_publication_id=publication_id,
         input_hash=content_hash(raw),
@@ -471,7 +482,7 @@ def calculate_policy_comparison(
     graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 8000,
+    search_budget_ms: int = 6000,
     *,
     offline: bool = False,
 ) -> PolicyComparison:
@@ -539,6 +550,9 @@ class RouterRuntime:
                 fixed_travel_time_sec=saved.fixed_travel_time_sec,
                 early_finish_replan_threshold_sec=saved.early_finish_replan_threshold_sec,
                 task_overrun_tolerance_sec=saved.task_overrun_tolerance_sec,
+                time_limit_ms=saved.solve_time_limit_ms,
+                verify_time_limit_ms=saved.verify_time_limit_ms,
+                comparison_time_limit_ms=saved.comparison_time_limit_ms,
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
@@ -826,7 +840,7 @@ class RouterRuntime:
             return self._compare_policies(search_budget_ms)
 
     def _compare_policies(self, search_budget_ms: int | None) -> PolicyComparison:
-        if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
+        if search_budget_ms is not None and not 1 <= search_budget_ms <= 120_000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:
             publication = self.reader.read()
@@ -860,7 +874,7 @@ class RouterRuntime:
             key = (digest, context_version)
             graph = copy.deepcopy(self._graph)
             settings = copy.deepcopy(self.settings)
-            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 8000)
+            effective_budget_ms = search_budget_ms or settings.resolved_comparison_ms()
             cached = self._comparison_cache.get(key)
             if (cached is not None and cached.search_budget_ms == effective_budget_ms
                     and cached.input_publication_id == publication.publication_id):
@@ -1148,6 +1162,9 @@ class RouterRuntime:
                 fixed_travel_time_sec=requested.fixed_travel_time_sec,
                 early_finish_replan_threshold_sec=requested.early_finish_replan_threshold_sec,
                 task_overrun_tolerance_sec=requested.task_overrun_tolerance_sec,
+                time_limit_ms=requested.solve_time_limit_ms,
+                verify_time_limit_ms=requested.verify_time_limit_ms,
+                comparison_time_limit_ms=requested.comparison_time_limit_ms,
             )
             previous_settings = self.settings
             self.settings = updated_settings

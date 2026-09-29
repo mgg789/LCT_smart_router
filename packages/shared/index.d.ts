@@ -116,6 +116,8 @@ export interface EngineerView {
   /** False only when an imported source explicitly marks this walking crew as no-transit. */
   readonly transitEligible?: boolean;
   readonly region: string | null;
+  /** 2/2 is the default field graph; 5/2 is the shorter weekday window. */
+  readonly shiftPattern?: 'two_two' | 'five_two';
   readonly homeLat: number | null;
   readonly homeLon: number | null;
   readonly hasAccount: boolean;
@@ -139,6 +141,10 @@ export interface CreateDispatchRequestInput {
 export interface DispatcherSettingsView {
   readonly dayStartMin: number;
   readonly dayEndMin: number;
+  readonly fiveTwoStartMin?: number;
+  readonly fiveTwoEndMin?: number;
+  readonly twoTwoStartMin?: number;
+  readonly twoTwoEndMin?: number;
   readonly noShowSec: number;
   readonly overdueSec: number;
   readonly timeRiskSec: number;
@@ -156,6 +162,10 @@ export interface DispatcherSettingsView {
 export interface DispatcherSettingsPatch {
   readonly dayStartMin?: number;
   readonly dayEndMin?: number;
+  readonly fiveTwoStartMin?: number;
+  readonly fiveTwoEndMin?: number;
+  readonly twoTwoStartMin?: number;
+  readonly twoTwoEndMin?: number;
   readonly noShowSec?: number;
   readonly overdueSec?: number;
   readonly timeRiskSec?: number;
@@ -463,6 +473,12 @@ export interface RouterTechnicalSettings {
   readonly fixedTravelTimeSec: number;
   readonly earlyFinishReplanThresholdSec: number;
   readonly taskOverrunToleranceSec: number;
+  /** Main search budget, milliseconds. */
+  readonly solveTimeLimitMs?: number;
+  /** One hybrid route re-check, milliseconds. */
+  readonly verifyTimeLimitMs?: number;
+  /** Policy comparison budget, milliseconds. */
+  readonly comparisonTimeLimitMs?: number;
   readonly routerContextVersion: string;
 }
 
@@ -574,6 +590,8 @@ export interface PolicyComparisonRow {
   readonly additionalEngineers?: number;
   readonly isUsable: boolean;
   readonly calculationMs: number;
+  /** Job completion instants, unix seconds, earliest first. */
+  readonly jobEnds?: number[];
   readonly metrics: PolicyComparisonMetrics;
 }
 
@@ -654,6 +672,8 @@ export interface TabularCompletionOptions {
     readonly field: TabularField;
     readonly value: string;
   }>;
+  /** Address → point chosen by geocoding or explicit approximation. */
+  readonly placedPoints?: Readonly<Record<string, { readonly lat: number; readonly lon: number }>>;
 }
 
 /** Either a complete canonical package or actionable cell errors; neither outcome applies a plan. */

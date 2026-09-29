@@ -59,6 +59,7 @@ export interface PolicyComparisonRow {
   readonly additionalEngineers: number;
   readonly isUsable: boolean;
   readonly calculationMs: number;
+  readonly jobEnds?: readonly number[];
   readonly metrics: PolicyMetrics;
 }
 

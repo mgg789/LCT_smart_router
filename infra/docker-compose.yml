@@ -118,7 +118,7 @@ services:
       - --port
       - '8100'
       - --budget-ms
-      - '${ROUTER_BUDGET_MS:-8000}'
+      - '${ROUTER_BUDGET_MS:-6000}'
       - --settings
       - /app/state/settings.json
     volumes:

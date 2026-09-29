@@ -94,7 +94,11 @@ export function EngineersView({
   onLinkEmail: (engineerId: string, email: string) => Promise<void>;
   onUpdateProfile: (
     engineerId: string,
-    patch: { region?: string; transportType?: EngineerProfile['transportType'] },
+    patch: {
+      region?: string;
+      transportType?: EngineerProfile['transportType'];
+      shiftPattern?: 'two_two' | 'five_two';
+    },
   ) => Promise<void>;
   onDeleteEngineer: (engineerId: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
@@ -753,6 +757,7 @@ function EngineerDossier({
   onUpdateProfile: (patch: {
     region?: string;
     transportType?: EngineerProfile['transportType'];
+    shiftPattern?: 'two_two' | 'five_two';
   }) => Promise<void>;
   motionOn: boolean;
   busy: boolean;
@@ -861,7 +866,7 @@ function EngineerDossier({
           ))}
         </div>
 
-        <div className="mt-auto grid h-[201px] grid-cols-2 gap-[48px]">
+        <div className="mt-auto grid h-[245px] grid-cols-2 gap-[48px]">
           <div className="flex h-full flex-col">
             <FactRow
               icon={TRANSPORT_ICONS[engineer.transportType] ?? FIGMA_ASSETS.engTransport}
@@ -886,6 +891,27 @@ function EngineerDossier({
               options={regions.map((value) => ({ value, label: regionStyle(value).label }))}
               busy={busy}
               onSave={(region) => onUpdateProfile({ region })}
+            />
+            <FactRow
+              icon={FIGMA_ASSETS.reasonClock}
+              label={t('figma-dashboard.EngineersView.schedule')}
+              value={
+                engineer.shiftPattern === 'five_two'
+                  ? t('figma-dashboard.EngineersView.schedule52')
+                  : t('figma-dashboard.EngineersView.schedule22')
+              }
+              selected={engineer.shiftPattern}
+              options={[
+                { value: 'two_two', label: t('figma-dashboard.EngineersView.schedule22') },
+                { value: 'five_two', label: t('figma-dashboard.EngineersView.schedule52') },
+              ]}
+              busy={busy}
+              onSave={(shiftPattern) => {
+                if (shiftPattern === 'two_two' || shiftPattern === 'five_two') {
+                  return onUpdateProfile({ shiftPattern });
+                }
+                return Promise.resolve();
+              }}
             />
             <div className="mt-auto flex gap-[38px]">
               <motion.button

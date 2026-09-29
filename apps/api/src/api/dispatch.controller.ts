@@ -77,7 +77,9 @@ import {
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
+  type GeocodeDatasetDto,
   type UpdateDispatcherSettingsDto,
+  geocodeDatasetSchema,
   updateDispatcherSettingsSchema,
 } from './dto/settings.dto';
 import { type SimulationPatchDto, simulationPatchSchema } from './dto/simulation.dto';
@@ -172,6 +174,9 @@ export class DispatchController {
       fixedTravelTimeSec: dto.fixedTravelTimeSec,
       earlyFinishReplanThresholdSec: dto.earlyFinishReplanThresholdSec,
       taskOverrunToleranceSec: dto.taskOverrunToleranceSec,
+      solveTimeLimitMs: dto.solveTimeLimitMs,
+      verifyTimeLimitMs: dto.verifyTimeLimitMs,
+      comparisonTimeLimitMs: dto.comparisonTimeLimitMs,
     };
     const outcome = await this.operations.executeExternal(
       {
@@ -880,6 +885,9 @@ export class DispatchController {
         fixedTravelTimeSec: current.fixedTravelTimeSec,
         earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
         taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+        solveTimeLimitMs: current.solveTimeLimitMs,
+        verifyTimeLimitMs: current.verifyTimeLimitMs,
+        comparisonTimeLimitMs: current.comparisonTimeLimitMs,
       };
       await this.operations.executeExternal(
         {
@@ -973,6 +981,14 @@ export class DispatchController {
   @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
   async mapStatus() {
     return this.mapRouting.probe();
+  }
+
+  @Post('geocode/dataset')
+  @ApiOperation({
+    summary: 'Geocode dataset addresses through LocationIQ, bounded to Moscow and Moscow Oblast',
+  })
+  async geocodeDataset(@Body(zodBody(geocodeDatasetSchema)) dto: GeocodeDatasetDto) {
+    return this.geocoding.placeAddresses(dto.addresses);
   }
 
   @Get('geocode')

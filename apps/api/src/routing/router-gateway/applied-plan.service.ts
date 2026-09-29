@@ -69,6 +69,7 @@ export class AppliedPlanService {
     );
     if (usesCoveringExtras) {
       await this.ensureCoveringEngineers(tx, now, main);
+      await this.archiveIdleCoveringEngineers(tx, now, main);
     } else {
       await this.archiveCoveringEngineers(tx, now);
     }
@@ -800,6 +801,32 @@ export class AppliedPlanService {
   private async archiveCoveringEngineers(tx: Tx, now: number): Promise<void> {
     const archived = await tx.engineer.updateMany({
       where: { id: { startsWith: 'covering-' }, archivedAt: null },
+      data: { archivedAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+    if (archived.count === 0) {
+      return;
+    }
+    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED);
+  }
+
+  /**
+   * A reserve with no jobs this shift is not on the roster. The solver already
+   * prefers a free base engineer; this drops the leftover row so the board
+   * does not keep an empty «Резерв».
+   */
+  private async archiveIdleCoveringEngineers(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+    const busy = plan.routes
+      .filter(
+        (route) =>
+          route.engineer_id.startsWith('covering-') &&
+          route.stops.some((stop) => stop.kind === 'job' && stop.request_id),
+      )
+      .map((route) => route.engineer_id);
+    const archived = await tx.engineer.updateMany({
+      where: {
+        archivedAt: null,
+        AND: [{ id: { startsWith: 'covering-' } }, { id: { notIn: busy } }],
+      },
       data: { archivedAt: BigInt(now), updatedAt: BigInt(now) },
     });
     if (archived.count === 0) {

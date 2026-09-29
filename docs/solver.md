@@ -57,8 +57,10 @@ fallback-провайдером для отдельных вызовов, а н�
 (`core/exact_gap.py`, полный перебор с мемоизацией состояний), Монте-Карло-надёжность
 и повторный детерминизм. Квоты поиска детерминированы, поэтому колонки качества
 воспроизводимы на любой машине — от железа зависят только колонки времени.
-Методика, цифры на двух машинах (Apple M5 Pro 48 ГБ и сервер MGG drj-1) и
-воспроизведение — [benchmarks/solver-suite-20260928/README.md](./benchmarks/solver-suite-20260928/README.md).
+Методика и цифры после координат LocationIQ (Apple M5 Pro) —
+[benchmarks/solver-suite-20260929/README.md](./benchmarks/solver-suite-20260929/README.md).
+Снимок на центроидных проекциях и двух машинах —
+[benchmarks/solver-suite-20260928/README.md](./benchmarks/solver-suite-20260928/README.md).
 
 ## Пересборка маршрутов и обеды
 

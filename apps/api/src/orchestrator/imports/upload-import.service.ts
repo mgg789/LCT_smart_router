@@ -15,6 +15,8 @@ import { importedWorkCategory } from '../requests/work-type.catalog';
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   type DispatcherSettings,
+  moscowMinutesToUnix,
+  shiftWindowMinutes,
 } from '../settings/dispatcher-settings';
 
 export interface UploadRequestInput {
@@ -235,14 +237,15 @@ export class UploadImportService {
           },
         });
         const workDate = localDate(engineerInput.shiftStartAt, timeZoneOffsetSec);
+        const shift = shiftWindowMinutes(equipmentSettings ?? DEFAULT_DISPATCHER_SETTINGS, 'two_two');
         const lunch = localLunchWindow(workDate, timeZoneOffsetSec);
         const stock = equipment.get(engineerInput.externalId) ?? emptyEquipment();
         await context.tx.engineerDay.create({
           data: {
             engineerId: engineer.id,
             workDate,
-            shiftStartAt: BigInt(engineerInput.shiftStartAt),
-            shiftEndAt: BigInt(engineerInput.shiftEndAt),
+            shiftStartAt: BigInt(moscowMinutesToUnix(workDate, shift.startMin)),
+            shiftEndAt: BigInt(moscowMinutesToUnix(workDate, shift.endMin)),
             lunchEnabled: true,
             lunchDurationSec: 30 * 60,
             lunchWindowStartAt: BigInt(lunch.start),

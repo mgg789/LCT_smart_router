@@ -200,6 +200,10 @@ class RouterTechnicalSettings(Record):
     fixed_travel_time_sec: int = Field(default=1200, gt=0, le=86400)
     early_finish_replan_threshold_sec: int = Field(default=900, ge=0, le=86400)
     task_overrun_tolerance_sec: int = Field(default=600, ge=0, le=86400)
+    # Milliseconds. The live default used to be the 8000 ms process budget.
+    solve_time_limit_ms: int = Field(default=6000, ge=1, le=120_000)
+    verify_time_limit_ms: int = Field(default=6000, ge=1, le=120_000)
+    comparison_time_limit_ms: int = Field(default=6000, ge=1, le=120_000)
 
 
 class SnapshotPublicationEnvelope(Record):
@@ -597,6 +601,8 @@ class PolicyComparisonRow(Record):
     is_usable: bool
     calculation_ms: int = Field(ge=0)
     summary: PlanMetrics
+    # Job completion instants (unix seconds) of the selected plan, for the overview curve.
+    job_end_at: list[int] = Field(default_factory=list)
 
 
 class PolicyComparison(Record):
@@ -606,7 +612,7 @@ class PolicyComparison(Record):
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     router_context_version: ID
     computed_at: Seconds
-    search_budget_ms: int = Field(gt=0, le=8000)
+    search_budget_ms: int = Field(gt=0, le=120_000)
     rows: list[PolicyComparisonRow] = Field(min_length=7, max_length=7)
 
     @model_validator(mode="after")

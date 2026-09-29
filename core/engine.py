@@ -68,6 +68,10 @@ class SearchSettings:
     fixed_travel_time_sec: int = 1200
     early_finish_replan_threshold_sec: int = 900
     task_overrun_tolerance_sec: int = 600
+    # Zero means "inherit": verify uses time_limit_ms, comparison uses min(time_limit_ms, 6000).
+    # A persisted technical revision stores the resolved positive values.
+    verify_time_limit_ms: int = 0
+    comparison_time_limit_ms: int = 0
     tolerance_sec: int | None = None
 
     def __post_init__(self):
@@ -93,11 +97,21 @@ class SearchSettings:
             or self.fixed_travel_time_sec > 86400
             or self.early_finish_replan_threshold_sec > 86400
             or self.task_overrun_tolerance_sec > 86400
+            or not 0 <= self.verify_time_limit_ms <= 120_000
+            or not 0 <= self.comparison_time_limit_ms <= 120_000
         ):
             raise ValueError("invalid search settings")
 
+    def resolved_verify_ms(self) -> int:
+        """Budget of one hybrid re-solve. Unset inherits the main search budget."""
+        return self.verify_time_limit_ms or self.time_limit_ms
+
+    def resolved_comparison_ms(self) -> int:
+        """Policy-catalog budget. Unset stays at the main budget, and never above 6000."""
+        return self.comparison_time_limit_ms or min(self.time_limit_ms, 6000)
+
     def technical(self) -> RouterTechnicalSettings:
-        """Expose only persisted context controls, excluding per-run search budgets."""
+        """Persisted context controls, including the three solver time budgets."""
         return RouterTechnicalSettings(
             strict_time_windows=self.strict_time_windows,
             lunches_enabled=self.lunches_enabled,
@@ -113,6 +127,9 @@ class SearchSettings:
             fixed_travel_time_sec=self.fixed_travel_time_sec,
             early_finish_replan_threshold_sec=self.early_finish_replan_threshold_sec,
             task_overrun_tolerance_sec=self.task_overrun_tolerance_sec,
+            solve_time_limit_ms=self.time_limit_ms,
+            verify_time_limit_ms=self.resolved_verify_ms(),
+            comparison_time_limit_ms=self.resolved_comparison_ms(),
         )
 
 
