@@ -184,7 +184,15 @@ test('ordinary-replanning switch persists without changing the working plan', as
   await signIn(page);
   await waitForAppliedTask(live.api);
   const before = await readPlan(live.api);
-  const open = () => page.getByRole('button', { name: /^Политика:/ }).click();
+  const open = async () => {
+    await page.getByRole('button', { name: /^Политика:/ }).click();
+    // A hover during expansion scrolls the clipped panel and loses its target as it grows.
+    await expect(
+      page.getByRole('button', { name: 'Ручное управление', exact: true }),
+    ).toBeInViewport({
+      ratio: 1,
+    });
+  };
   await open();
   const toggle = page.getByRole('button', { name: /^Перестройка по обычным/ });
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
