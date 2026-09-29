@@ -354,18 +354,24 @@ def _launch(
         {
             "POSTGRES_USER": "lct",
             "POSTGRES_DB": "lct",
-            "NODE_ENV": "production",
-            "AUTH_DEV_EXPOSE_CODES": "false",
+            "NODE_ENV": "development",
+            "AUTH_DEV_EXPOSE_CODES": "true",
             "VITE_SENTRY_ENABLED": "false",
             # A fresh jury volume must open on an empty day. The public stand
             # keeps the seeded demo through prepare_navix_env.py.
             "DEMO_STAND": "false",
         }
     )
+    # Every launcher installation is a loopback-only demo, including online mode.
+    # Imported or saved provider settings must never send real login emails.
+    for key in list(env):
+        if key.startswith("SMTP_"):
+            env.pop(key)
+    log("Локальное демо: коды входа показываются на экране, SMTP отключён.")
     if not options["online"]:
         env["LLM_PROVIDER"] = "off"
         for key in list(env):
-            if key.startswith(("SMTP_", "OTEL_", "SENTRY_", "SYS1_")) or key in (
+            if key.startswith(("OTEL_", "SENTRY_", "SYS1_")) or key in (
                 "LLM_TOKEN",
                 "LLM_PROXY_TOKEN",
                 "LOCATION_IQ_TOKEN",

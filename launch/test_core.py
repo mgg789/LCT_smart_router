@@ -272,6 +272,61 @@ class CoreTests(unittest.TestCase):
                 "it's$$буквы",
             )
 
+    def test_local_login_codes_override_imports_and_survive_restart_in_every_mode(self):
+        real_run = subprocess.run
+
+        def run(args, **kwargs):
+            if "config" in args:
+                return real_run(args, **kwargs)
+            return subprocess.CompletedProcess(args, 0, stdout="")
+
+        for online in (False, True):
+            for mode in ("full", "headless"):
+                with (
+                    self.subTest(online=online, mode=mode),
+                    tempfile.TemporaryDirectory() as temp,
+                    patch.object(core, "STATE", Path(temp)),
+                    patch.object(core.subprocess, "run", side_effect=run),
+                    patch.object(core.urllib.request, "build_opener") as opener,
+                ):
+                    opener.return_value.open.return_value.__enter__.return_value.status = 200
+                    options = dict(
+                        mode=mode,
+                        api_port=19081,
+                        ui_port=5291 if mode == "full" else None,
+                        online=online,
+                        osrm=False,
+                        autostart=False,
+                        redis_beta=False,
+                    )
+                    imported = (
+                        "DISPATCHER_EMAIL=operator@example.test\n"
+                        "DISPATCHER_PASSWORD=fixture-password\n"
+                        "NODE_ENV=production\nAUTH_DEV_EXPOSE_CODES=false\n"
+                        "SMTP_HOST=smtp.invalid\nSMTP_PORT=587\n"
+                        "SMTP_USER=fixture\nSMTP_PASS=fixture-secret\n"
+                    )
+                    identity = None
+                    for restart in (False, True):
+                        core.launch(
+                            options,
+                            core.saved_environment() if restart else imported,
+                            lambda _: None,
+                        )
+                        config = json.loads((Path(temp) / "compose.json").read_text())
+                        generated = core.parse_env((Path(temp) / "input.env").read_text())
+                        for env in (generated, config["services"]["api"]["environment"]):
+                            self.assertEqual(env["NODE_ENV"], "development")
+                            self.assertEqual(env["AUTH_DEV_EXPOSE_CODES"], "true")
+                            self.assertFalse(any(key.startswith("SMTP_") for key in env))
+                        for service in config["services"].values():
+                            for port in service.get("ports", []):
+                                self.assertEqual(port["host_ip"], "127.0.0.1")
+                        current = json.loads((Path(temp) / "identity.json").read_text())
+                        if restart:
+                            self.assertEqual(current, identity)
+                        identity = current
+
     def test_redis_failure_is_optional_and_credentials_survive_switching_modes(self):
         real_run = subprocess.run
         calls, messages = [], []
