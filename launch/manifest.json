@@ -1212,7 +1212,7 @@
   "launch/gateway.cjs": "7c25dcaafcf895e9df0b72ba8609cf9783c8bd94e8abe699173d64b6edff8813",
   "launch/gui.py": "ab2497e062fbc300fe5c114ae9777175b2ccef608ee7e233bfa2e6ed93313710",
   "launch/installation.py": "6575fd545db85beef199b5c481902639c16a6256dcb116a95746dbf147c03ca6",
-  "launch/release.json": "4b58859a67937cba38dda6d6434caf94d5e137a8df01446d41b35618f9334cc7",
+  "launch/release.json": "e6afa1e33d6fe28d14554bcd4485945eba005a2993e4e7a379801b97337251ae",
   "launch/test_core.py": "043b0488d8670b360db7aa8f974c7648173096c02cc7dc9041602400f732018b",
   "launch/test_gui.py": "5a5ec9169d11b62baf78c61d43451cad84990fe1ef03f940a0f1f33f2897ae25",
   "launch/test_installation.py": "61f5c5442dfe88b6a497ec4a8caaa0021940bb99b55f6d1a136c9a9e9d36cabf",
