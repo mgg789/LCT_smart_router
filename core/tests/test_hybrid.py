@@ -1,9 +1,9 @@
 """Hybrid pipeline: fast solve, verification, corrected re-solve on breaches."""
 
-
+import pytest
 from core.engine import SearchSettings
 from core.geo import TravelQuote
-from core.hybrid import HybridRun, hybrid_enabled, hybrid_plan
+from core.hybrid import hybrid_enabled, hybrid_plan
 from core.route3 import VerifiedRoute3
 
 A = (55.75, 37.60)
@@ -52,13 +52,8 @@ def _patch_verification(monkeypatch, hybrid, report):
 
 
 def test_hybrid_degrades_without_client(monkeypatch):
-    from core import hybrid
-
-    calls = []
-    monkeypatch.setattr(hybrid, "solve", lambda *args, **kwargs: calls.append(args) or FakeOutput())
-    run = hybrid_plan("snapshot", "provider", FakeSettings(), None, "ctx", client=None)
-    assert isinstance(run, HybridRun)
-    assert run.verification is None and len(calls) == 1
+    with pytest.raises(RuntimeError, match="ROUTE3_VERIFICATION_REQUIRED"):
+        hybrid_plan("snapshot", "provider", FakeSettings(), None, "ctx", client=None)
 
 
 def test_hybrid_applies_verified_pairs_without_a_window_breach(monkeypatch):
@@ -167,6 +162,6 @@ def test_hybrid_degrades_on_verification_failure(monkeypatch):
     monkeypatch.setattr(hybrid, "verify_plan_with_route3", broken)
     calls = []
     monkeypatch.setattr(hybrid, "solve", lambda *a, **k: calls.append(a) or FakeOutput())
-    run = hybrid_plan("snapshot", "provider", FakeSettings(), None, "ctx", client="client")
+    with pytest.raises(RuntimeError, match="ROUTE3_VERIFICATION_FAILED"):
+        hybrid_plan("snapshot", "provider", FakeSettings(), None, "ctx", client="client")
     assert len(calls) == 1
-    assert run.verification is None

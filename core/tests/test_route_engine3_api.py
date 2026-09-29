@@ -20,7 +20,7 @@ def load_engine3(tmp_path: Path, monkeypatch):
     """Load the service modules in a sandbox with no graphs and no metro file."""
     sandbox = tmp_path / "engine3"
     sandbox.mkdir()
-    for name in ("graphs.py", "server.py", "traffic.py", "metro.py"):
+    for name in ("graphs.py", "server.py", "traffic.py", "metro.py", "metro_timetable.py"):
         shutil.copyfile(ROOT / name, sandbox / name)
     monkeypatch.setenv("ENGINE3_GRAPHS_DIR", str(tmp_path / "graphs-empty"))
     monkeypatch.delenv("METRO_DATA_PATH", raising=False)
@@ -83,6 +83,7 @@ def test_route3_walk_flat_speed(tmp_path, monkeypatch):
     assert body["mode"] == "road"
     assert body["traffic_applied" if "traffic_applied" in body else "mode"] in ("road",)
     assert body["graph_id"] == "foot"
+    assert set(body["versions"]) == {"car", "foot", "metro", "model"}
     bike = server.handle_route3(
         {"a": "55.75,37.60", "b": "55.78,37.66", "profile": "bike", "metro": "0"}
     )
@@ -93,7 +94,16 @@ def test_route3_car_traffic_and_fallback(tmp_path, monkeypatch):
     _, server, _ = load_engine3(tmp_path, monkeypatch)
 
     def route(runtime, a, b, *, steps):
-        return {"duration": 600.0, "distance": 5000.0, "geometry": [[a[0], a[1]], [b[0], b[1]]]}
+        result = {"duration": 600.0, "distance": 5000.0, "geometry": [[a[0], a[1]], [b[0], b[1]]]}
+        if steps:
+            result["steps"] = [{
+                "duration": 600.0,
+                "distance": 5000.0,
+                "name": "Ленинский проспект",
+                "ref": "",
+                "midpoint": (55.7, 37.6),
+            }]
+        return result
 
     monkeypatch.setattr(server, "REGISTRY", StubRegistry(FOOT_RUNTIME))
     monkeypatch.setattr(server, "_route_over_graph", route)
@@ -102,19 +112,7 @@ def test_route3_car_traffic_and_fallback(tmp_path, monkeypatch):
     assert plain["duration_s"] == 600
     assert plain["traffic_applied"] is False
 
-    monkeypatch.setattr(
-        server,
-        "_route_steps",
-        lambda runtime, a, b: [
-            {
-                "duration": 600.0,
-                "distance": 5000.0,
-                "name": "Ленинский проспект",
-                "ref": "",
-                "midpoint": (55.7, 37.6),
-            }
-        ],
-    )
+    monkeypatch.setattr(server, "_route_steps", lambda *_args: (_ for _ in ()).throw(AssertionError("second OSRM route")))
     factored = server.handle_route3(
         {
             "a": "55.75,37.60",
@@ -128,10 +126,15 @@ def test_route3_car_traffic_and_fallback(tmp_path, monkeypatch):
     assert factored["base_duration_s"] == 600
     assert factored["duration_s"] == factored["base_duration_s"] * factored["effective_factor"]
 
-    def failing_steps(runtime, a, b):
-        raise RuntimeError("step request timed out")
-
-    monkeypatch.setattr(server, "_route_steps", failing_steps)
+    monkeypatch.setattr(
+        server,
+        "_route_over_graph",
+        lambda runtime, a, b, *, steps: {
+            "duration": 600.0,
+            "distance": 5000.0,
+            "geometry": [[a[0], a[1]], [b[0], b[1]]],
+        },
+    )
     degraded = server.handle_route3(
         {"a": "55.75,37.60", "b": "55.78,37.66", "profile": "car", "traffic": "1"}
     )
@@ -193,6 +196,14 @@ def test_route3_metro_composite(tmp_path, monkeypatch):
         return {"duration": 9999.0, "distance": distance, "geometry": [[a[0], a[1]], [b[0], b[1]]]}
 
     monkeypatch.setattr(server, "_route_over_graph", route)
+    monkeypatch.setattr(
+        server,
+        "_table_over_graph",
+        lambda runtime, points, **_kwargs: (
+            [[0] * len(points) for _ in points],
+            [[0 if i == j else 500.0 for j in range(len(points))] for i in range(len(points))],
+        ),
+    )
     body = server.handle_route3({"a": "55.75,37.60", "b": "55.78,37.66", "profile": "walk"})
     assert body["mode"] == "metro_composite"
     kinds = [segment["kind"] for segment in body["segments"]]
@@ -209,6 +220,44 @@ def test_route3_metro_composite(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_route_over_graph", short)
     direct = server.handle_route3({"a": "55.75,37.60", "b": "55.78,37.66", "profile": "walk"})
     assert direct["mode"] == "road"
+
+
+def test_route3_metro_skips_unavailable_candidate_pairs(tmp_path, monkeypatch):
+    _, server, _ = load_engine3(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "REGISTRY", StubRegistry(FOOT_RUNTIME))
+
+    class StubMetro:
+        enter_sec, wait_sec, exit_sec, transfer_sec, max_access_m = 180, 120, 120, 240, 1500
+
+        def nearest(self, point, top_k=2, max_access_m=None):
+            prefix = "o" if point == A else "d"
+            return [
+                {"station_id": f"{prefix}1", "name": f"{prefix}1", "line_id": "1", "location": [55.76, 37.62], "access_sec": 400, "access_m": 500},
+                {"station_id": f"{prefix}2", "name": f"{prefix}2", "line_id": "1", "location": [55.77, 37.64], "access_sec": 400, "access_m": 500},
+            ]
+
+        def ride_path(self, source, target):
+            if source == "o1":
+                return None
+            return {"duration_sec": 600, "distance_m": 4000, "stations": [], "geometry": [[55.76, 37.62], [55.77, 37.64]]}
+
+    server.METRO = StubMetro()
+    def route(runtime, a, b, *, steps):
+        near = (a == A and b != B) or (a != A and b == B)
+        distance = 500 if near else 8000
+        return {"duration": 9999, "distance": distance, "geometry": [[a[0], a[1]], [b[0], b[1]]]}
+
+    monkeypatch.setattr(server, "_route_over_graph", route)
+    monkeypatch.setattr(
+        server,
+        "_table_over_graph",
+        lambda runtime, points, **_kwargs: (
+            [[0] * len(points) for _ in points],
+            [[0 if i == j else 500 for j in range(len(points))] for i in range(len(points))],
+        ),
+    )
+    body = server.handle_route3({"a": "55.75,37.60", "b": "55.78,37.66", "profile": "walk"})
+    assert body["mode"] == "metro_composite"
 
 
 def test_matrix3_walk_flat_and_unreachable(tmp_path, monkeypatch):
@@ -231,6 +280,7 @@ def test_matrix3_walk_flat_and_unreachable(tmp_path, monkeypatch):
     assert body["matrix"][0][2]["mode"] == "unreachable"
     assert body["matrix"][0][0]["mode"] == "self"
     assert body["speed_kmh"] == 5.0
+    assert set(body["versions"]) == {"car", "foot", "metro", "model"}
 
 
 def test_matrix3_car_planning_forecast_bands(tmp_path, monkeypatch):
@@ -253,6 +303,10 @@ def test_matrix3_car_planning_forecast_bands(tmp_path, monkeypatch):
     assert len(cell["forecast_duration_s"]) == len(starts)
     assert body["forecast_timezone"] == "Europe/Moscow"
     assert cell["duration_s"] == round(600.0 * cell["effective_factor"], 1)
+    plain = server.handle_matrix3(
+        {"points": "55.75,37.60;55.78,37.66", "profile": "car", "traffic": "0"}
+    )
+    assert plain["matrix"][0][1]["duration_s"] == plain["matrix"][0][1]["base_duration_s"]
 
 
 def test_metro3_paths_and_constants(tmp_path, monkeypatch):
@@ -294,6 +348,7 @@ def test_metro3_paths_and_constants(tmp_path, monkeypatch):
     path = body["paths"][0]
     assert path["composite_duration_sec"] == 240 + 180 + 120 + 300 + 120 + 240
     assert path["ride"]["duration_sec"] == 300
+    assert body["versions"]["model"].startswith("route-engine3-v2+traffic:")
 
     server.METRO = None
     try:
@@ -363,9 +418,19 @@ def test_metro_module_dijkstra_and_geometry(tmp_path, monkeypatch):
     ]
     # Geometry joins per-edge payloads, dropping the duplicated joint point.
     assert ride["geometry"] == [[55.75, 37.60], [55.755, 37.605], [55.76, 37.61], [55.77, 37.62]]
-    # Rides are bidirectional even though the artifact stores one direction.
-    assert network.ride_path("c", "a")["duration_sec"] == 300
+    # The artifact is directed; an absent reverse edge is unreachable.
+    assert network.ride_path("c", "a") is None
     nearest = network.nearest((55.7505, 37.6005), top_k=1)
     assert nearest[0]["station_id"] == "a"
     assert nearest[0]["access_m"] < 100
     assert metro.MetroService.from_env() is None or True
+
+
+def test_forecast_bands_use_moscow_clock_and_include_night_boundary(tmp_path, monkeypatch):
+    """A band labelled 07:00 must not contain the factor for 10:00 Moscow."""
+    _, server, _ = load_engine3(tmp_path, monkeypatch)
+    starts, epochs = server._forecast_band_layout()
+    assert 22 * 60 in starts
+    for minute, epoch in zip(starts, epochs, strict=True):
+        actual, _iso = server.traffic.local_minute_of_day(epoch)
+        assert actual == (minute if minute else 3 * 60)

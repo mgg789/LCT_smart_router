@@ -116,6 +116,19 @@ def test_growth_flags_memory_that_climbs_without_new_keys():
     assert report["observed_bytes_per_sec"] > report["normal_bytes_per_sec"]
 
 
+def test_payload_accounting_replaces_overwrites_and_prunes_index(tmp_path):
+    cache, store = _cache(tmp_path)
+    cache.store_body("route", "same", {"body": "short"})
+    cache.store_body("route", "same", {"body": "a much longer replacement"})
+    expected = len('{"body":"a much longer replacement"}'.encode())
+    status = cache.status()
+    assert status["keys"] == 1
+    assert status["route_payload_bytes"] == expected
+    store.delete(cache._key("route", "same"))
+    assert cache.status()["keys"] == 0
+    assert cache.status()["route_payload_bytes"] == 0
+
+
 def test_route_client_serves_the_second_call_from_the_cache(tmp_path, monkeypatch):
     from core.contracts import GeoPoint
     from core.route3 import Route3Client
@@ -123,14 +136,16 @@ def test_route_client_serves_the_second_call_from_the_cache(tmp_path, monkeypatc
     cache, _store = _cache(tmp_path)
     calls = []
 
-    def fake_get(url, params, timeout, trust_env):
+    def fake_get(url, params=None, timeout=10, trust_env=False):
         calls.append(params)
         class Response:
             def raise_for_status(self):
                 return None
 
             def json(self):
-                return {"mode": "walk", "distance_m": 12, "geometry": [[1, 2], [3, 4]]}
+                if url.endswith("/versions3"):
+                    return {"versions": {"car": "car-v1", "foot": "foot-v1", "metro": "metro-v1", "model": "engine-v1"}}
+                return {"mode": "walk", "distance_m": 12, "geometry": [[1, 2], [3, 4]], "versions": {"car": "car-v1", "foot": "foot-v1", "metro": "metro-v1", "model": "engine-v1"}}
 
         return Response()
 
@@ -139,6 +154,8 @@ def test_route_client_serves_the_second_call_from_the_cache(tmp_path, monkeypatc
     origin, destination = GeoPoint(lat=1, lon=2), GeoPoint(lat=3, lon=4)
     first = client.route(origin, destination, "walk", departure=0)
     second = client.route(origin, destination, "walk", departure=0)
-    assert first == second and len(calls) == 1
+    # One lifecycle snapshot request plus one uncached route request; the
+    # second route call is served from Redis.
+    assert first == second and len(calls) == 2
     assert cache.hits == 1
     install_route_cache(None)

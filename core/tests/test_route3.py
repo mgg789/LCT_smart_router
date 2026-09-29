@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 A = GeoPoint(lat=55.75, lon=37.60)
 B = GeoPoint(lat=55.78, lon=37.66)
+VERSIONS = {"car": "car-v1", "foot": "foot-v1", "metro": "metro-v1", "model": "engine-v1"}
 
 
 def test_quote_from_route3_provenance_and_segments():
@@ -76,6 +77,7 @@ def _matrix_body(profile, durations):
         "profile": profile,
         "points": [[A.lat, A.lon], [B.lat, B.lon]],
         "matrix": durations,
+        "versions": VERSIONS,
     }
 
 
@@ -158,6 +160,80 @@ def test_verified_metro_composite_is_not_a_walk_only_answer():
     assert verified.quote(A, B, "transit") is composite
 
 
+def test_verified_quotes_are_bound_to_departure_epoch():
+    from core.geo import TravelQuote
+    from core.route3 import VerifiedRoute3
+
+    morning = TravelQuote(600, 5000, (A, B), "traffic_api")
+    evening = TravelQuote(1200, 5000, (A, B), "traffic_api")
+    corrections = {
+        (A.lat, A.lon, B.lat, B.lon, "car", 100): morning,
+        (A.lat, A.lon, B.lat, B.lon, "car", 200): evening,
+    }
+    verified = VerifiedRoute3(_Base(), corrections)
+    assert verified.quote_at(A, B, "car", 100) is morning
+    assert verified.quote_at(A, B, "car", 200) is evening
+    assert verified.quote_at(A, B, "car", 300).duration_sec == 99
+
+
+def test_route3_offline_route_uses_versioned_disk_cache(tmp_path, monkeypatch):
+    client = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path, offline=True)
+    client._versions = dict(VERSIONS)
+    identity = client._identity("route", [A.lat, A.lon, B.lat, B.lon, "car", True, False, 100])
+    body = {
+        "mode": "road",
+        "duration_s": 600,
+        "distance_m": 5000,
+        "geometry": [[A.lat, A.lon], [B.lat, B.lon]],
+        "versions": VERSIONS,
+    }
+    client._write_disk_body("route", identity, body)
+    monkeypatch.setattr("core.route3.httpx.get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    assert client.route(A, B, "car", traffic=True, departure=100) == body
+
+
+def test_route3_same_url_new_service_version_refetches_route(tmp_path, monkeypatch):
+    """A graph replacement must invalidate disk data even when the URL is unchanged."""
+    from core.route_cache import install_route_cache
+
+    install_route_cache(None)
+    current = {"car": "car-v1"}
+    calls = []
+
+    def fake_get(url, params=None, timeout=10, trust_env=False):
+        calls.append(url)
+
+        class Response:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                versions = {**VERSIONS, "car": current["car"]}
+                if url.endswith("/versions3"):
+                    return {"versions": versions}
+                return {
+                    "mode": "road",
+                    "duration_s": 600 if current["car"] == "car-v1" else 900,
+                    "distance_m": 5000,
+                    "geometry": [[A.lat, A.lon], [B.lat, B.lon]],
+                    "versions": versions,
+                }
+
+        return Response()
+
+    monkeypatch.setattr("core.route3.httpx.get", fake_get)
+    first = Route3Client("http://route3.test", cache_dir=tmp_path)
+    first_body = first.route(A, B, "car", departure=100)
+    current["car"] = "car-v2"
+    second = Route3Client("http://route3.test", cache_dir=tmp_path)
+    second_body = second.route(A, B, "car", departure=100)
+
+    assert first_body["duration_s"] == 600
+    assert second_body["duration_s"] == 900
+    assert calls.count("http://route3.test/versions3") == 2
+    assert calls.count("http://route3.test/route3") == 2
+
+
 def test_verification_asks_metro_only_for_transit_when_enabled():
     from types import SimpleNamespace
 
@@ -193,6 +269,7 @@ def test_prepared_route3_matrix_rejects_mismatch():
 def test_prepare_route3_caches_per_profile_and_degrades(tmp_path, monkeypatch):
     monkeypatch.delenv("ROUTE3_ALLOW_PUBLIC", raising=False)
     client = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "cache")
+    client._versions = dict(VERSIONS)
     calls = []
 
     def matrix(points, profile, *, traffic, planning, departure):
@@ -218,11 +295,13 @@ def test_prepare_route3_caches_per_profile_and_degrades(tmp_path, monkeypatch):
 
     monkeypatch.setattr(client, "matrix", failing)
     cold = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "cold")
+    cold._versions = dict(VERSIONS)
     monkeypatch.setattr(cold, "matrix", failing)
     degraded = prepare_route3(cold, [A, B], departure=1786946400)
     assert degraded is None  # cold cache + dead engine = no route3 source
 
     offline = Route3Client("http://127.0.0.1:8124", cache_dir=tmp_path / "offline", offline=True)
+    offline._versions = dict(VERSIONS)
     assert prepare_route3(offline, [A, B], departure=1786946400) is None
 
 
@@ -266,3 +345,17 @@ def test_route3_from_env_degrades_on_rejected_url(monkeypatch, tmp_path):
     # A public endpoint disables the adapters instead of failing the router.
     monkeypatch.setenv("ROUTE3_URL", "https://example.com/route3")
     assert route3_from_env() is None
+
+
+def test_car_matrix_forecast_is_not_multiplied_twice():
+    from core.traffic_engine import ForecastTrafficTravel
+
+    car = _matrix_body('car', [
+        [{'mode': 'self'}, {'mode': 'road', 'base_duration_s': 600, 'distance_m': 5000,
+                           'duration_s': 800, 'forecast_duration_s': [600, 800]}],
+        [{'mode': 'unreachable'}, {'mode': 'self'}],
+    ])
+    car['forecast_band_starts'] = [0, 420]
+    prepared = PreparedRoute3Matrix('client', {'car': car}, [A, B])
+    forecast = ForecastTrafficTravel(prepared, 1786946400)
+    assert forecast.quote_at(A, B, 'car', 1786946400).duration_sec == 800

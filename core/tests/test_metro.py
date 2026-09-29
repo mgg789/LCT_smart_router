@@ -119,7 +119,10 @@ def test_verified_transit_pair_is_final_over_the_offline_composite():
     origin = GeoPoint(lat=55.750, lon=37.600)
     destination = GeoPoint(lat=55.760, lon=37.650)
     verified_walk = TravelQuote(2_400, 4_000, (origin, destination), "route_api", geometry_exact=True)
-    corrections = {(origin.lat, origin.lon, destination.lat, destination.lon, "transit"): verified_walk}
+    corrections = {
+        (origin.lat, origin.lon, destination.lat, destination.lon, "transit", departure): verified_walk
+        for departure in (None, 1_790_670_000)
+    }
     travel = MetroTravel(VerifiedRoute3(_WalkingTravel(), corrections), _network())
     # The offline composite (~20 min) is faster on paper; /route3 said walking wins.
     assert travel.quote(origin, destination, "transit") is verified_walk
@@ -260,7 +263,7 @@ def test_default_bundled_moscow_network_is_loaded_without_environment_override(m
     monkeypatch.delenv("ROUTER_METRO_DATA_PATH", raising=False)
     travel = configured_metro_travel(_WalkingTravel())
     assert isinstance(travel, MetroTravel)
-    assert travel.network.version == "moscow-osm-2026-09-22"
+    assert travel.network.version == "moscow-osm-2026-09-22-topology-v2"
     assert len(travel.network.stations) >= 200
 
 

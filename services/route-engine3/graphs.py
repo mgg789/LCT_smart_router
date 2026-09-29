@@ -24,6 +24,7 @@ is enough to serve a new graph — no service code changes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -52,6 +53,7 @@ class GraphSpec:
     map_version: str
     max_table_size: int
     speeds_kmh: dict[str, float]
+    content_hash: str | None = None
 
 
 @dataclass
@@ -113,6 +115,7 @@ def discover_graphs(root: Path) -> list[GraphSpec]:
             and speeds[key] > 0
         }
         speeds_kmh = {**DEFAULT_SPEEDS_KMH, **speeds_kmh}
+        content_hash = _graph_content_hash(directory, pages, meta_path, profile)
         specs.append(
             GraphSpec(
                 graph_id=graph_id,
@@ -122,9 +125,43 @@ def discover_graphs(root: Path) -> list[GraphSpec]:
                 map_version=str(meta.get("map_version") or directory.name),
                 max_table_size=int(meta.get("max_table_size") or 4096),
                 speeds_kmh=speeds_kmh,
+                content_hash=content_hash,
             )
         )
     return specs
+
+
+def _graph_content_hash(
+    directory: Path,
+    pages: list[Path],
+    meta_path: Path,
+    profile: str,
+) -> str:
+    """Hash the discovered graph inputs once, including profile metadata.
+
+    The hash is computed during discovery so request handlers never reread large
+    OSRM page files. Relative filenames are included to distinguish a renamed
+    companion page with identical bytes.
+    """
+    digest = hashlib.sha256()
+    digest.update(b"route-engine3-graph-v1\0")
+    digest.update(profile.encode("utf-8"))
+    digest.update(b"\0")
+    paths = [*pages]
+    if meta_path.is_file():
+        paths.append(meta_path)
+    for path in sorted(paths):
+        digest.update(str(path.relative_to(directory)).encode("utf-8"))
+        digest.update(b"\0")
+        try:
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError:
+            # Discovery already found the page; a concurrent disappearance must
+            # produce a stable degraded hash rather than break all discovery.
+            digest.update(b"<unreadable>\0")
+    return digest.hexdigest()
 
 
 def probe_osrm(port: int, timeout: float = 1.0) -> bool:
@@ -198,6 +235,7 @@ class GraphSupervisor:
                     "map_version": runtime.spec.map_version,
                     "max_table_size": runtime.spec.max_table_size,
                     "base_file": runtime.spec.base_file.name,
+                    "content_hash": runtime.spec.content_hash,
                     "port": runtime.port,
                     "healthy": runtime.healthy,
                     "restarts": runtime.restarts,
