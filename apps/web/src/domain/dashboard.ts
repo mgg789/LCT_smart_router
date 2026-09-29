@@ -86,14 +86,17 @@ export function routeForEngineer(
   return snapshot.plan.plan?.routes.find((route) => route.engineerId === engineerId) ?? null;
 }
 
-export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
+/** The requests this working day is about: everything whose window touches it. */
+export function dayRequests(snapshot: DashboardSnapshot): RequestView[] {
   const dayStart = Date.parse(`${snapshot.workDate}T00:00:00+03:00`) / 1000;
   return snapshot.requests.filter(
-    (item) =>
-      item.lifecycle === 'submitted' &&
-      item.assignmentState !== 'assigned' &&
-      item.windowStartAt < dayStart + 86400 &&
-      item.windowEndAt >= dayStart,
+    (item) => item.windowStartAt < dayStart + 86400 && item.windowEndAt >= dayStart,
+  );
+}
+
+export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
+  return dayRequests(snapshot).filter(
+    (item) => item.lifecycle === 'submitted' && item.assignmentState !== 'assigned',
   );
 }
 

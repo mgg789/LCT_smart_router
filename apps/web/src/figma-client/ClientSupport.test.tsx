@@ -5,6 +5,9 @@ import { CLIENT_QUICK_QUESTIONS, clientGreeting } from './ClientSupport';
 
 it('greets the customer by their first name and stays unnamed otherwise', () => {
   expect(clientGreeting('Иван Петров')).toBe('Иван, чем помочь?');
+  // The request form asks for ФИО, so a full contact leads with the surname.
+  expect(clientGreeting('Петров Иван Сергеевич')).toBe('Иван, чем помочь?');
+  expect(clientGreeting('Иван')).toBe('Иван, чем помочь?');
   expect(clientGreeting(null)).toBe('Чем помочь?');
   expect(clientGreeting('   ')).toBe('Чем помочь?');
 });

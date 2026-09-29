@@ -82,7 +82,13 @@ export function requestDetailFromSnapshot(
     : null;
   const route = assignment?.engineerId ? routeForEngineer(snapshot, assignment.engineerId) : null;
   const stop = route?.stops.find((item) => item.requestId === request.id);
-  const etaAt = stop?.arrivalAt ?? request.expectedCompletionAt ?? null;
+  /*
+   * When the engineer is planned to start work, not when they pull up outside. A route
+   * that arrives before the window opens waits for it, so `arrivalAt` printed «расчетное
+   * 12:37» beside a 15:35-16:35 window, which reads as a contradiction rather than as
+   * three hours of waiting.
+   */
+  const etaAt = stop?.startAt ?? stop?.arrivalAt ?? request.expectedCompletionAt ?? null;
   const tags = requestDetailTags(request);
   return {
     id: request.id,

@@ -33,7 +33,7 @@ export function LiveControls({
   const [problem, setProblem] = useState<
     'eta' | 'delay' | 'missing_equipment' | 'other' | 'impossible'
   >('delay');
-  const [minutes, setMinutes] = useState(40);
+  const [minutes, setMinutes] = useState<number | ''>('');
   const [equipment, setEquipment] = useState<'router' | 'set_top_box' | 'smart_speaker'>('router');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -193,7 +193,7 @@ export function LiveControls({
                     requestId,
                     problemKind: problem,
                     note: note.trim(),
-                    ...(problem === 'delay' ? { additionalDurationSec: minutes * 60 } : {}),
+                    ...(problem === 'delay' ? { additionalDurationSec: Number(minutes) * 60 } : {}),
                     ...(problem === 'missing_equipment' ? { missingEquipment: equipment } : {}),
                   });
                 }}
@@ -252,8 +252,11 @@ export function LiveControls({
                       min="1"
                       max="720"
                       required
+                      placeholder={t('figma-engineer.LiveControls.minutesPlaceholder')}
                       value={minutes}
-                      onChange={(event) => setMinutes(Number(event.target.value))}
+                      onChange={(event) =>
+                        setMinutes(event.target.value === '' ? '' : Number(event.target.value))
+                      }
                     />
                   </label>
                 ) : null}
@@ -290,6 +293,9 @@ export function LiveControls({
                 ) : null}
                 <label>
                   {t('figma-engineer.LiveControls.b3680f2cba')}
+                  {problem !== 'eta' ? (
+                    <span className="text-figma-dim"> {t('common.requiredMark')}</span>
+                  ) : null}
                   <textarea
                     className={field}
                     required={problem !== 'eta'}
@@ -361,7 +367,11 @@ export function LiveDayOverlay({
   const end = stop?.plannedEndAt ?? live.lunch?.endAt ?? now;
   return (
     <section
-      className="absolute inset-x-0 bottom-0 top-[100px] z-40 flex flex-col items-center justify-center gap-5 overflow-auto bg-figma-canvas p-6 text-center"
+      className="absolute inset-x-0 bottom-0 z-40 flex flex-col items-center justify-center gap-5 overflow-auto bg-figma-canvas p-6 text-center"
+      // Starts exactly where the header ends -- eu(36) of page padding above an eu(90)
+      // burger. The fixed 100px left a strip of whatever screen this covers showing
+      // through above it, which on the assistant is the handover banner, cut in half.
+      style={{ top: eu(126) }}
       aria-live="polite"
     >
       {stop ? (

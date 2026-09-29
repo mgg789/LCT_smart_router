@@ -11,6 +11,7 @@ import type {
 } from '../api/types';
 import {
   assignmentFor,
+  dayRequests,
   type EngineerSummary,
   engineerSummaries,
   requestById,
@@ -189,7 +190,11 @@ export function dashboardViewFromSnapshot(
 
   return {
     dateLabel: figmaDateLabel(snapshot.workDate),
-    requestCount: snapshot.requests.length,
+    // This day's requests, the same set the counter beside it reports as unassigned.
+    // Counting every row instead mixed two scales in one line: an imported package
+    // spread over several days read as «220 заявок · 72 без назначения», which says
+    // 148 are placed when 4 are.
+    requestCount: dayRequests(snapshot).length,
     planLabel: t('figma-dashboard.fromSnapshot.a11d091038', {
       value0: unassigned.length,
       value1: formatClock(planAsOf),

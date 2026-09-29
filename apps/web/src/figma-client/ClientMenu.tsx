@@ -24,6 +24,7 @@ export function ClientMenu({
   docked,
   onNavigate,
   onNewRequest,
+  onSignOut,
 }: {
   open: boolean;
   motionOn: boolean;
@@ -35,6 +36,8 @@ export function ClientMenu({
   docked?: boolean;
   onNavigate: (id: ClientScreenId) => void;
   onNewRequest: () => void;
+  /** The engineer's menu has always had this; the customer's had no way out at all. */
+  onSignOut: () => void;
 }) {
   const dialog = useRef<HTMLElement>(null);
   useModalFocus(dialog, open && !docked, onClose);
@@ -108,6 +111,14 @@ export function ClientMenu({
             >
               {t('figma-client.ClientMenu.ee5790e7f4')}
             </motion.button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="self-start bg-white font-semibold text-figma-muted"
+              style={{ fontSize: eu(20), borderRadius: eu(999), padding: `${eu(10)} ${eu(22)}` }}
+            >
+              {t('figma-client.ClientMenu.5690c2e63b')}
+            </button>
           </div>
         </div>
       </aside>
@@ -214,6 +225,18 @@ export function ClientMenu({
                 >
                   {t('figma-client.ClientMenu.ee5790e7f4')}
                 </motion.button>
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="self-start bg-white font-semibold text-figma-muted"
+                  style={{
+                    fontSize: eu(20),
+                    borderRadius: eu(999),
+                    padding: `${eu(10)} ${eu(22)}`,
+                  }}
+                >
+                  {t('figma-client.ClientMenu.5690c2e63b')}
+                </button>
               </div>
             </div>
           </motion.aside>

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadDispatchChats, openDispatchChat } from '../api/ai';
+import { type DispatchChatTarget, loadDispatchChats, openDispatchChat } from '../api/ai';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
 import { downloadCurrentPlan } from '../api/exports';
 import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
@@ -551,6 +551,30 @@ export function MainDashboardPage() {
   ]);
 
   const motionOn = !reduceMotion;
+
+  /**
+   * Opens (or re-enters) a dialogue with whoever this target names and shows it.
+   *
+   * The same path for all three entry points — the engineer's dossier, an open
+   * request's «Написать клиенту» and the engineer card's «Написать» — because the
+   * server resolves the account from the request or the engineer either way.
+   */
+  const openChatWith = async (target: DispatchChatTarget) => {
+    if (!dash.token) return;
+    const { chat } = await openDispatchChat(dash.token, crypto.randomUUID(), target);
+    setOpenedRequestId(null);
+    if (chat) {
+      setFocusedEngineerChatId(null);
+      setFocusedChatId(chat.handoff.id);
+    } else if (target.kind === 'engineer') {
+      // Looking is not joining: the draft waits until the dispatcher sends a message.
+      setFocusedChatId(null);
+      setFocusedEngineerChatId(target.engineerId);
+    }
+    setStackDir(stackSlideDir(stackNav, 'chats'));
+    setStackNav('chats');
+    setActiveNav('chats');
+  };
 
   if (!dash.authenticated) {
     return (
@@ -1367,6 +1391,15 @@ export function MainDashboardPage() {
                               setStackNav('engineers');
                               setActiveNav('engineers');
                             }}
+                            onWriteToEngineer={
+                              dash.writesDisabled || !dash.selectedEngineer
+                                ? undefined
+                                : () =>
+                                    openChatWith({
+                                      kind: 'engineer',
+                                      engineerId: dash.selectedEngineer.id,
+                                    })
+                            }
                             request={dash.selectedRequest}
                             engineer={dash.selectedEngineer}
                             explanation={panelExplanation}
@@ -1427,6 +1460,11 @@ export function MainDashboardPage() {
                               }
                               await assign();
                             }
+                      }
+                      onWriteToClient={
+                        dash.writesDisabled
+                          ? undefined
+                          : () => openChatWith({ kind: 'request', requestId: openedRequestId })
                       }
                     />
                   </motion.div>

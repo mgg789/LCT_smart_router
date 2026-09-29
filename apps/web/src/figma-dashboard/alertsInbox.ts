@@ -29,6 +29,8 @@ export type InboxAlertCard = {
 export type InboxNoticeCard = {
   id: string;
   sourceNoticeId: string | null;
+  /** Every notice this card stands for, including the ones folded into it. */
+  repeatedNoticeIds?: readonly string[];
   createdAt: number;
   title: string;
   body: string;
@@ -112,30 +114,61 @@ export function inboxFromSources(
   ].sort(
     (a, b) => arrivalSeconds(a.createdAt) - arrivalSeconds(b.createdAt) || a.id.localeCompare(b.id),
   );
-  const notices = sortByArrival([
-    ...openNotices.map((notice) => ({
-      id: `alert:${notice.id}`,
-      sourceNoticeId: notice.id,
-      createdAt: notice.createdAt,
-      title:
-        alertTitle(notice.code) === notice.code
-          ? factorLabel(notice.code)
-          : alertTitle(notice.code),
-      body: notice.reasons.filter(Boolean).join(' · ') || factorLabel(notice.code),
-      toastKind: 'system' as const,
-    })),
-    ...sourceToasts
-      .filter((toast) => !isInboxAlertKind(toast.kind) && !covered.has(toast.id))
-      .map((toast) => ({
-        id: toast.id,
-        sourceNoticeId: null,
-        createdAt: toast.createdAt,
-        title: toast.title,
-        body: toast.body || toast.etaLabel || '',
-        toastKind: toast.kind,
+  const notices = collapseRepeats(
+    sortByArrival([
+      ...openNotices.map((notice) => ({
+        id: `alert:${notice.id}`,
+        sourceNoticeId: notice.id,
+        createdAt: notice.createdAt,
+        title:
+          alertTitle(notice.code) === notice.code
+            ? factorLabel(notice.code)
+            : alertTitle(notice.code),
+        body: notice.reasons.filter(Boolean).join(' · ') || factorLabel(notice.code),
+        toastKind: 'system' as const,
       })),
-  ]);
+      ...sourceToasts
+        .filter((toast) => !isInboxAlertKind(toast.kind) && !covered.has(toast.id))
+        .map((toast) => ({
+          id: toast.id,
+          sourceNoticeId: null,
+          createdAt: toast.createdAt,
+          title: toast.title,
+          body: toast.body || toast.etaLabel || '',
+          toastKind: toast.kind,
+        })),
+    ]),
+  );
   return { alerts, notices };
+}
+
+/**
+ * Folds a run of identical notices into the newest of them.
+ *
+ * Every replan files its own «План перестроился», so a busy few minutes left the
+ * dispatcher five cards with the same two lines to dismiss one at a time. Only the
+ * wording is compared, so two notices that say different things both stay; the folded
+ * ones travel with the survivor and are marked seen together with it.
+ */
+function collapseRepeats(notices: InboxNoticeCard[]): InboxNoticeCard[] {
+  const newest = new Map<string, InboxNoticeCard>();
+  const folded = new Map<string, string[]>();
+  for (const notice of notices) {
+    const key = `${notice.toastKind}|${notice.title}|${notice.body}`;
+    const seen = newest.get(key);
+    const ids = folded.get(key) ?? [];
+    if (notice.sourceNoticeId) ids.push(notice.sourceNoticeId);
+    folded.set(key, ids);
+    if (!seen || arrivalSeconds(notice.createdAt) >= arrivalSeconds(seen.createdAt)) {
+      newest.set(key, notice);
+    }
+  }
+  return notices
+    .filter((notice) => newest.get(`${notice.toastKind}|${notice.title}|${notice.body}`) === notice)
+    .map((notice) => ({
+      ...notice,
+      repeatedNoticeIds: folded.get(`${notice.toastKind}|${notice.title}|${notice.body}`) ?? [],
+    }));
 }
 
 /** Review copies when the live snapshot and toast store are both empty. */

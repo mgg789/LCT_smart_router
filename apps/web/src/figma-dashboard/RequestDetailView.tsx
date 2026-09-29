@@ -41,6 +41,7 @@ export function RequestDetailView({
   onBack,
   onCancelVisit,
   onAssignEngineer,
+  onWriteToClient,
 }: {
   token?: string;
   snapshot: DashboardSnapshot | null;
@@ -49,6 +50,7 @@ export function RequestDetailView({
   onBack: () => void;
   onCancelVisit?: () => Promise<void>;
   onAssignEngineer?: (engineerId: string) => Promise<void>;
+  onWriteToClient?: () => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
@@ -136,6 +138,7 @@ export function RequestDetailView({
           candidates={snapshot ? assignableEngineers(snapshot, requestId) : []}
           onCancelVisit={onCancelVisit}
           onAssignEngineer={onAssignEngineer}
+          onWriteToClient={onWriteToClient}
         />
       </motion.aside>
     </>
@@ -149,6 +152,7 @@ function RequestDetailPanel({
   candidates,
   onCancelVisit,
   onAssignEngineer,
+  onWriteToClient,
 }: {
   token?: string;
   model: RequestDetailModel;
@@ -156,6 +160,7 @@ function RequestDetailPanel({
   candidates: EngineerView[];
   onCancelVisit?: () => Promise<void>;
   onAssignEngineer?: (engineerId: string) => Promise<void>;
+  onWriteToClient?: () => Promise<void>;
 }) {
   const facts = [
     { id: 'address', value: model.address },
@@ -212,6 +217,7 @@ function RequestDetailPanel({
         candidates={candidates}
         onCancelVisit={onCancelVisit}
         onAssignEngineer={onAssignEngineer}
+        onWriteToClient={onWriteToClient}
       />
     </div>
   );
@@ -223,15 +229,18 @@ function RequestDetailActions({
   candidates,
   onCancelVisit,
   onAssignEngineer,
+  onWriteToClient,
 }: {
   model: RequestDetailModel;
   motionOn: boolean;
   candidates: EngineerView[];
   onCancelVisit?: () => Promise<void>;
   onAssignEngineer?: (engineerId: string) => Promise<void>;
+  onWriteToClient?: () => Promise<void>;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [engineerId, setEngineerId] = useState(candidates[0]?.id ?? '');
+  const [writing, setWriting] = useState(false);
   const [pending, setPending] = useState<'assign' | 'cancel' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const run = async (kind: 'assign' | 'cancel', work: () => Promise<void>) => {
@@ -251,12 +260,29 @@ function RequestDetailActions({
   };
   return (
     <div className="mt-auto flex shrink-0 flex-col gap-[16px]">
+      {/* `POST /dispatch/chats` has always taken a request and resolved the customer's
+          account from it; the button was simply never wired and sat behind a «Скоро». */}
       <motion.button
         type="button"
-        disabled
-        aria-disabled
-        title={t('figma-dashboard.RequestDetailView.72c299e0d6')}
-        className="flex h-[61px] w-[430px] cursor-not-allowed items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white opacity-45"
+        disabled={!onWriteToClient || writing}
+        className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white disabled:cursor-not-allowed disabled:opacity-45"
+        whileHover={motionOn && onWriteToClient ? { scale: 1.02 } : undefined}
+        whileTap={motionOn && onWriteToClient ? { scale: 0.98 } : undefined}
+        transition={{ duration: 0.16 }}
+        onClick={() => {
+          if (!onWriteToClient) return;
+          setError(null);
+          setWriting(true);
+          void onWriteToClient()
+            .catch((cause: unknown) => {
+              setError(
+                cause instanceof Error
+                  ? cause.message
+                  : t('figma-dashboard.RequestDetailView.c4f2454fb5'),
+              );
+            })
+            .finally(() => setWriting(false));
+        }}
       >
         {t('figma-dashboard.RequestDetailView.b9f2392df4')}
       </motion.button>

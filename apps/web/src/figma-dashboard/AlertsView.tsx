@@ -354,8 +354,8 @@ export function AlertsView({
                     dismissAllToasts();
                     void Promise.all(
                       cards
-                        .map((card) => card.sourceNoticeId)
-                        .filter((id): id is string => id !== null)
+                        .flatMap((card) => card.repeatedNoticeIds ?? [card.sourceNoticeId])
+                        .filter((id): id is string => id != null)
                         .map((id) => onMarkNoticeSeen(id)),
                     );
                     setClearing(false);
@@ -450,7 +450,11 @@ function NoticeCard({
       icon={NOTICE_ICON[card.toastKind]}
       onHide={() => {
         void (async () => {
-          if (card.sourceNoticeId) await onMarkSeen(card.sourceNoticeId);
+          // Hiding the card hides every notice folded into it, not just the newest.
+          const ids = (card.repeatedNoticeIds ?? [card.sourceNoticeId]).filter(
+            (id): id is string => id != null,
+          );
+          await Promise.all(ids.map((id) => onMarkSeen(id)));
           dismissToast(card.id);
         })().catch(() => undefined);
       }}
