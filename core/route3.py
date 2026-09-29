@@ -471,7 +471,8 @@ class PreparedRoute3Matrix:
         duration = base
         factor = 1.0
         if forecast is not None and self.bands.get(profile):
-            local = datetime.fromtimestamp(departure_at, self.zone)
+            # A missing clock is the same instant quote() already uses: departure 0.
+            local = datetime.fromtimestamp(0 if departure_at is None else departure_at, self.zone)
             index = bisect.bisect_right(self.bands[profile], local.hour * 60 + local.minute) - 1
             if forecast[index] is not None:
                 duration = forecast[index]

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from core.contracts import Plan, Request, RouterTaskSnapshot
+from core.contracts import Engineer, EngineerRoute, Plan, Request, RouterTaskSnapshot
 from core.schedule import (
     TravelProvider,
     _baseline_eligible,
@@ -19,10 +19,13 @@ from core.schedule import (
     job_completion_limit,
 )
 
-_EngineerChoice = Callable[[Request, list[tuple], dict[str, int | None]], object]
+_RouteChoice = tuple[EngineerRoute, Engineer]
+_EngineerChoice = Callable[[Request, list[_RouteChoice], dict[str, EngineerRoute | None]], _RouteChoice]
 
 
-def _incremental_travel(candidates: list[tuple], previous: dict[str, object]) -> tuple:
+def _incremental_travel(
+    candidates: list[_RouteChoice], previous: dict[str, EngineerRoute | None]
+) -> _RouteChoice:
     """Pick the append with the smallest travel delta over the engineer's route.
 
     An unused engineer pays the whole route from its start location; a busy one
@@ -30,7 +33,7 @@ def _incremental_travel(candidates: list[tuple], previous: dict[str, object]) ->
     Ties fall back to the candidate order, which is deterministic by input order.
     """
 
-    def cost(item: tuple) -> int:
+    def cost(item: _RouteChoice) -> int:
         route, engineer = item
         prior = previous.get(engineer.engineer_id)
         base = prior.metrics.travel_time_sec if prior is not None else 0
@@ -54,7 +57,7 @@ def _greedy(
     """
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
-    previous: dict[str, object] = {e.engineer_id: None for e in engineers}
+    previous: dict[str, EngineerRoute | None] = {e.engineer_id: None for e in engineers}
     deferred: list[Request] = []
     for request in sorted(snapshot.requests, key=order_key):
         candidates = []

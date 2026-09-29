@@ -498,7 +498,7 @@ export function CardReplan() {
         }}
       />
 
-      {Array.from({ length: LANES }, (_, index) => {
+      {Array.from({ length: LANES }, (_, slot) => slot).map((index) => {
         const seed = rand(index * 3 + 1);
         const fromX = WIDTH * (0.1 + seed * 0.2);
         const width = WIDTH * (0.22 + rand(index * 5 + 2) * 0.42);
@@ -625,7 +625,7 @@ export function CardAi() {
       />
 
       {/* Particles on three orbits — the field the answer is drawn out of. */}
-      {Array.from({ length: 26 }, (_, index) => {
+      {Array.from({ length: 26 }, (_, slot) => slot).map((index) => {
         const ring = index % 3;
         const radius = HEIGHT * (0.2 + ring * 0.13);
         const speed = 0.011 + ring * 0.005;
@@ -708,7 +708,7 @@ export function CardControl() {
       tint={color.white}
     >
       {/* Measurement rules, sliding in from both edges. */}
-      {Array.from({ length: 40 }, (_, index) => {
+      {Array.from({ length: 40 }, (_, slot) => slot).map((index) => {
         const p = stage(frame, index * 0.7, 26);
         const long = index % 5 === 0;
         const y = (index / 39) * HEIGHT;
@@ -773,7 +773,7 @@ export function CardControl() {
           opacity={0.92}
         />
         {/* Ticks around the dial, arriving with the sweep. */}
-        {Array.from({ length: 25 }, (_, index) => {
+        {Array.from({ length: 25 }, (_, slot) => slot).map((index) => {
           const a = (135 + (index / 24) * 270) * (Math.PI / 180);
           const on = clamp01((sweep - index / 24) * 8);
           const r0 = radius + 18;

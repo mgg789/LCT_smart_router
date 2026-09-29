@@ -577,8 +577,11 @@ def run_suite(
         solution_limit=solution_limit,
         strict_time_windows=strict_time_windows,
     )
-    valid: tuple[Region, ...] = ("east", "southeast", "south_central")
-    names = [name for name in regions if name in valid]
+    selected: list[Region] = []
+    for name in regions:
+        if name == "east" or name == "southeast" or name == "south_central":
+            selected.append(name)
+    names = selected
     scenarios = [load_official_region(dataset_dir, name) for name in names]
     strategies: dict[str, list[dict]] = {}
     policies: dict[str, dict] = {}

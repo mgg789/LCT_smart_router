@@ -8,9 +8,10 @@ import logging
 import math
 import os
 import threading
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Sequence, TypeVar, cast
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -307,12 +308,13 @@ def prepare_osrm(provider: OSRMTravel, points: list[GeoPoint], offline: bool) ->
     return PreparedOSRMMatrix(provider.version, cells)
 
 
+_Prepared = TypeVar("_Prepared")
 _PREPARED_CACHE: dict[str, object] = {}
 _PREPARED_CACHE_LOCK = threading.Lock()
 _PREPARED_CACHE_LIMIT = 16
 
 
-def _cached_prepared(key: str, build):
+def _cached_prepared(key: str, build: Callable[[], _Prepared]) -> _Prepared:
     """Process-level memo for immutable prepared providers across replans.
 
     Replans rebuild the same matrix objects from the same durable disk cache;
@@ -323,12 +325,13 @@ def _cached_prepared(key: str, build):
     with _PREPARED_CACHE_LOCK:
         hit = _PREPARED_CACHE.get(key)
         if hit is not None:
-            return hit
+            return cast(_Prepared, hit)
     value = build()
     with _PREPARED_CACHE_LOCK:
-        if len(_PREPARED_CACHE) >= _PREPARED_CACHE_LIMIT:
+        if value is not None and len(_PREPARED_CACHE) >= _PREPARED_CACHE_LIMIT:
             _PREPARED_CACHE.pop(next(iter(_PREPARED_CACHE)))
-        _PREPARED_CACHE[key] = value
+        if value is not None:
+            _PREPARED_CACHE[key] = value
     return value
 
 

@@ -25,7 +25,7 @@ import time as monotonic_time
 from dataclasses import dataclass
 from typing import Literal
 
-from core.contracts import Engineer, RouterTaskSnapshot
+from core.contracts import Engineer, EngineerRoute, RouterTaskSnapshot
 from core.schedule import TravelProvider, _baseline_eligible, fixed_order
 
 Objective = tuple[int, int, int]
@@ -99,7 +99,7 @@ def exact_micro(
     ]
     requests = sorted(snapshot.requests, key=lambda r: r.arrival_order)
     eligible_ids = [engineer.engineer_id for engineer in eligible]
-    cache: dict[tuple[str, tuple[str, ...]], object] = {}
+    cache: dict[tuple[str, tuple[str, ...]], EngineerRoute | None] = {}
     builds = 0
     best: tuple[Objective, tuple[tuple[str, ...], ...]] | None = None
     visited: set[tuple[tuple[str, ...], ...]] = set()
